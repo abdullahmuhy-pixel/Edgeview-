@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Edgeview</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0e1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Edgeview">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27%3E%3Ctext y=%27.9em%27 font-size=%2790%27%3E%F0%9F%93%88%3C/text%3E%3C/svg%3E">
+<style>
+  :root{--bg:#0e1117;--card:#161b24;--line:#262d3a;--text:#e6e9ef;--mute:#8b94a5;--acc:#2dd4a7;--red:#f4616b}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  .wrap{max-width:760px;margin:0 auto;padding:16px}
+  h1{font-size:20px;margin:4px 0 14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+  label{display:block;font-size:12px;color:var(--mute);margin:10px 0 4px}
+  input,select,textarea{width:100%;background:#0b0e14;border:1px solid var(--line);color:var(--text);border-radius:8px;padding:10px;font:inherit}
+  textarea{min-height:70px;resize:vertical}
+  .row{display:flex;gap:10px}.row>*{flex:1}
+  button{background:var(--acc);color:#04251c;border:0;border-radius:10px;padding:12px 16px;font-weight:600;font-size:15px;cursor:pointer;width:100%}
+  button.sec{background:#222a38;color:var(--text);width:auto;padding:8px 12px;font-weight:500;font-size:13px}
+  button:disabled{opacity:.5;cursor:wait}
+  details summary{cursor:pointer;font-weight:600}
+  .drop{border:2px dashed var(--line);border-radius:10px;padding:18px;text-align:center;color:var(--mute);cursor:pointer}
+  .drop.over{border-color:var(--acc);color:var(--acc)}
+  .thumbs{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+  .th{position:relative;width:92px;height:62px;border-radius:6px;overflow:hidden;border:1px solid var(--line)}
+  .th img{width:100%;height:100%;object-fit:cover}
+  .th b{position:absolute;top:0;right:0;background:#000a;color:#fff;padding:0 6px;cursor:pointer}
+  #live{font-size:13px;color:var(--mute);white-space:pre-wrap}
+  #out{white-space:pre-wrap;word-wrap:break-word}
+  #out h3{margin:14px 0 4px;color:var(--acc);font-size:16px}
+  .err{color:var(--red)}
+  .hint{font-size:12px;color:var(--mute);margin-top:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📈 Edgeview</h1>
+  <div id="installBar" class="card" hidden style="display:none;align-items:center;justify-content:space-between;gap:10px">
+    <span id="installText">Install Edgeview as an app on this device</span>
+    <button class="sec" id="installBtn" style="white-space:nowrap">Install</button>
+  </div>
+
+  <details class="card" id="keys">
+    <summary>API keys</summary>
+    <label>Anthropic API key (required)</label>
+    <input id="kAnthropic" type="password" placeholder="sk-ant-..." autocomplete="off">
+    <label>Twelve Data API key (live price + indicators)</label>
+    <input id="kTwelve" type="password" autocomplete="off">
+    <label>Finnhub API key (news)</label>
+    <input id="kFinnhub" type="password" autocomplete="off">
+    <label>Model</label>
+    <input id="model" value="claude-sonnet-5-5">
+    <div class="row" style="margin-top:12px">
+      <button class="sec" id="saveKeys">Save in this browser</button>
+      <button class="sec" id="clearKeys">Forget keys</button>
+    </div>
+    <div class="hint">Keys are stored only in this browser's localStorage and sent only to Anthropic, Twelve Data and Finnhub. Use this on your own device.</div>
+  </details>
+
+  <div class="card">
+    <div class="row">
+      <div><label>Symbol (Twelve Data format)</label><input id="symbol" value="XAU/USD"></div>
+      <div><label>Market</label>
+        <select id="market"><option value="forex">Forex / Metals</option><option value="crypto">Crypto</option></select>
+      </div>
+    </div>
+    <label>Current price (optional, used only if live data is off)</label>
+    <input id="manualPx" inputmode="decimal" placeholder="e.g. 4117.50">
+    <label>Charts (highest timeframe first)</label>
+    <div class="drop" id="drop">Tap to add screenshots, or drag / paste them here</div>
+    <input id="file" type="file" accept="image/*" multiple hidden>
+    <div class="thumbs" id="thumbs"></div>
+    <label>News / economic calendar screenshots (e.g. from Investing.com)</label>
+    <div class="drop" id="dropN">Tap to add news screenshots, or drag / paste them here</div>
+    <input id="fileN" type="file" accept="image/*" multiple hidden>
+    <div class="thumbs" id="thumbsN"></div>
+    <label>Your note (optional: events, bias, account size)</label>
+    <textarea id="note" placeholder="e.g. CPI today 13:30 GMT. Account $5,000."></textarea>
+    <div style="margin-top:12px"><button id="go">Analyze</button></div>
+  </div>
+
+  <div class="card" id="liveCard" hidden>
+    <b>Live data used</b>
+    <div id="live"></div>
+  </div>
+
+  <div class="card" id="outCard" hidden>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <b>Analysis</b><button class="sec" id="copy">Copy</button>
+    </div>
+    <div id="out"></div>
+  </div>
+  <div class="hint">Analysis only, not financial advice. Trade small and test on a demo account first.</div>
+</div>
+
+<script>
+const SYSTEM = `You are a multi-timeframe trading analyst for forex, metals and crypto. The user uploads chart screenshots (e.g. 1W, 1D, 4H, 1H, 30M, 15M, 5M), plus optional screenshots of news and the economic calendar (e.g. from the Investing.com app), plus live market data and recent headlines fetched from data providers, plus an optional note. Analyze only what is visible or provided. Never invent price levels you cannot read from the charts.
+
+PROCESS
+1. Identify the instrument, the timeframes provided (read them from each chart), and the current price. If live data conflicts with the charts, trust the live quote and say so.
+2. Top-down analysis:
+ - 1W/1D: trend direction, major support/resistance, key swing highs/lows, structure breaks.
+ - 4H/1H: supply/demand zones, range boundaries, trendlines, patterns, Fibonacci retracement of the latest impulse, order blocks, liquidity sweeps.
+ - 30M/15M/5M: entry triggers: candlestick patterns, break and retest, momentum shifts.
+3. Indicators: use the live values provided for 1H, 4H and 1D (RSI, EMA 20/50/200, ATR, MACD, Bollinger Bands, Stochastic, recent highs/lows, yesterday's range and daily pivots) together with any indicators visible on the charts. Look for agreement between timeframes, divergences, overbought/oversold readings only when they fit the trend, Bollinger squeezes (low bandwidth) before breakouts, and EMA alignment. Use ATR to size stops and targets sensibly. If no live data was provided, rely on price action and any indicators visible on the charts, say levels are approximate, and lower confidence by one level.
+4. Fundamentals: first read any news/calendar screenshots. For each relevant item extract: event or headline, currency/asset, time (note the timezone shown), impact level (bulls/stars/colour), and actual vs forecast vs previous. Judge whether each result is bullish or bearish for the instrument (e.g. hot US CPI or strong NFP is usually USD-positive and gold-negative; weaker data the opposite). Flag high-impact events still to come and how many hours away they are, and warn against holding scalps through them; advise waiting for the post-release reaction. If a screenshot is unreadable or its timezone is unclear, say so. Then also use the API headlines and the note. Consider USD strength and yields, central bank stance, inflation/jobs data, risk sentiment, and for crypto, dominance and flows. Summarize in 2-3 lines what matters. If no headlines are relevant, say so and lower confidence by one level.
+5. Confluence: bias must agree across higher timeframes. If timeframes conflict or price is mid-range with no clear level, say NO TRADE for that style.
+
+OUTPUT FORMAT (always, compact for a phone screen). Use ### headings:
+### Market snapshot
+instrument, price, higher-timeframe bias, key levels (3 support, 3 resistance).
+### News & calendar
+Key events read from the screenshots and headlines, each with its bullish/bearish effect on the instrument, upcoming high-impact releases, and the net fundamental bias.
+### Scalp (5M-15M)
+### Intraday (30M-1H)
+### Swing (4H-1D)
+For each: Direction | Entry | Stop loss | TP1 / TP2 | Risk:Reward | Confidence (Low/Med/High) | Reason (2 lines) | Invalidated if...
+### Scenario
+What changes the bias, and what to watch next.
+
+RULES
+- Minimum R:R 1:1.5 or mark NO TRADE.
+- Place stops beyond structure, not at random distances.
+- Counter-trend trades must be labeled and given Low confidence.
+- Suggest risking 0.5-1% per trade and position size from stop distance. Never suggest all-in or martingale.
+- Be concise, plain language, honest about uncertainty.
+- You are not a financial advisor. End with one short risk reminder.`;
+
+const $ = id => document.getElementById(id);
+const store = { get:k=>localStorage.getItem(k)||'', set:(k,v)=>localStorage.setItem(k,v), del:k=>localStorage.removeItem(k) };
+// ---- keys
+['kAnthropic','kTwelve','kFinnhub','model','symbol','market'].forEach(id=>{ const v=store.get('ca_'+id); if(v) $(id).value=v; });
+if(!store.get('ca_kAnthropic')) $('keys').open = true;
+$('saveKeys').onclick = ()=>{ ['kAnthropic','kTwelve','kFinnhub','model'].forEach(id=>store.set('ca_'+id,$(id).value.trim())); $('keys').open=false; };
+$('clearKeys').onclick = ()=>{ ['kAnthropic','kTwelve','kFinnhub'].forEach(id=>{store.del('ca_'+id);$(id).value='';}); };
+['symbol','market'].forEach(id=>$(id).onchange=()=>store.set('ca_'+id,$(id).value));
+
+// ---- images
+const lists = { charts: [], news: [] };
+let activeZone = 'charts';
+const zones = {
+  charts: { drop:$('drop'), file:$('file'), thumbs:$('thumbs'), max:8 },
+  news:   { drop:$('dropN'), file:$('fileN'), thumbs:$('thumbsN'), max:6 }
+};
+Object.entries(zones).forEach(([name,z])=>{
+  z.drop.onclick=()=>{ activeZone=name; z.file.click(); };
+  z.file.onchange=()=>{ addFiles(name,z.file.files); z.file.value=''; };
+  z.drop.ondragover=e=>{e.preventDefault();z.drop.classList.add('over')};
+  z.drop.ondragleave=()=>z.drop.classList.remove('over');
+  z.drop.ondrop=e=>{e.preventDefault();z.drop.classList.remove('over');activeZone=name;addFiles(name,e.dataTransfer.files)};
+});
+// pasted images go to whichever zone you touched last
+document.addEventListener('paste',e=>{ const f=[...e.clipboardData.files].filter(x=>x.type.startsWith('image/')); if(f.length) addFiles(activeZone,f); });
+
+async function addFiles(name,list){
+  const arr=lists[name], max=zones[name].max;
+  for(const f of list){
+    if(!f.type.startsWith('image/')) continue;
+    if(arr.length>=max){ alert('Max '+max+' images here'); break; }
+    arr.push(await shrink(f));
+  }
+  renderThumbs(name);
+}
+function shrink(f){
+  return new Promise((res,rej)=>{
+    const img=new Image(), url=URL.createObjectURL(f);
+    img.onload=()=>{
+      const m=1568, s=Math.min(1,m/Math.max(img.width,img.height));
+      const c=document.createElement('canvas'); c.width=Math.round(img.width*s); c.height=Math.round(img.height*s);
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+      const data=c.toDataURL('image/jpeg',0.88);
+      URL.revokeObjectURL(url);
+      res({url:data,b64:data.split(',')[1]});
+    };
+    img.onerror=rej; img.src=url;
+  });
+}
+function renderThumbs(name){
+  const box=zones[name].thumbs; box.innerHTML='';
+  lists[name].forEach((im,i)=>{
+    const d=document.createElement('div'); d.className='th';
+    d.innerHTML=`<img src="${im.url}"><b>×</b>`;
+    d.querySelector('b').onclick=()=>{lists[name].splice(i,1);renderThumbs(name);};
+    box.appendChild(d);
+  });
+}
+
+// ---- live data
+async function getJSON(url){ const r=await fetch(url); if(!r.ok) throw new Error(r.status); return r.json(); }
+
+// ---- indicator maths (computed locally from candles; 1 API call per timeframe)
+const f2=x=>x==null||isNaN(x)?'n/a':Number(x).toFixed(Math.abs(x)<10?4:2);
+function emaSeries(a,n){ const k=2/(n+1); let e=a.slice(0,n).reduce((x,y)=>x+y,0)/n; const out=Array(n-1).fill(null); out.push(e); for(let i=n;i<a.length;i++){ e=a[i]*k+e*(1-k); out.push(e);} return out; }
+function rsiCalc(c,n=14){ if(c.length<n+1) return null; let g=0,l=0; for(let i=1;i<=n;i++){const d=c[i]-c[i-1]; d>=0?g+=d:l-=d;} g/=n; l/=n; for(let i=n+1;i<c.length;i++){const d=c[i]-c[i-1]; g=(g*(n-1)+Math.max(d,0))/n; l=(l*(n-1)+Math.max(-d,0))/n;} return l===0?100:100-100/(1+g/l); }
+function atrCalc(h,l,c,n=14){ if(c.length<n+1) return null; const tr=[]; for(let i=1;i<c.length;i++) tr.push(Math.max(h[i]-l[i],Math.abs(h[i]-c[i-1]),Math.abs(l[i]-c[i-1]))); let a=tr.slice(0,n).reduce((x,y)=>x+y,0)/n; for(let i=n;i<tr.length;i++) a=(a*(n-1)+tr[i])/n; return a; }
+function macdCalc(c){ if(c.length<35) return null; const e12=emaSeries(c,12), e26=emaSeries(c,26); const m=[]; for(let i=0;i<c.length;i++) if(e26[i]!=null) m.push(e12[i]-e26[i]); const sig=emaSeries(m,9); const mi=m.length-1, si=sig.length-1; const hist=m[mi]-sig[si], prev=m[mi-1]-sig[si-1]; return {m:m[mi],s:sig[si],h:hist,cross:(hist>0&&prev<=0)?'bullish cross just now':(hist<0&&prev>=0)?'bearish cross just now':hist>0?'above signal':'below signal'}; }
+function bbCalc(c,n=20,k=2){ if(c.length<n) return null; const w=c.slice(-n), mid=w.reduce((x,y)=>x+y,0)/n; const sd=Math.sqrt(w.reduce((x,y)=>x+(y-mid)**2,0)/n); const up=mid+k*sd, lo=mid-k*sd; return {up,mid,lo,pctB:(c[c.length-1]-lo)/(up-lo),width:(up-lo)/mid*100}; }
+function stochCalc(h,l,c,n=14){ if(c.length<n+2) return null; const kv=[]; for(let i=n-1;i<c.length;i++){ const hh=Math.max(...h.slice(i-n+1,i+1)), ll=Math.min(...l.slice(i-n+1,i+1)); kv.push(hh===ll?50:(c[i]-ll)/(hh-ll)*100);} const sm=kv.length>=3?kv.slice(-3).reduce((x,y)=>x+y,0)/3:kv[kv.length-1]; return {k:sm}; }
+function indicators(label,vals){
+  const v=[...vals].reverse(); // oldest -> newest
+  const o=v.map(x=>+x.open),h=v.map(x=>+x.high),l=v.map(x=>+x.low),c=v.map(x=>+x.close);
+  const px=c[c.length-1], last=a=>a[a.length-1];
+  const e20=emaSeries(c,20), e50=c.length>=50?emaSeries(c,50):[], e200=c.length>=200?emaSeries(c,200):[];
+  const m=macdCalc(c), bb=bbCalc(c), st=stochCalc(h,l,c), r=rsiCalc(c), at=atrCalc(h,l,c);
+  const hi=Math.max(...h.slice(-50)), lo=Math.min(...l.slice(-50));
+  const rel=(e)=>e==null?'':(px>e?' (price above)':' (price below)');
+  let t=`${label} (${c.length} candles): RSI14 ${f2(r)}${r>70?' overbought':r<30?' oversold':''}; EMA20 ${f2(last(e20))}${rel(last(e20))}, EMA50 ${f2(last(e50))}${rel(last(e50))}, EMA200 ${f2(last(e200))}${rel(last(e200))}; ATR14 ${f2(at)}`;
+  if(m) t+=`; MACD ${f2(m.m)} / signal ${f2(m.s)} / hist ${f2(m.h)} (${m.cross})`;
+  if(bb) t+=`; Bollinger(20,2) upper ${f2(bb.up)} mid ${f2(bb.mid)} lower ${f2(bb.lo)}, %B ${bb.pctB.toFixed(2)}, bandwidth ${bb.width.toFixed(2)}%`;
+  if(st) t+=`; Stoch(14,3) ${st.k.toFixed(0)}${st.k>80?' overbought':st.k<20?' oversold':''}`;
+  t+=`; last-50-candle high ${f2(hi)} / low ${f2(lo)}`;
+  return t;
+}
+async function twelve(sym,key){
+  const q=encodeURIComponent(sym), base='https://api.twelvedata.com';
+  const ts=iv=>`${base}/time_series?symbol=${q}&interval=${iv}&outputsize=300&apikey=${key}`;
+  const calls={quote:`${base}/quote?symbol=${q}&apikey=${key}`,h1:ts('1h'),h4:ts('4h'),d1:ts('1day')};
+  const out={};
+  await Promise.all(Object.entries(calls).map(async([k,u])=>{ try{ out[k]=await getJSON(u); }catch(e){ out[k]=null; } }));
+  const bad=o=>!o||o.status==='error';
+  if(bad(out.quote)) throw new Error(out.quote?.message||'Twelve Data failed');
+  const qt=out.quote;
+  let t=`Symbol ${qt.symbol}: price ${Number(qt.close).toFixed(2)}, day change ${Number(qt.percent_change).toFixed(2)}%, day range ${Number(qt.low).toFixed(2)}-${Number(qt.high).toFixed(2)}, previous close ${Number(qt.previous_close).toFixed(2)}`;
+  for(const [k,label] of [['h1','1H'],['h4','4H'],['d1','1D']]){
+    if(!bad(out[k])&&out[k].values?.length>30) t+='\n'+indicators(label,out[k].values);
+    else t+=`\n${label}: indicators unavailable (${out[k]?.message||'no data'})`;
+  }
+  if(!bad(out.d1)&&out.d1.values?.length>1){ const y=out.d1.values[1], H=+y.high,L=+y.low,C=+y.close, P=(H+L+C)/3; t+=`\nYesterday: high ${f2(H)}, low ${f2(L)}, close ${f2(C)}. Daily pivots: P ${f2(P)}, R1 ${f2(2*P-L)}, R2 ${f2(P+H-L)}, S1 ${f2(2*P-H)}, S2 ${f2(P-(H-L))}`; }
+  return t;
+}
+
+// Keyless fallback for crypto (Binance public market data)
+async function binance(sym){
+  const pair=sym.toUpperCase().replace('/','').replace(/USD$/,'USDT');
+  const base='https://data-api.binance.vision/api/v3/klines';
+  const get=async iv=>{ const r=await getJSON(`${base}?symbol=${pair}&interval=${iv}&limit=300`); return r.map(k=>({open:k[1],high:k[2],low:k[3],close:k[4]})).reverse(); };
+  const [h1,h4,d1]=await Promise.all([get('1h'),get('4h'),get('1d')]);
+  const px=+h1[0].close, pc=+d1[1].close;
+  let t=`Symbol ${pair} (Binance): price ${px.toFixed(2)}, change vs yesterday's close ${((px-pc)/pc*100).toFixed(2)}%, today's range ${(+d1[0].low).toFixed(2)}-${(+d1[0].high).toFixed(2)}`;
+  t+='\n'+indicators('1H',h1)+'\n'+indicators('4H',h4)+'\n'+indicators('1D',d1);
+  const y=d1[1],H=+y.high,L=+y.low,C=+y.close,P=(H+L+C)/3;
+  t+=`\nYesterday: high ${f2(H)}, low ${f2(L)}, close ${f2(C)}. Daily pivots: P ${f2(P)}, R1 ${f2(2*P-L)}, R2 ${f2(P+H-L)}, S1 ${f2(2*P-H)}, S2 ${f2(P-(H-L))}`;
+  return t;
+}
+
+async function finnhub(market,sym,key){
+  const cat = market==='crypto' ? 'crypto' : 'forex';
+  let items = await getJSON(`https://finnhub.io/api/v1/news?category=${cat}&token=${key}`);
+  const gen = await getJSON(`https://finnhub.io/api/v1/news?category=general&token=${key}`).catch(()=>[]);
+  const words = sym.toUpperCase().replace('/',' ').split(' ').concat(sym.toUpperCase().includes('XAU')?['GOLD']:[]);
+  const rel = a => words.some(w=>(a.headline+' '+(a.summary||'')).toUpperCase().includes(w));
+  const all = [...items.filter(rel), ...gen.filter(rel), ...items, ...gen];
+  const seen=new Set(), pick=[];
+  for(const a of all){ if(seen.has(a.id)) continue; seen.add(a.id); pick.push(a); if(pick.length>=10) break; }
+  return pick.map(a=>`- ${new Date(a.datetime*1000).toISOString().slice(0,16).replace('T',' ')}Z ${a.headline}`).join('\n');
+}
+
+// ---- analyze
+const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+function md(s){ return esc(s).replace(/^### (.*)$/gm,'<h3>$1</h3>').replace(/\*\*(.+?)\*\*/g,'<b>$1</b>'); }
+
+$('go').onclick=async()=>{
+  const ak=$('kAnthropic').value.trim();
+  if(!ak){ $('keys').open=true; return alert('Enter your Anthropic API key'); }
+  if(!lists.charts.length) return alert('Add at least one chart');
+  store.set('ca_kAnthropic',ak);
+  const btn=$('go'); btn.disabled=true; btn.textContent='Fetching data…';
+  const sym=$('symbol').value.trim(), market=$('market').value;
+  const tk=$('kTwelve').value.trim(), fk=$('kFinnhub').value.trim();
+  let live='', news='', errs=[];
+  if(tk){ try{ live=await twelve(sym,tk);}catch(e){ errs.push('Twelve Data: '+e.message); } }
+  else if(market==='crypto'){ try{ live=await binance(sym);}catch(e){ errs.push('Binance: '+e.message); } }
+  if(fk){ try{ news=await finnhub(market,sym,fk);}catch(e){ errs.push('Finnhub: '+e.message); } }
+  $('liveCard').hidden=false;
+  $('live').textContent=[live||'No live quote/indicators.', news?('\nHeadlines:\n'+news):'\nNo headlines.', errs.length?('\nIssues: '+errs.join('; ')):''].join('\n');
+
+  btn.textContent='Analyzing…';
+  const img=im=>({type:'image',source:{type:'base64',media_type:'image/jpeg',data:im.b64}});
+  const content=[{type:'text',text:'CHART SCREENSHOTS (in the order uploaded):'}, ...lists.charts.map(img)];
+  if(lists.news.length) content.push({type:'text',text:'NEWS / ECONOMIC CALENDAR SCREENSHOTS (read every event and headline in them):'}, ...lists.news.map(img));
+  content.push({type:'text',text:`Instrument: ${sym}.\n\nLIVE DATA (${new Date().toISOString()}):\n${live||('none. ' + ($('manualPx').value.trim()?('User-provided current price: '+$('manualPx').value.trim()+'. Treat it as approximate.'):'No live price; read price from the charts and say levels are approximate.'))}\n\nRECENT HEADLINES:\n${news||'none'}\n\nUSER NOTE: ${$('note').value.trim()||'none'}`});
+  $('outCard').hidden=false; $('out').textContent='';
+  try{
+    const r=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'content-type':'application/json','x-api-key':ak,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:$('model').value.trim()||'claude-sonnet-5-5',max_tokens:2500,system:SYSTEM,messages:[{role:'user',content}]})
+    });
+    const j=await r.json();
+    if(!r.ok) throw new Error(j.error?.message||r.status);
+    const text=j.content.filter(b=>b.type==='text').map(b=>b.text).join('');
+    $('out').innerHTML=md(text); $('out').dataset.raw=text;
+    $('outCard').scrollIntoView({behavior:'smooth'});
+  }catch(e){ $('out').innerHTML=`<span class="err">${esc(String(e.message))}</span>`; }
+  btn.disabled=false; btn.textContent='Analyze';
+};
+$('copy').onclick=()=>navigator.clipboard.writeText($('out').dataset.raw||$('out').innerText);
+
+// ---- install as app (PWA)
+if('serviceWorker' in navigator){ window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{})); }
+let deferredPrompt=null;
+const standalone=window.matchMedia('(display-mode: standalone)').matches||navigator.standalone;
+function showInstall(text,btn){ if(standalone) return; $('installText').textContent=text; $('installBtn').style.display=btn?'':'none'; $('installBar').hidden=false; $('installBar').style.display='flex'; }
+window.addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); deferredPrompt=e; showInstall('Install Edgeview as an app on this device',true); });
+$('installBtn').onclick=async()=>{ if(!deferredPrompt) return; deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt=null; $('installBar').style.display='none'; };
+window.addEventListener('appinstalled',()=>{ $('installBar').style.display='none'; });
+if(/iphone|ipad|ipod/i.test(navigator.userAgent)&&!standalone) showInstall('To install: tap Share, then Add to Home Screen',false);
+</script>
+</body>
+</html>
