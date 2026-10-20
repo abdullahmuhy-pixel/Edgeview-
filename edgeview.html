@@ -235,6 +235,8 @@ RULES
 - Place stops beyond structure, not at random distances.
 - Counter-trend trades must be labeled and the probability lowered by 10-15 points.
 - INSTRUMENT BACKGROUND: if a background block is given, use it as general knowledge about what drives the instrument and its sessions. Name the 1 or 2 drivers that matter most right now in the Market snapshot, and verify them against the live data and news; never present the background as current news or a current central-bank stance. For JPY pairs, say whether there is any intervention or BoJ risk in the data. For USDZAR, allow for wide spreads and thin liquidity in stops and timing.
+- LIVE CALENDAR: if a live calendar block is given, use it for event times and forecasts (it is in UTC and more reliable than reading times from screenshots), and use screenshots or headlines for actual results. End every order's validity before a high-impact event for its currencies, or say clearly that the order spans the release and lower the probability by 10 points.
+- OPEN EXPOSURE: if an open positions block is given, treat it as the trader's existing risk. If the new plan adds to a currency the trader is already 2 or more units long or short, say so in the Risk line and halve the suggested risk; at 3 or more units in the same direction, prefer NO TRADE or a plan that reduces the exposure. A plan in the opposite direction to an open position on the same symbol must be flagged as a conflict.
 - USER TRACK RECORD: if a track record block is given, use it only as context. With 15 or more closed trades on that instrument you may move the probability by up to 5 points toward the real hit rate and say so in one line; with fewer, say the sample is too small to adjust. Never let it override the chart or the news.
 - WEEKEND AND TIME RULE: the data states the weekday and any weekend/Friday warning. Forex and gold close about 21:00 UTC Friday and reopen about 22:00 UTC Sunday. On Friday after 12:00 UTC, intraday plans must expire before 20:00 UTC Friday, swing plans must be flagged as carrying weekend gap risk (lower the probability by 5 to 10 points or advise waiting for the Sunday/Monday open), and no new scalps in the last hour before the close. When the market is closed, say so, give plans for the reopen only, and make validity start at the reopen. Avoid the 21:00-23:00 UTC rollover spread widening.
 - VALIDITY: every pending order and the final plan must have a "Valid until" in UTC, worked out from the current UTC time given in the data. Scalp: 1 to 3 hours (max 4). Intraday: until the end of the session that suits the setup, within the same trading day (max about 12 hours). Swing: 2 to 5 days. End the validity BEFORE a high-impact news event or session close that would change the picture. Setups go stale: if price has not reached the entry by then, the order is cancelled and the analysis must be re-run. Also give a Time stop for filled trades.
@@ -554,6 +556,14 @@ function newResult(sym){
   d.querySelector('.rc-calc').onclick=()=>{if(d.dataset.raw){fillCalc(d.dataset.raw,d.dataset.sym);go('size');}};
   return d;
 }
+let calMem=null;
+async function liveCalendar(){
+  const now=Date.now();
+  if(calMem&&now-calMem.t<36e5) return calMem.ev;
+  try{const c=JSON.parse(localStorage.getItem('ca_cal')||'null');if(c&&now-c.t<36e5&&Array.isArray(c.ev)){calMem=c;return c.ev;}}catch(e){}
+  try{const ev=await getJSON('https://nfs.faireconomy.media/ff_calendar_thisweek.json');if(!Array.isArray(ev))throw 0;calMem={t:now,ev};try{localStorage.setItem('ca_cal',JSON.stringify(calMem));}catch(e){}return ev;}
+  catch(e){srcFail('Live economic calendar (ForexFactory feed)');try{const c=JSON.parse(localStorage.getItem('ca_cal')||'null');if(c&&Array.isArray(c.ev))return c.ev;}catch(_){}return null;}
+}
 async function liveFor(p,tk,fk){
   let live='',news='',errs=[];
   if(tk){try{live=await twelve(p.sym,tk);}catch(e){errs.push('Twelve Data: '+e.message);}}
@@ -561,8 +571,10 @@ async function liveFor(p,tk,fk){
   if(fk){try{news=await finnhub(p.market,p.sym,fk);}catch(e){errs.push('Finnhub: '+e.message);}}
   try{const ps=await positioning(p.sym,p.market);if(ps)live=(live?live+'\n':'')+ps;}catch(e){}
   try{const mc=await fredMacro($('kFred').value.trim());if(mc)live=(live?live+'\n':'')+mc;}catch(e){}
+  let cal=null;try{const ev=await liveCalendar();if(ev){cal=calendarFor(ev,p.sym,Date.now());const ct=calText(cal,Date.now());live=(live?live+'\n':'')+(ct||'LIVE ECONOMIC CALENDAR: no medium or high impact events for '+calCcys(p.sym).join('/')+' in the next 7 days in the feed.');}}catch(e){}
+  try{const xt=expoText(HS.get(),Date.now(),p.sym);if(xt)live=(live?live+'\n':'')+xt;}catch(e){}
   errs.push(...srcLog.splice(0));
-  return {live,news,errs,at:new Date().toISOString()};
+  return {live,news,errs,cal,at:new Date().toISOString()};
 }
 const DIGEST_SYS='You transcribe screenshots of an economic calendar or market news into compact plain text for another analyst. One event or headline per line: date, time and the timezone exactly as shown (write "timezone not shown" if unclear), currency or asset, event, impact (high, medium or low if shown), actual, forecast, previous. Do not analyze and do not add opinions. Skip anything unreadable and say so.';
 async function makeDigest(ak,key){
@@ -602,7 +614,7 @@ $('go').onclick=async()=>{
       const text=co.text,stop=co.stop;
       if(stop==='max_tokens') q(i).innerHTML+='<p class="err">The answer was cut off. Run this pair again or remove a few screenshots.</p>';
       if(!text.trim()) throw new Error(emptyMsg(co));
-      saveHistory(text,p.sym); addOdds(card,text,p.sym); addCheck(card,text,p); if(N===1) fillCalc(text,p.sym); renderHist();
+      saveHistory(text,p.sym); addOdds(card,text,p.sym); addCheck(card,text,{...p,cal:L.cal}); if(N===1) fillCalc(text,p.sym); renderHist();
       return text;
     }
   });
@@ -664,7 +676,7 @@ function parseFinal(raw){const i=raw.search(/^### *Final trade plan/mi);if(i<0)r
 const num=x=>{const m=String(x||'').replace(/,/g,'').match(/-?\d+(\.\d+)?/);return m?+m[0]:null;};
 // ---- history + journal
 const HS={get:()=>{try{return JSON.parse(localStorage.getItem('ca_hist')||'[]')}catch(e){return[]}},set:a=>{const now=Date.now(),pack=(n,k)=>JSON.stringify(a.slice(0,n).map((e,i)=>(i<k||(e.ord==='WEEKLY OUTLOOK'&&now-e.id<20*86400000))?e:{...e,text:''}));try{localStorage.setItem('ca_hist',pack(400,40));}catch(e){try{localStorage.setItem('ca_hist',pack(150,12));}catch(e2){}}}};
-const APP_VER='edgeview-v30';
+const APP_VER='edgeview-v31';
 function META(){return {model:$('model').value.trim()||'claude-sonnet-5-5',deep:$('depth').value,ver:APP_VER};}
 
 function addOdds(card,text,sym){
@@ -701,13 +713,18 @@ function addCheck(card,text,p){
     const g=parseFinal(text), L=LIVE[String(p.sym).toUpperCase()]||{};
     const px=L.px!=null?L.px:(p.px?_num(p.px):null);
     const c=checkPlan(g,{px,atr1h:L.atr1h,spread:_num(p.sp),now:Date.now()}); if(!c) return;
-    const a=adjProb(c.prob,HS.get());
+    const a=adjProb(c.prob,HS.get()), now=Date.now();
+    try{const pl=livePlans(HS.get().filter(e=>e.text!==text),now),before=exposure(pl),after=exposure(pl,{sym:p.sym,side:c.side}),L2=legsOf(p.sym)||[];
+      for(const cur of L2){const b=before[cur]||0,af=after[cur]||0;if(Math.abs(af)>=3&&Math.abs(af)>Math.abs(b))c.items.push({lvl:'warn',msg:`This takes your ${cur} exposure to ${af>0?'+':''}${af} units (${af>0?'long':'short'}) across open plans: these trades are one bet, so cut the size.`});else if(Math.abs(af)>Math.abs(b)&&Math.abs(b)>=1)c.items.push({lvl:'ok',msg:`Adds to an existing ${cur} position: ${b>0?'+':''}${b} → ${af>0?'+':''}${af} units.`});}
+      const opp=pl.filter(x=>normSym(x.e.sym)===normSym(p.sym)&&(/SELL/i.test(x.e.dec)?-1:1)!==c.side);if(opp.length)c.items.push({lvl:'warn',msg:`You have ${opp.length} open ${opp.length>1?'plans':'plan'} on ${String(p.sym).toUpperCase()} in the other direction.`});}catch(e){}
+    try{const cal=p.cal||null;if(cal){const vm=String(g['valid until']||'').match(/(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})/),until=vm?Date.parse(vm[1]+'T'+vm[2].padStart(2,'0')+':'+vm[3]+':00Z'):null;
+      const cl=calClash(cal,now,until);if(cl.length)c.items.push({lvl:'warn',msg:`High-impact news before this order expires: ${cl.slice(0,3).map(x=>`${x.country} ${x.title} at ${new Date(x.t).toISOString().slice(11,16)} UTC${x.t-now>864e5?' on '+new Date(x.t).toISOString().slice(5,10):''}`).join('; ')}. Avoid holding through it or tighten the plan.`});}}catch(e){}
     const d=document.createElement('div'); d.className='rc-check';
     d.style.cssText='margin-top:12px;padding:10px 12px;border:1px solid var(--line,#2a303c);border-radius:10px;font-size:13px';
     const ic={bad:'⛔',warn:'⚠️',ok:'✅'};
     const nb=c.items.filter(x=>x.lvl==='bad').length,nw=c.items.filter(x=>x.lvl==='warn').length;
     d.innerHTML=`<b>Plan check</b> <span class="hint">(numbers recomputed in code${px!=null?', live price '+f2(px):''})</span><div style="margin:4px 0 6px">${nb?`<b style="color:var(--red)">${nb} problem${nb>1?'s':''}: fix before placing this order.</b>`:nw?`${nw} thing${nw>1?'s':''} to look at.`:'No problems found.'}</div>`+
-      c.items.map(x=>`<div style="margin:3px 0">${ic[x.lvl]} ${esc(x.msg)}</div>`).join('')+
+      [...c.items].sort((x,y)=>({bad:0,warn:1,ok:2}[x.lvl])-({bad:0,warn:1,ok:2}[y.lvl])).map(x=>`<div style="margin:3px 0">${ic[x.lvl]} ${esc(x.msg)}</div>`).join('')+
       (a?`<div style="margin-top:6px">📏 Adjusted for your record (${a.n} closed trades): <b>${a.p}%</b> instead of ${c.prob}% (${a.off>=0?'+':''}${a.off.toFixed(0)} points).</div>`:'');
     card.appendChild(d);
   }catch(e){}
@@ -756,7 +773,7 @@ async function autoResolve(force){
 }
 function renderHist(){const a=HS.get(),cl=a.filter(e=>e.st=='win'||e.st=='loss'),w=cl.filter(e=>e.st=='win').length,pr=cl.filter(e=>e.prob!=null);
 $('stats').textContent=cl.length?`Closed ${cl.length}: ${w} wins, ${cl.length-w} losses, win rate ${(w/cl.length*100).toFixed(0)}%`+(pr.length?` | Edgeview's stated average probability ${(pr.reduce((t,e)=>t+e.prob,0)/pr.length).toFixed(0)}%`:''):'No closed trades yet. Open plans are checked against the candles automatically; you can also mark Win or Loss yourself.';
-$('hist').innerHTML=a.map(e=>`<div class="hi"><b>${esc(e.sym)} ${esc(e.dec)}</b> ${esc(e.ord)}${e.ord==='WEEKLY OUTLOOK'?'':' @ '+esc(e.entry)}<br><small>${new Date(e.id).toISOString().slice(0,16).replace('T',' ')}Z${e.ord==='WEEKLY OUTLOOK'?'':' | SL '+esc(e.sl)+' | TP1 '+esc(e.tp1)}${e.prob!=null?' | '+e.prob+'%':''} | <b>${e.st.toUpperCase()}</b>${isLad(e)&&e.hit!=null?' | '+(e.hit?'TP'+e.hit+' of '+e.tps.length+' hit':'stopped')+' | '+fR(rOf(e)):''}${tagOf(e)}${e.auto==='candles'?' | <i>auto: '+esc(e.autoNote||'from candles')+'</i>':''}${e.st==='open'&&e.run?' | <i>'+esc(e.run.note)+'</i>':''}</small><div class="row" style="margin-top:6px;flex-wrap:wrap"><button class="sec" onclick="viewH(${e.id})">View</button>${hitBtns(e)}<button class="sec" onclick="setSt(${e.id},'skip')">Skipped</button>${e.ord!=='WEEKLY OUTLOOK'&&e.st!=='open'?`<button class="sec" onclick="copyResult(this,${e.id})">Post result</button>`:''}<button class="sec" onclick="delH(${e.id})">Delete</button></div></div>`).join('')||'<small>Nothing saved yet. Every analysis is saved here automatically.</small>';
+$('hist').innerHTML=a.map(e=>`<div class="hi"><b>${esc(e.sym)} ${esc(e.dec)}</b> ${esc(e.ord)}${e.ord==='WEEKLY OUTLOOK'?'':' @ '+esc(e.entry)}<br><small>${new Date(e.id).toISOString().slice(0,16).replace('T',' ')}Z${e.ord==='WEEKLY OUTLOOK'?'':' | SL '+esc(e.sl)+' | TP1 '+esc(e.tp1)}${e.prob!=null?' | '+e.prob+'%':''} | <b>${e.st.toUpperCase()}</b>${isLad(e)&&e.hit!=null?' | '+(e.hit?'TP'+e.hit+' of '+e.tps.length+' hit':'stopped')+' | '+fR(rOf(e)):''}${tagOf(e)}${e.auto==='candles'?' | <i>auto: '+esc(e.autoNote||'from candles')+'</i>':''}${e.st==='open'&&e.run?' | <i>'+esc(String(e.run.note||(e.run.filled?'Filled, still running.':'Not filled yet.')))+'</i>':''}</small><div class="row" style="margin-top:6px;flex-wrap:wrap"><button class="sec" onclick="viewH(${e.id})">View</button>${hitBtns(e)}<button class="sec" onclick="setSt(${e.id},'skip')">Skipped</button>${e.ord!=='WEEKLY OUTLOOK'&&e.st!=='open'?`<button class="sec" onclick="copyResult(this,${e.id})">Post result</button>`:''}<button class="sec" onclick="delH(${e.id})">Delete</button></div></div>`).join('')||'<small>Nothing saved yet. Every analysis is saved here automatically.</small>';
 $('calib').innerHTML=calibHTML(a);}
 $('resolveNow').onclick=()=>autoResolve(true);setTimeout(()=>autoResolve(false),4000);
 $('recapW').onclick=function(){copyRecap(this,7);};$('recapM').onclick=function(){copyRecap(this,30);};
@@ -1325,6 +1342,52 @@ function resolveOutcome(e,bars,now){
   return {pending:true,filled,hit:k,fillT,note:filled?(k?`Filled; TP${k} reached so far, still running.`:'Filled and still running.'):'Not filled yet.'};
 }
 // ==== RESOLVE PURE END
+
+
+// ==== EXPO PURE START
+// Currency legs of a symbol: XAU/USD -> [XAU, USD]; BTC/USDT -> [BTC, USD]. Returns null if it can't be split.
+function legsOf(sym){const k=String(sym||'').toUpperCase().replace(/[^A-Z]/g,'').replace(/USDT$|USDC$/,'USD');if(k.length<6)return null;return [k.slice(0,k.length-3),k.slice(-3)];}
+const _expT=v=>{const m=String(v||'').match(/(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})/);return m?Date.parse(m[1]+'T'+m[2].padStart(2,'0')+':'+m[3]+':00Z'):null;};
+// Plans in the journal that are still live: filled and running, or pending and not yet expired.
+function livePlans(entries,now){
+  return (entries||[]).filter(e=>e.st==='open'&&e.ord!=='WEEKLY OUTLOOK'&&now-e.id<30*864e5&&/BUY|SELL/i.test(e.dec||'')&&!/NO\s*TRADE/i.test(e.dec||''))
+    .map(e=>{const filled=!!(e.run&&e.run.filled)||/MARKET/i.test(e.ord||'');const x=_expT(e.valid);return {e,filled,live:filled||x==null||x>now};})
+    .filter(x=>x.live);
+}
+// Net exposure per currency in units of one trade's risk (BUY EUR/USD = +1 EUR, -1 USD).
+function exposure(plans,extra){
+  const net={},add=(sym,side,w)=>{const L=legsOf(sym);if(!L)return;net[L[0]]=(net[L[0]]||0)+side*w;net[L[1]]=(net[L[1]]||0)-side*w;};
+  for(const p of plans) add(p.e.sym,/SELL/i.test(p.e.dec)?-1:1,1);
+  if(extra) add(extra.sym,extra.side,1);
+  return net;
+}
+function expoText(entries,now,sym){
+  const pl=livePlans(entries,now);if(!pl.length)return '';
+  const f=pl.filter(x=>x.filled),pd=pl.filter(x=>!x.filled);
+  const ln=x=>`${String(x.e.sym).toUpperCase()} ${/SELL/i.test(x.e.dec)?'SELL':'BUY'} ${String(x.e.entry||'').split('|')[0].trim()}${x.filled?' (filled)':' (pending order)'}`;
+  const net=exposure(pl),nz=Object.entries(net).filter(([,v])=>v!==0).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]));
+  return `OPEN POSITIONS AND ORDERS from this trader's journal (${f.length} filled, ${pd.length} pending): ${pl.map(ln).join('; ')}.`+
+    (nz.length?` Net currency exposure if all fill, in units of one trade's risk: ${nz.map(([c,v])=>`${c} ${v>0?'+':''}${v} (${v>0?'long':'short'})`).join(', ')}.`:'')+
+    ` Check how a new ${String(sym||'').toUpperCase()} plan adds to this.`;
+}
+// ==== EXPO PURE END
+
+// ==== CAL PURE START
+const CAL_CCY={XAU:['USD'],XAG:['USD'],BTC:['USD'],ETH:['USD']};
+function calCcys(sym){const L=legsOf(sym);if(!L)return ['USD'];const out=new Set();for(const c of L){(CAL_CCY[c]||[c]).forEach(x=>out.add(x));}return [...out];}
+// events: ForexFactory-style [{title,country,date (ISO with offset),impact,forecast,previous}]
+function calendarFor(events,sym,now){
+  const cc=calCcys(sym),ok=(events||[]).map(x=>({...x,t:Date.parse(x.date)})).filter(x=>!isNaN(x.t)&&cc.includes(String(x.country).toUpperCase())&&/high|medium/i.test(x.impact||'')&&x.t>now-12*36e5&&x.t<now+7*864e5).sort((a,b)=>a.t-b.t);
+  return ok;
+}
+function calText(evs,now){
+  if(!evs.length) return '';
+  const h=x=>{const d=(x.t-now)/36e5;return d<0?`${(-d).toFixed(1)}h ago`:`in ${d<48?d.toFixed(1)+'h':(d/24).toFixed(1)+' days'}`;};
+  return 'LIVE ECONOMIC CALENDAR (ForexFactory weekly feed, times in UTC; actual results are not in this feed, so read them from screenshots or headlines): '+evs.slice(0,18).map(x=>`${new Date(x.t).toISOString().slice(0,16).replace('T',' ')} ${String(x.country).toUpperCase()} ${x.title} [${x.impact}] ${h(x)}${x.forecast?`, forecast ${x.forecast}`:''}${x.previous?`, previous ${x.previous}`:''}`).join('; ');
+}
+// High-impact events between now and an order's expiry.
+function calClash(evs,now,until){return (evs||[]).filter(x=>/high/i.test(x.impact||'')&&x.t>=now&&x.t<=(until||now+24*36e5));}
+// ==== CAL PURE END
 
 // ==== ODDS PURE START
 const HC={};
