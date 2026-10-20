@@ -100,6 +100,8 @@
     </div>
     <label>Current price (optional, used only if live data is off)</label>
     <input id="manualPx" inputmode="decimal" placeholder="e.g. 4117.50">
+    <label>Your broker's typical spread (optional, in price, e.g. 0.30 for gold, 0.00012 for EUR/USD)</label>
+    <input id="spread" inputmode="decimal" placeholder="leave empty to ignore costs">
     <label>Charts for this pair (any order, up to 10)</label>
     <div class="drop" id="drop">Tap to add screenshots<br><small>Select several at once: press and hold one image, then tap the others</small></div>
     <input id="file" type="file" accept="image/*" multiple hidden>
@@ -164,6 +166,7 @@
     <div id="stats" class="hint"></div>
     <div class="row" style="margin:8px 0;flex-wrap:wrap"><button class="sec" id="recapW">Copy 7-day recap</button><button class="sec" id="recapM">Copy 30-day recap</button><button class="sec" id="expCsv">Export CSV</button><button class="sec" id="expJson">Backup (JSON)</button><button class="sec" id="impJson">Restore backup</button></div>
     <input id="impFile" type="file" accept=".json,application/json" hidden>
+    <div class="row" style="margin:4px 0 8px;align-items:center;gap:8px"><button class="sec" id="resolveNow">Check results now</button><span id="autoStat" class="hint">Open plans are checked against hourly candles when you open this page (Twelve Data key, or crypto without one).</span></div>
     <div id="hist"></div>
   </div>
   </section>
@@ -235,7 +238,7 @@ RULES
 - USER TRACK RECORD: if a track record block is given, use it only as context. With 15 or more closed trades on that instrument you may move the probability by up to 5 points toward the real hit rate and say so in one line; with fewer, say the sample is too small to adjust. Never let it override the chart or the news.
 - WEEKEND AND TIME RULE: the data states the weekday and any weekend/Friday warning. Forex and gold close about 21:00 UTC Friday and reopen about 22:00 UTC Sunday. On Friday after 12:00 UTC, intraday plans must expire before 20:00 UTC Friday, swing plans must be flagged as carrying weekend gap risk (lower the probability by 5 to 10 points or advise waiting for the Sunday/Monday open), and no new scalps in the last hour before the close. When the market is closed, say so, give plans for the reopen only, and make validity start at the reopen. Avoid the 21:00-23:00 UTC rollover spread widening.
 - VALIDITY: every pending order and the final plan must have a "Valid until" in UTC, worked out from the current UTC time given in the data. Scalp: 1 to 3 hours (max 4). Intraday: until the end of the session that suits the setup, within the same trading day (max about 12 hours). Swing: 2 to 5 days. End the validity BEFORE a high-impact news event or session close that would change the picture. Setups go stale: if price has not reached the entry by then, the order is cancelled and the analysis must be re-run. Also give a Time stop for filled trades.
-- PROBABILITY: always show it as a percentage, never as Low/Med/High. It is the estimated chance that TP1 is hit before the stop loss. Method: start at 50%. Add or subtract for higher-timeframe agreement (up to +/-10), quality of the entry level (+/-5), agreement of RSI/MACD/EMAs/Bollinger (up to +/-10), news alignment (+/-5), a high-impact event within 2 hours (-10), counter-trend (-10 to -15), and a far TP1 relative to ATR (-5). Clamp between 25% and 75% and round to the nearest 5%. Never give 80%+ or claim certainty. After the Final trade plan add one short line: "Probabilities are estimates from confluence, not guarantees." If the expected value is zero or negative, mark that order SKIP, or the final decision NO TRADE.
+- PROBABILITY: always show it as a percentage, never as Low/Med/High. It is the estimated chance that TP1 is hit before the stop loss. Method: start from the no-edge baseline for that order's TP1 R:R, which is 100 / (1 + R:R): 1:1 is 50%, 1:1.5 is 40%, 1:2 is 33%, 1:3 is 25%. That is what price does with no edge at all (TP1 further away than the stop is less likely to be hit first), so every point above the baseline is edge you are claiming and must come from the factors below. Then add or subtract for higher-timeframe agreement (up to +/-10), quality of the entry level (+/-5), agreement of RSI/MACD/EMAs/Bollinger (up to +/-10), news alignment (+/-5), a high-impact event within 2 hours (-10), counter-trend (-10 to -15), and a far TP1 relative to ATR (-5). Clamp between 15% and 75% and round to the nearest 5%. A probability more than 20 points above its baseline needs strong, named reasons. Never give 80%+ or claim certainty. After the Final trade plan add one short line: "Probabilities are estimates from confluence, not guarantees." If the expected value is zero or negative, mark that order SKIP, or the final decision NO TRADE.
 - Suggest risking 0.5-1% per trade and position size from stop distance. Never suggest all-in or martingale.
 - Be concise, plain language, honest about uncertainty. Write each order on ONE line, keep Market snapshot and News short (max 8 lines each), and always finish every section through the Final trade plan and the risk reminder. The Final trade plan must reuse prices from the earlier sections, not invent new unrelated levels, and must be consistent with them.
 - You are not a financial advisor. End with one short risk reminder.`;
@@ -267,7 +270,7 @@ $('clearKeys').onclick = ()=>{ ['kAnthropic','kTwelve','kFinnhub','kFred'].forEa
 if(store.get('ca_kAnthropic')) $('saveStatus').textContent='Keys are saved on this device ✓';
 // ask the browser not to evict saved keys
 if(navigator.storage&&navigator.storage.persist){ navigator.storage.persist().catch(()=>{}); }
-['symbol','market'].forEach(id=>$(id).onchange=()=>store.set('ca_'+id,$(id).value));
+['symbol','market','spread'].forEach(id=>{const v=store.get('ca_'+id);if(id==='spread'&&v)$(id).value=v;$(id).onchange=()=>store.set('ca_'+id,$(id).value.trim());});
 
 // ---- images
 const lists = { charts: [], news: [] };
@@ -330,54 +333,108 @@ function renderThumbs(name){
 async function getJSON(url){ const r=await fetch(url); if(!r.ok) throw new Error(r.status); return r.json(); }
 
 // ---- indicator maths (computed locally from candles; 1 API call per timeframe)
-const f2=x=>x==null||isNaN(x)?'n/a':Number(x).toFixed(Math.abs(x)<10?4:2);
+// decimals by magnitude so FX keeps 5 decimals, JPY pairs 3, gold/indices/BTC 2, small coins 6-8
+const pxDec=x=>{const a=Math.abs(+x);return a>=1000?2:a>=20?3:a>=0.1?5:a>=0.001?6:8;};
+const f2=x=>x==null||isNaN(x)||x===''?'n/a':Number(x).toFixed(pxDec(x));
 function emaSeries(a,n){ const k=2/(n+1); let e=a.slice(0,n).reduce((x,y)=>x+y,0)/n; const out=Array(n-1).fill(null); out.push(e); for(let i=n;i<a.length;i++){ e=a[i]*k+e*(1-k); out.push(e);} return out; }
 function rsiCalc(c,n=14){ if(c.length<n+1) return null; let g=0,l=0; for(let i=1;i<=n;i++){const d=c[i]-c[i-1]; d>=0?g+=d:l-=d;} g/=n; l/=n; for(let i=n+1;i<c.length;i++){const d=c[i]-c[i-1]; g=(g*(n-1)+Math.max(d,0))/n; l=(l*(n-1)+Math.max(-d,0))/n;} return l===0?100:100-100/(1+g/l); }
 function atrCalc(h,l,c,n=14){ if(c.length<n+1) return null; const tr=[]; for(let i=1;i<c.length;i++) tr.push(Math.max(h[i]-l[i],Math.abs(h[i]-c[i-1]),Math.abs(l[i]-c[i-1]))); let a=tr.slice(0,n).reduce((x,y)=>x+y,0)/n; for(let i=n;i<tr.length;i++) a=(a*(n-1)+tr[i])/n; return a; }
 function macdCalc(c){ if(c.length<35) return null; const e12=emaSeries(c,12), e26=emaSeries(c,26); const m=[]; for(let i=0;i<c.length;i++) if(e26[i]!=null) m.push(e12[i]-e26[i]); const sig=emaSeries(m,9); const mi=m.length-1, si=sig.length-1; const hist=m[mi]-sig[si], prev=m[mi-1]-sig[si-1]; return {m:m[mi],s:sig[si],h:hist,cross:(hist>0&&prev<=0)?'bullish cross just now':(hist<0&&prev>=0)?'bearish cross just now':hist>0?'above signal':'below signal'}; }
 function bbCalc(c,n=20,k=2){ if(c.length<n) return null; const w=c.slice(-n), mid=w.reduce((x,y)=>x+y,0)/n; const sd=Math.sqrt(w.reduce((x,y)=>x+(y-mid)**2,0)/n); const up=mid+k*sd, lo=mid-k*sd; return {up,mid,lo,pctB:(c[c.length-1]-lo)/(up-lo),width:(up-lo)/mid*100}; }
 function stochCalc(h,l,c,n=14){ if(c.length<n+2) return null; const kv=[]; for(let i=n-1;i<c.length;i++){ const hh=Math.max(...h.slice(i-n+1,i+1)), ll=Math.min(...l.slice(i-n+1,i+1)); kv.push(hh===ll?50:(c[i]-ll)/(hh-ll)*100);} const sm=kv.length>=3?kv.slice(-3).reduce((x,y)=>x+y,0)/3:kv[kv.length-1]; return {k:sm}; }
-function indicators(label,vals){
-  const v=[...vals].reverse(); // oldest -> newest
+// ==== IND PURE START
+// Start time of a candle in ms (Twelve Data "YYYY-MM-DD HH:MM:SS" in UTC, or an ISO string from Binance).
+function barT(x){const d=String(x&&x.datetime||'');if(!d)return null;const t=Date.parse(d.length<=10?d+'T00:00:00Z':d.replace(' ','T')+(/[zZ+]/.test(d.slice(10))?'':'Z'));return isNaN(t)?null:t;}
+// Drop the newest candle if it is still forming, so signals use closed candles only.
+function closedOnly(vals,ivMin,now){if(!ivMin||!vals.length)return {vals,dropped:false};const t=barT(vals[0]);if(t!=null&&t+ivMin*60000>now)return {vals:vals.slice(1),dropped:true};return {vals,dropped:false};}
+function swingsOf(h,l,span){const hh=[],ll=[];for(let i=Math.max(3,h.length-(span||200));i<h.length-3;i++){if(h[i]===Math.max(...h.slice(i-3,i+4)))hh.push(h[i]);if(l[i]===Math.min(...l.slice(i-3,i+4)))ll.push(l[i]);}return {hh,ll};}
+// opt: {iv: candle minutes (drops a forming candle), px: live price, acc: array that collects swing levels for the zone map, now}
+function indicators(label,vals,opt){
+  opt=opt||{};
+  const co=closedOnly(vals,opt.iv,opt.now||Date.now());
+  const v=[...co.vals].reverse(); // oldest -> newest
   const o=v.map(x=>+x.open),h=v.map(x=>+x.high),l=v.map(x=>+x.low),c=v.map(x=>+x.close);
-  const px=c[c.length-1], last=a=>a[a.length-1];
+  const last=a=>a[a.length-1], px=opt.px!=null&&isFinite(opt.px)?+opt.px:last(c);
   const e20=emaSeries(c,20), e50=c.length>=50?emaSeries(c,50):[], e200=c.length>=200?emaSeries(c,200):[];
   const m=macdCalc(c), bb=bbCalc(c), st=stochCalc(h,l,c), r=rsiCalc(c), at=atrCalc(h,l,c);
   const hi=Math.max(...h.slice(-50)), lo=Math.min(...l.slice(-50));
   const rel=(e)=>e==null?'':(px>e?' (price above)':' (price below)');
-  let t=`${label} (${c.length} candles): RSI14 ${f2(r)}${r>70?' overbought':r<30?' oversold':''}; EMA20 ${f2(last(e20))}${rel(last(e20))}, EMA50 ${f2(last(e50))}${rel(last(e50))}, EMA200 ${f2(last(e200))}${rel(last(e200))}; ATR14 ${f2(at)}`;
+  let t=`${label} (${c.length} ${co.dropped?'closed ':''}candles): RSI14 ${r==null?'n/a':r.toFixed(1)}${r>70?' overbought':r<30?' oversold':''}; EMA20 ${f2(last(e20))}${rel(last(e20))}, EMA50 ${f2(last(e50))}${rel(last(e50))}, EMA200 ${f2(last(e200))}${rel(last(e200))}; ATR14 ${f2(at)}`;
   if(m) t+=`; MACD ${f2(m.m)} / signal ${f2(m.s)} / hist ${f2(m.h)} (${m.cross})`;
   if(bb) t+=`; Bollinger(20,2) upper ${f2(bb.up)} mid ${f2(bb.mid)} lower ${f2(bb.lo)}, %B ${bb.pctB.toFixed(2)}, bandwidth ${bb.width.toFixed(2)}%`;
   if(st) t+=`; Stoch(14,3) ${st.k.toFixed(0)}${st.k>80?' overbought':st.k<20?' oversold':''}`;
   t+=`; last-50-candle high ${f2(hi)} / low ${f2(lo)}`;
   const vo=v.map(x=>+x.volume),lv=vo[vo.length-1];
-  if(vo.length>21&&lv>0){const av=vo.slice(-21,-1).reduce((x,y)=>x+y,0)/20;t+=`; last-candle volume ${(lv/av).toFixed(1)}x the 20-candle average`;}
-  const hh=[],ll=[];for(let i=Math.max(3,h.length-200);i<h.length-3;i++){if(h[i]===Math.max(...h.slice(i-3,i+4)))hh.push(h[i]);if(l[i]===Math.min(...l.slice(i-3,i+4)))ll.push(l[i]);}
+  if(vo.length>21&&lv>0){const av=vo.slice(-21,-1).reduce((x,y)=>x+y,0)/20;if(av>0)t+=`; last-candle volume ${(lv/av).toFixed(1)}x the 20-candle average`;}
+  const {hh,ll}=swingsOf(h,l,200);
   const up=[...new Set(hh.filter(x=>x>px))].sort((a,b)=>a-b).slice(0,3),dn=[...new Set(ll.filter(x=>x<px))].sort((a,b)=>b-a).slice(0,3);
   t+=`; exact swing resistance above: ${up.map(f2).join(', ')||'none'}; exact swing support below: ${dn.map(f2).join(', ')||'none'}`;
+  if(opt.acc) opt.acc.push({tf:label,levels:[...hh,...ll],h:h.slice(-300),l:l.slice(-300),atr:at});
+  return t;
+}
+// Weekly candles built from daily candles (newest first in, newest first out). Weeks start on Monday (UTC date).
+function weeklyFromDaily(daily){
+  const wk={};for(const x of daily){const t=barT(x);if(t==null)continue;const d=new Date(t),dow=(d.getUTCDay()+6)%7,k=new Date(t-dow*864e5).toISOString().slice(0,10);
+    const b=wk[k]||(wk[k]={datetime:k,open:null,high:-Infinity,low:Infinity,close:null,_o:Infinity,_c:-Infinity});
+    if(t<b._o){b._o=t;b.open=+x.open;} if(t>b._c){b._c=t;b.close=+x.close;} b.high=Math.max(b.high,+x.high); b.low=Math.min(b.low,+x.low);}
+  return Object.values(wk).sort((a,b)=>a.datetime<b.datetime?1:-1).map(b=>({datetime:b.datetime,open:b.open,high:b.high,low:b.low,close:b.close}));
+}
+// Merge swing levels from every timeframe into zones, and count how often price reacted there.
+// Weight: higher timeframes count more (1W 4, 1D 3, 4H 2, 1H/15M 1).
+function zoneMap(acc,px,tol){
+  if(!acc||!acc.length||!(tol>0)||!isFinite(px)) return '';
+  const W={'1W':4,'1D':3,'4H':2,'1H':1,'15M':1},pts=[];
+  for(const a of acc) for(const lv of a.levels) if(isFinite(lv)&&Math.abs(lv-px)<tol*40) pts.push({lv,tf:a.tf});
+  pts.sort((a,b)=>a.lv-b.lv);
+  const zs=[];for(const p of pts){const z=zs[zs.length-1];if(z&&p.lv-z.hi<=tol&&p.lv-z.lo<=2*tol){z.hi=p.lv;z.pts.push(p);}else zs.push({lo:p.lv,hi:p.lv,pts:[p]});}
+  const h1=acc.find(a=>a.tf==='1H')||acc[0];
+  for(const z of zs){const tfs=[...new Set(z.pts.map(p=>p.tf))];z.tfs=tfs;z.score=tfs.reduce((s,t)=>s+(W[t]||1),0);
+    let touch=0;for(let i=0;i<h1.h.length;i++){if(h1.h[i]>=z.lo-tol/2&&h1.l[i]<=z.hi+tol/2)touch++;}z.touch=touch;}
+  const fmt=z=>`${f2(z.lo)}${z.hi>z.lo?'-'+f2(z.hi):''} (${z.tfs.join('+')}, strength ${z.score}, ${z.touch} 1H candles traded there)`;
+  const strong=zs.filter(z=>z.score>=3||z.tfs.length>=2);
+  const res=strong.filter(z=>z.lo>px).sort((a,b)=>a.lo-b.lo).slice(0,4), sup=strong.filter(z=>z.hi<px).sort((a,b)=>b.hi-a.hi).slice(0,4);
+  const at=strong.filter(z=>z.lo<=px&&z.hi>=px);
+  if(!res.length&&!sup.length&&!at.length) return '';
+  return `KEY ZONES (swing levels merged across timeframes within ${f2(tol)}; strength = timeframes that agree, higher timeframes weigh more): `+(at.length?`price is inside ${at.map(fmt).join(', ')}; `:'')+`resistance above: ${res.map(fmt).join('; ')||'none'}; support below: ${sup.map(fmt).join('; ')||'none'}`;
+}
+// ==== IND PURE END
+// Latest live numbers per symbol, used by the plan check and the result tracker.
+const LIVE={};
+// Builds the indicator block shared by Twelve Data and Binance. src: {h1,h4,d1,m15} newest-first candle arrays.
+function liveBlock(sym,px,src){
+  const acc=[],now=Date.now(),IV={'1H':60,'4H':240,'15M':15};let t='';
+  for(const [k,label] of [['h1','1H'],['h4','4H'],['d1','1D'],['m15','15M']]){
+    const v=src[k];
+    if(v&&v.length>30) t+='\n'+indicators(label,v,{iv:IV[label],px,acc,now});
+    else t+=`\n${label}: indicators unavailable (${(src.err&&src.err[k])||'no data'})`;
+  }
+  let atrD=null;
+  if(src.d1&&src.d1.length>60){const wk=weeklyFromDaily(src.d1);if(wk.length>30)t+='\n'+indicators('1W',wk,{px,acc,now})+' (built from daily candles)';
+    const d=[...src.d1].reverse();atrD=atrCalc(d.map(x=>+x.high),d.map(x=>+x.low),d.map(x=>+x.close));}
+  const h1a=acc.find(a=>a.tf==='1H');
+  const tol=(h1a&&h1a.atr?h1a.atr*0.5:atrD?atrD*0.12:null);
+  const zm=zoneMap(acc,px,tol); if(zm) t+='\n'+zm;
+  LIVE[String(sym).toUpperCase()]={px,atr1h:h1a?h1a.atr:null,atrD,at:now};
   return t;
 }
 async function twelve(sym,key){
   const q=encodeURIComponent(sym), base='https://api.twelvedata.com';
-  const ts=(iv,u)=>`${base}/time_series?symbol=${q}&interval=${iv}&outputsize=300${u?'&timezone=UTC':''}&apikey=${key}`;
-  const calls={quote:`${base}/quote?symbol=${q}&apikey=${key}`,h1:ts('1h',1),h4:ts('4h'),d1:ts('1day'),m15:ts('15min',1)};
+  const ts=iv=>`${base}/time_series?symbol=${q}&interval=${iv}&outputsize=1000&timezone=UTC&apikey=${key}`;
+  const calls={quote:`${base}/quote?symbol=${q}&apikey=${key}`,h1:ts('1h'),h4:ts('4h'),d1:ts('1day'),m15:ts('15min')};
   const out={};
   await Promise.all(Object.entries(calls).map(async([k,u])=>{ try{ out[k]=await getJSON(u); }catch(e){ out[k]=null; } }));
   const bad=o=>!o||o.status==='error';
-  if(!bad(out.h1)&&out.h1.values) HC[sym.toUpperCase()]=out.h1.values;
+  if(!bad(out.h1)&&out.h1.values) HC[sym.toUpperCase()]=out.h1.values.slice(0,300);
   if(bad(out.quote)) throw new Error(out.quote?.message||'Twelve Data failed');
-  const qt=out.quote;
-  let t=`Symbol ${qt.symbol}: price ${Number(qt.close).toFixed(2)}, day change ${Number(qt.percent_change).toFixed(2)}%, day range ${Number(qt.low).toFixed(2)}-${Number(qt.high).toFixed(2)}, previous close ${Number(qt.previous_close).toFixed(2)}`;
-  for(const [k,label] of [['h1','1H'],['h4','4H'],['d1','1D'],['m15','15M']]){
-    if(!bad(out[k])&&out[k].values?.length>30) t+='\n'+indicators(label,out[k].values);
-    else t+=`\n${label}: indicators unavailable (${out[k]?.message||'no data'})`;
-  }
+  const qt=out.quote, px=+qt.close;
+  let t=`Symbol ${qt.symbol}: price ${f2(qt.close)}, day change ${Number(qt.percent_change).toFixed(2)}%, day range ${f2(qt.low)}-${f2(qt.high)}, previous close ${f2(qt.previous_close)}`;
+  const src={err:{}};for(const k of ['h1','h4','d1','m15']){if(!bad(out[k])&&out[k].values)src[k]=out[k].values;else src.err[k]=out[k]?.message||'no data';}
+  t+=liveBlock(sym,px,src);
   if(!bad(out.d1)&&out.d1.values?.length>1){ const y=out.d1.values[1], H=+y.high,L=+y.low,C=+y.close, P=(H+L+C)/3; t+=`\nYesterday: high ${f2(H)}, low ${f2(L)}, close ${f2(C)}. Daily pivots: P ${f2(P)}, R1 ${f2(2*P-L)}, R2 ${f2(P+H-L)}, S1 ${f2(2*P-H)}, S2 ${f2(P-(H-L))}`; }
   const cm=await corrMarkets(base,key); t+=cm.v;
   try{ if(!bad(out.d1)&&out.d1.values&&out.d1.values.length>40) t+='\n'+volContext(out.d1.values,(!bad(out.h1)&&out.h1.values)||null,[{name:'DXY',vals:cm.dx},{name:'US10Y',vals:cm.ty}]); }catch(e){}
   return t;
 }
-
 async function positioning(sym,market){
   const u=sym.toUpperCase(),out=[];
   if(market==='crypto'){const pair=u.replace('/','').replace(/USD$/,'USDT');
@@ -392,13 +449,13 @@ async function positioning(sym,market){
 async function binance(sym){
   const pair=sym.toUpperCase().replace('/','').replace(/USD$/,'USDT');
   const base='https://data-api.binance.vision/api/v3/klines';
-  const get=async iv=>{ const r=await getJSON(`${base}?symbol=${pair}&interval=${iv}&limit=300`); return r.map(k=>({open:k[1],high:k[2],low:k[3],close:k[4],volume:k[5]})).reverse(); };
+  const get=async iv=>{ const r=await getJSON(`${base}?symbol=${pair}&interval=${iv}&limit=1000`); return r.map(k=>({datetime:new Date(k[0]).toISOString(),open:k[1],high:k[2],low:k[3],close:k[4],volume:k[5]})).reverse(); };
   const [h1,h4,d1,m15]=await Promise.all([get('1h'),get('4h'),get('1d'),get('15m')]);
-  HC[sym.toUpperCase()]=h1;
+  HC[sym.toUpperCase()]=h1.slice(0,300);
   const px=+h1[0].close, pc=+d1[1].close;
-  let t=`Symbol ${pair} (Binance): price ${px.toFixed(2)}, change vs yesterday's close ${((px-pc)/pc*100).toFixed(2)}%, today's range ${(+d1[0].low).toFixed(2)}-${(+d1[0].high).toFixed(2)}`;
-  t+='\n'+indicators('1H',h1)+'\n'+indicators('4H',h4)+'\n'+indicators('1D',d1)+'\n'+indicators('15M',m15);
-  try{ t+='\n'+volContext(d1,h1,null); }catch(e){}
+  let t=`Symbol ${pair} (Binance): price ${f2(px)}, change vs yesterday's close ${((px-pc)/pc*100).toFixed(2)}%, today's range ${f2(d1[0].low)}-${f2(d1[0].high)}`;
+  t+=liveBlock(sym,px,{h1,h4,d1,m15});
+  try{ t+='\n'+volContext(d1.map(x=>({...x,datetime:x.datetime.slice(0,10)})),h1.map(x=>({...x,datetime:x.datetime.replace('T',' ')})),null); }catch(e){}
   const y=d1[1],H=+y.high,L=+y.low,C=+y.close,P=(H+L+C)/3;
   t+=`\nYesterday: high ${f2(H)}, low ${f2(L)}, close ${f2(C)}. Daily pivots: P ${f2(P)}, R1 ${f2(2*P-L)}, R2 ${f2(P+H-L)}, S1 ${f2(2*P-H)}, S2 ${f2(P-(H-L))}`;
   return t;
@@ -465,6 +522,7 @@ function attachZone(name){const z=zones[name];
     d.innerHTML=`<summary style="cursor:pointer;font-weight:600">Pair ${n} (optional)</summary>
     <div class="row"><div><label>Symbol</label><input id="symbol${n}" placeholder="e.g. ${n==2?'EUR/USD':'BTC/USD'}"></div><div><label>Market</label><select id="market${n}"><option value="forex">Forex / Metals</option><option value="crypto">Crypto</option></select></div></div>
     <label>Current price (optional, used only if live data is off)</label><input id="manualPx${n}" inputmode="decimal">
+    <label>Typical spread (optional, in price)</label><input id="spread${n}" inputmode="decimal" placeholder="leave empty to ignore costs">
     <label>Charts for this pair (any order, up to 10)</label>
     <div class="drop" id="drop${n}">Tap to add screenshots<br><small>Select several at once: press and hold one image, then tap the others</small></div>
     <input id="file${n}" type="file" accept="image/*" multiple hidden><input id="fileAlt${n}" type="file" accept=".jpg,.jpeg,.png,.webp,.gif" multiple hidden>
@@ -474,6 +532,7 @@ function attachZone(name){const z=zones[name];
     attachZone('charts'+n);
     const sv=store.get('ca_symbol'+n);if(sv){$('symbol'+n).value=sv;d.open=true;}
     const mv=store.get('ca_market'+n);if(mv)$('market'+n).value=mv;
+    $('spread'+n).value=store.get('ca_spread'+n);$('spread'+n).onchange=()=>store.set('ca_spread'+n,$('spread'+n).value.trim());
     $('symbol'+n).onchange=()=>store.set('ca_symbol'+n,$('symbol'+n).value.trim());
     $('market'+n).onchange=()=>store.set('ca_market'+n,$('market'+n).value);
     $('symbol'+n).addEventListener('input',()=>updSummary());
@@ -481,8 +540,8 @@ function attachZone(name){const z=zones[name];
   $('symbol').addEventListener('input',()=>updSummary());
 })();
 function activePairs(){
-  const P=[{n:1,sym:$('symbol').value.trim(),market:$('market').value,px:$('manualPx').value.trim(),key:'charts'}];
-  for(const n of [2,3])P.push({n,sym:$('symbol'+n).value.trim(),market:$('market'+n).value,px:$('manualPx'+n).value.trim(),key:'charts'+n});
+  const P=[{n:1,sym:$('symbol').value.trim(),market:$('market').value,px:$('manualPx').value.trim(),sp:$('spread').value.trim(),key:'charts'}];
+  for(const n of [2,3])P.push({n,sym:$('symbol'+n).value.trim(),market:$('market'+n).value,px:$('manualPx'+n).value.trim(),sp:$('spread'+n).value.trim(),key:'charts'+n});
   return P.filter(p=>p.sym&&lists[p.key].length);
 }
 function updSummary(){const P=activePairs(),im=P.reduce((t,p)=>t+lists[p.key].length,0),nn=lists.news.length;
@@ -537,13 +596,13 @@ $('go').onclick=async()=>{
       if(digest) content.push({type:'text',text:"ECONOMIC CALENDAR / NEWS (transcribed from the user's screenshots):\n"+digest});
       else if(lists.news.length) content.push({type:'text',text:'NEWS / ECONOMIC CALENDAR SCREENSHOTS (read every event and headline in them):'},...lists.news.map(imgBlock));
       const others=pairs.filter(x=>x!==p).map(x=>x.sym).join(', ');
-      content.push({type:'text',text:`Instrument: ${p.sym}.${lists[p.key].length>6?` There are ${lists[p.key].length} charts: read them all but keep every section brief so the answer finishes through the Final trade plan.`:''}${pairBrief(p.sym,true)}${others?` Also being analyzed in this session: ${others}. In the Risk line of the Final trade plan, mention correlated exposure with them if relevant (for example both are USD-driven, so they are not independent bets).`:''}\n\nLIVE DATA (${L.at}; active sessions: ${sessions()}):\n${L.live||('none. '+(p.px?('User-provided current price: '+p.px+'. Treat it as approximate.'):'No live price; read price from the charts and say levels are approximate.'))}\n\nRECENT HEADLINES:\n${L.news||'none'}\n\nUSER NOTE: ${$('note').value.trim()||'none'}`});
+      content.push({type:'text',text:`Instrument: ${p.sym}.${lists[p.key].length>6?` There are ${lists[p.key].length} charts: read them all but keep every section brief so the answer finishes through the Final trade plan.`:''}${pairBrief(p.sym,true)}${others?` Also being analyzed in this session: ${others}. In the Risk line of the Final trade plan, mention correlated exposure with them if relevant (for example both are USD-driven, so they are not independent bets).`:''}\n\nLIVE DATA (${L.at}; active sessions: ${sessions()}):\n${L.live||('none. '+(p.px?('User-provided current price: '+p.px+'. Treat it as approximate.'):'No live price; read price from the charts and say levels are approximate.'))}\n\n${p.sp&&+p.sp>0?`BROKER SPREAD: about ${p.sp} in price. Buys fill at the ask and sells at the bid: keep stops and targets clear of it, and check that every R:R still meets 1:1.5 after the spread.\n\n`:''}RECENT HEADLINES:\n${L.news||'none'}\n\nUSER NOTE: ${$('note').value.trim()||'none'}`});
       const card=cards[i];
       const co=await claudeStream(ak,SYSTEM,content,t=>{ q(i).innerHTML=md(t); card.dataset.raw=t; if(!scrolled&&t){scrolled=true;card.scrollIntoView({behavior:'smooth'});} btn.textContent=tag(i)+'analyzing… ('+t.length+' chars)'; },deep);
       const text=co.text,stop=co.stop;
       if(stop==='max_tokens') q(i).innerHTML+='<p class="err">The answer was cut off. Run this pair again or remove a few screenshots.</p>';
       if(!text.trim()) throw new Error(emptyMsg(co));
-      saveHistory(text,p.sym); addOdds(card,text,p.sym); if(N===1) fillCalc(text,p.sym); renderHist();
+      saveHistory(text,p.sym); addOdds(card,text,p.sym); addCheck(card,text,p); if(N===1) fillCalc(text,p.sym); renderHist();
       return text;
     }
   });
@@ -605,7 +664,7 @@ function parseFinal(raw){const i=raw.search(/^### *Final trade plan/mi);if(i<0)r
 const num=x=>{const m=String(x||'').replace(/,/g,'').match(/-?\d+(\.\d+)?/);return m?+m[0]:null;};
 // ---- history + journal
 const HS={get:()=>{try{return JSON.parse(localStorage.getItem('ca_hist')||'[]')}catch(e){return[]}},set:a=>{const now=Date.now(),pack=(n,k)=>JSON.stringify(a.slice(0,n).map((e,i)=>(i<k||(e.ord==='WEEKLY OUTLOOK'&&now-e.id<20*86400000))?e:{...e,text:''}));try{localStorage.setItem('ca_hist',pack(400,40));}catch(e){try{localStorage.setItem('ca_hist',pack(150,12));}catch(e2){}}}};
-const APP_VER='edgeview-v29';
+const APP_VER='edgeview-v30';
 function META(){return {model:$('model').value.trim()||'claude-sonnet-5-5',deep:$('depth').value,ver:APP_VER};}
 
 function addOdds(card,text,sym){
@@ -628,16 +687,78 @@ function saveHistory(text,sym){const g=parseFinal(text),a=HS.get(),tps=ladderFro
 
 async function copyResult(btn,id){const e=HS.get().find(x=>x.id==id);if(!e)return;const ok=await copyText(resultPost(e));const old=btn.textContent;btn.textContent=ok?'Copied ✓':'Copy failed';setTimeout(()=>btn.textContent=old,1800);}
 async function copyRecap(btn,days){const ok=await copyText(recapText(HS.get(),Date.now(),days));const old=btn.textContent;btn.textContent=ok?'Copied ✓ Paste it in Telegram':'Copy failed';setTimeout(()=>btn.textContent=old,2200);}
-function setHit(id,k){HS.set(HS.get().map(e=>e.id==id?{...e,hit:k,st:k>0?'win':'loss'}:e));renderHist();}
-function setSt(id,st){HS.set(HS.get().map(e=>e.id==id?{...e,st}:e));renderHist();}
+function setHit(id,k){HS.set(HS.get().map(e=>e.id==id?{...e,hit:k,st:k>0?'win':'loss',auto:'manual'}:e));renderHist();}
+function setSt(id,st){HS.set(HS.get().map(e=>e.id==id?{...e,st,auto:'manual'}:e));renderHist();}
 function delH(id){HS.set(HS.get().filter(e=>e.id!=id));renderHist();}
 function viewH(id){const e=HS.get().find(x=>x.id==id);if(!e)return;if(!e.text){alert('The full text of older entries is no longer stored. Only the numbers are kept.');return;}if(/### *Final weekly plan/i.test(e.text)){go('weekend');$('wResults').innerHTML='';const c=newWResult(e.sym);c.dataset.raw=e.text;c.querySelector('.rc-out').innerHTML=mdW(e.text);c.querySelector('.rc-live').hidden=true;c.scrollIntoView({behavior:'smooth'});return;}go('analyze');$('results').innerHTML='';const c=newResult(e.sym);c.dataset.raw=e.text;c.querySelector('.rc-out').innerHTML=md(e.text);c.querySelector('.rc-live').hidden=true;c.scrollIntoView({behavior:'smooth'});}
 const expOf=v=>{const m=String(v||'').match(/(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/);return m?Date.parse(m[1]+'T'+m[2]+':00Z'):null;};
 function tagOf(e){const x=expOf(e.valid);if(!x)return'';return e.st=='open'&&x<Date.now()?' | <b style="color:var(--red)">EXPIRED: cancel if unfilled</b>':' | valid till '+new Date(x).toLocaleString([],{weekday:'short',hour:'2-digit',minute:'2-digit'});}
+
+// ---- plan check card (v30)
+function addCheck(card,text,p){
+  try{
+    const old=card.querySelector('.rc-check'); if(old) old.remove();
+    const g=parseFinal(text), L=LIVE[String(p.sym).toUpperCase()]||{};
+    const px=L.px!=null?L.px:(p.px?_num(p.px):null);
+    const c=checkPlan(g,{px,atr1h:L.atr1h,spread:_num(p.sp),now:Date.now()}); if(!c) return;
+    const a=adjProb(c.prob,HS.get());
+    const d=document.createElement('div'); d.className='rc-check';
+    d.style.cssText='margin-top:12px;padding:10px 12px;border:1px solid var(--line,#2a303c);border-radius:10px;font-size:13px';
+    const ic={bad:'⛔',warn:'⚠️',ok:'✅'};
+    const nb=c.items.filter(x=>x.lvl==='bad').length,nw=c.items.filter(x=>x.lvl==='warn').length;
+    d.innerHTML=`<b>Plan check</b> <span class="hint">(numbers recomputed in code${px!=null?', live price '+f2(px):''})</span><div style="margin:4px 0 6px">${nb?`<b style="color:var(--red)">${nb} problem${nb>1?'s':''}: fix before placing this order.</b>`:nw?`${nw} thing${nw>1?'s':''} to look at.`:'No problems found.'}</div>`+
+      c.items.map(x=>`<div style="margin:3px 0">${ic[x.lvl]} ${esc(x.msg)}</div>`).join('')+
+      (a?`<div style="margin-top:6px">📏 Adjusted for your record (${a.n} closed trades): <b>${a.p}%</b> instead of ${c.prob}% (${a.off>=0?'+':''}${a.off.toFixed(0)} points).</div>`:'');
+    card.appendChild(d);
+  }catch(e){}
+}
+// ---- automatic results from candles (v30)
+let resolving=false;
+const isCrypto=sym=>/^(BTC|ETH|SOL|XRP|BNB|ADA|DOGE|AVAX|DOT|LINK|LTC|TRX|TON|MATIC|SHIB|PEPE|SUI|APT|ARB|OP|NEAR|ATOM)\b/i.test(String(sym).replace('/',' '));
+async function hourlyBars(sym,fromMs){
+  const tk=$('kTwelve').value.trim();
+  if(isCrypto(sym)&&!tk){
+    const pair=sym.toUpperCase().replace('/','').replace(/USD$/,'USDT');
+    const r=await getJSON(`https://data-api.binance.vision/api/v3/klines?symbol=${pair}&interval=1h&startTime=${fromMs}&limit=1000`);
+    return r.map(k=>({t:k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4]}));
+  }
+  if(!tk) return null;
+  const st=new Date(fromMs).toISOString().slice(0,19).replace('T',' ');
+  const j=await getJSON(`https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(sym)}&interval=1h&start_date=${encodeURIComponent(st)}&outputsize=5000&timezone=UTC&apikey=${tk}`);
+  if(!j||j.status==='error'||!j.values) throw new Error(j&&j.message||'no data');
+  return j.values.map(x=>({t:barT(x),o:+x.open,h:+x.high,l:+x.low,c:+x.close})).filter(b=>b.t!=null).reverse();
+}
+async function autoResolve(force){
+  if(resolving) return; const last=+store.get('ca_lastResolve')||0;
+  if(!force&&Date.now()-last<15*60000) return;
+  const now=Date.now(), open=HS.get().filter(e=>e.st==='open'&&e.ord!=='WEEKLY OUTLOOK'&&now-e.id>36e5&&now-e.id<45*864e5);
+  if(!open.length) return;
+  resolving=true; store.set('ca_lastResolve',String(now));
+  const el=$('autoStat'); if(el) el.textContent='Checking open plans against the candles…';
+  const bySym={};open.forEach(e=>{(bySym[e.sym]=bySym[e.sym]||[]).push(e);});
+  let done=0,fails=[];
+  for(const sym of Object.keys(bySym).slice(0,6)){
+    try{
+      const from=Math.min(...bySym[sym].map(e=>e.id))-36e5, bars=await hourlyBars(sym,from);
+      if(!bars){fails.push(sym+' (needs a Twelve Data key)');continue;}
+      const upd={};
+      for(const e of bySym[sym]){const r=resolveOutcome(e,bars,now);if(!r)continue;upd[e.id]=r;}
+      HS.set(HS.get().map(e=>{const r=upd[e.id];if(!r||e.st!=='open')return e;
+        if(r.pending) return {...e,run:{filled:r.filled,hit:r.hit,note:r.note,at:now}};
+        const st=r.st,o={...e,st,auto:'candles',autoNote:r.note,run:null};
+        if(isLad(e)) o.hit=st==='loss'?0:st==='win'?r.hit:null;
+        if(st!=='skip')done++; return o;}));
+    }catch(err){fails.push(sym+' ('+(err.message||err)+')');}
+    await sleep(1500);
+  }
+  resolving=false; renderHist();
+  if(el) el.textContent=`Last checked ${new Date().toISOString().slice(11,16)} UTC: ${done} plan${done===1?'':'s'} settled from the candles.`+(fails.length?` Could not check: ${fails.join(', ')}.`:'');
+}
 function renderHist(){const a=HS.get(),cl=a.filter(e=>e.st=='win'||e.st=='loss'),w=cl.filter(e=>e.st=='win').length,pr=cl.filter(e=>e.prob!=null);
-$('stats').textContent=cl.length?`Closed ${cl.length}: ${w} wins, ${cl.length-w} losses, win rate ${(w/cl.length*100).toFixed(0)}%`+(pr.length?` | Edgeview's stated average probability ${(pr.reduce((t,e)=>t+e.prob,0)/pr.length).toFixed(0)}%`:''):'No closed trades yet. Mark Win or Loss after each trade.';
-$('hist').innerHTML=a.map(e=>`<div class="hi"><b>${esc(e.sym)} ${esc(e.dec)}</b> ${esc(e.ord)}${e.ord==='WEEKLY OUTLOOK'?'':' @ '+esc(e.entry)}<br><small>${new Date(e.id).toISOString().slice(0,16).replace('T',' ')}Z${e.ord==='WEEKLY OUTLOOK'?'':' | SL '+esc(e.sl)+' | TP1 '+esc(e.tp1)}${e.prob!=null?' | '+e.prob+'%':''} | <b>${e.st.toUpperCase()}</b>${isLad(e)&&e.hit!=null?' | '+(e.hit?'TP'+e.hit+' of '+e.tps.length+' hit':'stopped')+' | '+fR(rOf(e)):''}${tagOf(e)}</small><div class="row" style="margin-top:6px;flex-wrap:wrap"><button class="sec" onclick="viewH(${e.id})">View</button>${hitBtns(e)}<button class="sec" onclick="setSt(${e.id},'skip')">Skipped</button>${e.ord!=='WEEKLY OUTLOOK'&&e.st!=='open'?`<button class="sec" onclick="copyResult(this,${e.id})">Post result</button>`:''}<button class="sec" onclick="delH(${e.id})">Delete</button></div></div>`).join('')||'<small>Nothing saved yet. Every analysis is saved here automatically.</small>';
+$('stats').textContent=cl.length?`Closed ${cl.length}: ${w} wins, ${cl.length-w} losses, win rate ${(w/cl.length*100).toFixed(0)}%`+(pr.length?` | Edgeview's stated average probability ${(pr.reduce((t,e)=>t+e.prob,0)/pr.length).toFixed(0)}%`:''):'No closed trades yet. Open plans are checked against the candles automatically; you can also mark Win or Loss yourself.';
+$('hist').innerHTML=a.map(e=>`<div class="hi"><b>${esc(e.sym)} ${esc(e.dec)}</b> ${esc(e.ord)}${e.ord==='WEEKLY OUTLOOK'?'':' @ '+esc(e.entry)}<br><small>${new Date(e.id).toISOString().slice(0,16).replace('T',' ')}Z${e.ord==='WEEKLY OUTLOOK'?'':' | SL '+esc(e.sl)+' | TP1 '+esc(e.tp1)}${e.prob!=null?' | '+e.prob+'%':''} | <b>${e.st.toUpperCase()}</b>${isLad(e)&&e.hit!=null?' | '+(e.hit?'TP'+e.hit+' of '+e.tps.length+' hit':'stopped')+' | '+fR(rOf(e)):''}${tagOf(e)}${e.auto==='candles'?' | <i>auto: '+esc(e.autoNote||'from candles')+'</i>':''}${e.st==='open'&&e.run?' | <i>'+esc(e.run.note)+'</i>':''}</small><div class="row" style="margin-top:6px;flex-wrap:wrap"><button class="sec" onclick="viewH(${e.id})">View</button>${hitBtns(e)}<button class="sec" onclick="setSt(${e.id},'skip')">Skipped</button>${e.ord!=='WEEKLY OUTLOOK'&&e.st!=='open'?`<button class="sec" onclick="copyResult(this,${e.id})">Post result</button>`:''}<button class="sec" onclick="delH(${e.id})">Delete</button></div></div>`).join('')||'<small>Nothing saved yet. Every analysis is saved here automatically.</small>';
 $('calib').innerHTML=calibHTML(a);}
+$('resolveNow').onclick=()=>autoResolve(true);setTimeout(()=>autoResolve(false),4000);
 $('recapW').onclick=function(){copyRecap(this,7);};$('recapM').onclick=function(){copyRecap(this,30);};
 renderHist();
 // ---- position size
@@ -648,7 +769,7 @@ if(!(bal&&r&&en&&sl&&v&&en!=sl)){$('cOut').textContent='Enter balance, risk %, e
 const risk=bal*r/100,d=Math.abs(en-sl);
 if(e2&&e2!==sl&&Math.sign(en-sl)===Math.sign(e2-sl)&&e2!==en){const sp=Math.min(100,Math.max(0,+$('cSp').value||50))/100,d2=Math.abs(e2-sl),l1=risk*sp/(d*v),l2=risk*(1-sp)/(d2*v),avg=(l1*en+l2*e2)/(l1+l2);
 $('cOut').textContent=`Total risk $${risk.toFixed(2)} if both fill and the stop is hit | Entry 1: ${l1.toFixed(2)} lots (risk $${(risk*sp).toFixed(2)}) | Entry 2: ${l2.toFixed(2)} lots (risk $${(risk*(1-sp)).toFixed(2)}) | average entry ${avg.toFixed(2)} | total ${(l1+l2).toFixed(2)} lots`;return;}
-if(e2)$('cOut').textContent='Entry 2 must be on the same side of the stop as Entry 1 and different from it.';else $('cOut').textContent=`Risk $${risk.toFixed(2)} | stop distance ${d.toFixed(2)} | position size ${(risk/(d*v)).toFixed(2)} lots`;}
+if(e2)$('cOut').textContent='Entry 2 must be on the same side of the stop as Entry 1 and different from it.';else $('cOut').textContent=`Risk $${risk.toFixed(2)} | stop distance ${f2(d)} | position size ${(risk/(d*v)).toFixed(2)} lots`;}
 ['cBal','cRisk','cEn','cSl','cV','cEn2','cSp'].forEach(i=>$(i).addEventListener('input',calc));
 function fillCalc(text,sym){const g=parseFinal(text);$('cV').value=VPP(sym||$('symbol').value);if(num(g.entry))$('cEn').value=num(g.entry);if(num(g['stop loss']))$('cSl').value=num(g['stop loss']);$('cEn2').value=num(g['entry 2'])||'';const sp=String(g['entry 2']||'').split('|')[1]||'',m=sp.match(/(\d+)\s*%/);$('cSp').value=m?m[1]:50;calc();}
 $('cV').value=VPP($('symbol').value);calc();
@@ -670,7 +791,7 @@ const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='ed
 // ---- hamburger menu / views
 const TITLES={analyze:'Analyze',size:'Position size',journal:'History & journal',settings:'API keys'};
 function closeMenu(){$('drawer').classList.remove('open');$('drawerBg').hidden=true;}
-function go(v){document.querySelectorAll('.view').forEach(x=>x.hidden=x.id!=='v-'+v);document.querySelectorAll('#drawer a').forEach(a=>a.classList.toggle('on',a.dataset.v===v));$('viewTitle').textContent='Edgeview · '+TITLES[v];closeMenu();window.scrollTo(0,0);}
+function go(v){document.querySelectorAll('.view').forEach(x=>x.hidden=x.id!=='v-'+v);document.querySelectorAll('#drawer a').forEach(a=>a.classList.toggle('on',a.dataset.v===v));$('viewTitle').textContent='Edgeview · '+TITLES[v];closeMenu();window.scrollTo(0,0);if(v==='journal')autoResolve(false);}
 $('menuBtn').onclick=()=>{$('drawer').classList.add('open');$('drawerBg').hidden=false;};
 $('drawerBg').onclick=closeMenu;
 document.querySelectorAll('#drawer a').forEach(a=>a.onclick=()=>go(a.dataset.v));
@@ -777,7 +898,7 @@ RULES
 - If an INSTRUMENT BACKGROUND block is given, use it as general knowledge about the drivers and sessions of the instrument and check it against the data; never present it as current news. For JPY pairs say whether intervention or BoJ risk is in view for the week.
 - For gold, write five take-profits on each limit line instead of two: entry | SL | TP1 | TP2 | TP3 | TP4 | TP5 | R:R of TP1 | Win prob %, at real levels in increasing distance, and add the share to close at each target in the Gap plan or Risk line. Other instruments keep TP1 and TP2.
 - Weekly orders need wider stops: base stops on the daily or weekly ATR and on structure, and suggest 0.25 to 0.5% risk per trade. Minimum R:R 1:1.5, otherwise mark that order SKIP.
-- Probabilities come from confluence: weekly and daily agreement, intermarket, positioning, calendar risk. Clamp order win probabilities between 25% and 75%, round to 5%, never claim certainty, and say they are estimates.
+- Probabilities come from confluence: weekly and daily agreement, intermarket, positioning, calendar risk. Start each order from its no-edge baseline, 100 / (1 + R:R of TP1) (1:1.5 is 40%, 1:2 is 33%, 1:3 is 25%), and add only what the confluence justifies. Clamp order win probabilities between 15% and 75%, round to 5%, never claim certainty, and say they are estimates.
 - The weekend can bring news (geopolitics, central bank comments). Say that the plan should be re-checked with the normal Analyze page before any order is placed.
 - Be concise and plain. Finish every section through the Final weekly plan, then one short risk reminder. You are not a financial advisor.`;
 
@@ -1104,6 +1225,106 @@ function pairBrief(sym,withTrack){
   return (t||tr)?'\n\n'+[t,tr].filter(Boolean).join('\n\n')+'\n\n':'';
 }
 // ==== PAIR PURE END
+
+
+// ==== CHECK PURE START
+// Recomputes the plan's numbers in code and flags mistakes. g = parsed Final trade plan, ctx = {px, atr1h, spread, now}.
+function _num(x){const m=String(x==null?'':x).replace(/,/g,'').match(/-?\d+(\.\d+)?/);return m?+m[0]:null;}
+function _rrStated(v){const m=String(v||'').match(/1\s*:\s*(\d+(?:\.\d+)?)/);return m?+m[1]:null;}
+function checkPlan(g,ctx){
+  ctx=ctx||{};const dec=String(g.decision||'').toUpperCase(),side=/NO\s*TRADE/.test(dec)?0:dec.includes('BUY')?1:dec.includes('SELL')?-1:0;
+  if(!side) return null;
+  const items=[],bad=m=>items.push({lvl:'bad',msg:m}),warn=m=>items.push({lvl:'warn',msg:m}),ok=m=>items.push({lvl:'ok',msg:m});
+  const ord=String(g.order||'').toUpperCase(),market=/MARKET/.test(ord),en=_num(g.entry),sl=_num(g['stop loss']),tp1=_num(g.tp1),tp2=_num(g.tp2);
+  const e2s=String(g['entry 2']||''),e2=/^\s*none/i.test(e2s)||!e2s?null:_num(e2s),px=ctx.px,atr=ctx.atr1h,sp=Math.max(0,+ctx.spread||0),now=ctx.now||Date.now();
+  if(en==null||sl==null||tp1==null){bad('Entry, stop loss or TP1 is missing, so the plan cannot be checked.');return {items};}
+  const T=x=>side*x;
+  if(!(T(sl)<T(en))) bad(`The stop loss is on the wrong side of the entry for a ${side>0?'BUY':'SELL'}.`);
+  if(!(T(tp1)>T(en))) bad(`TP1 is on the wrong side of the entry for a ${side>0?'BUY':'SELL'}.`);
+  if(tp2!=null&&!(T(tp2)>T(tp1))) warn('TP2 is not beyond TP1.');
+  if(px!=null&&isFinite(px)){
+    if(/LIMIT/.test(ord)&&T(en)>T(px)) bad(`${side>0?'Buy':'Sell'} limit at ${f2(en)} is on the wrong side of the live price ${f2(px)}: it would fill straight away. Re-check the price or treat it as a market order.`);
+    if(market&&atr&&Math.abs(en-px)>0.5*atr) warn(`Market entry ${f2(en)} is ${(Math.abs(en-px)/atr).toFixed(1)} x 1H ATR from the live price ${f2(px)}: the real fill will differ.`);
+  }
+  const risk=Math.abs(en-sl),rr=risk>0?Math.abs(tp1-en)/risk:null,stated=_rrStated(g.tp1);
+  if(rr!=null&&stated!=null&&Math.abs(rr-stated)>0.15) warn(`TP1 R:R is 1:${rr.toFixed(2)} from the prices, not the 1:${stated} written.`);
+  if(atr&&risk<0.3*atr) warn(`The stop is only ${(risk/atr).toFixed(2)} x the 1H ATR from entry: normal noise can hit it.`);
+  // ladder (gold): blended R:R and order of targets
+  const tps=[];for(let k=1;k<=6;k++){const v=g['tp'+k];if(!v)continue;const p=_num(String(v).split('|')[0]);const m=String(v).match(/(\d+(?:\.\d+)?)\s*%/);if(p!=null)tps.push({p,sh:m?+m[1]:null});}
+  let rrUse=rr;
+  if(tps.length>=3){
+    for(let k=1;k<tps.length;k++) if(!(T(tps[k].p)>T(tps[k-1].p))){bad(`TP${k+1} is not further than TP${k}.`);break;}
+    const tot=tps.reduce((a,x)=>a+(x.sh||0),0);
+    if(tot&&risk>0){const bl=tps.reduce((a,x)=>a+(x.sh||0)/tot*Math.abs(x.p-en)/risk,0);rrUse=bl;if(Math.abs(tot-100)>2)warn(`The ladder shares add up to ${tot}%, not 100%.`);if(bl<1.5)bad(`Blended R:R across the ladder is 1:${bl.toFixed(2)}, below the 1:1.5 minimum.`);else ok(`Blended ladder R:R 1:${bl.toFixed(2)}.`);}
+  } else if(rr!=null&&rr<1.5) warn(`TP1 R:R is 1:${rr.toFixed(2)}, below the 1:1.5 minimum.`);
+  // spread
+  let rrNet=rr;
+  if(sp>0&&risk>0){rrNet=Math.max(0,Math.abs(tp1-en)-sp)/(risk+sp);if(rr!=null)ok(`After a spread of ${+sp.toPrecision(3)}, TP1 R:R is 1:${rrNet.toFixed(2)} (1:${rr.toFixed(2)} before costs).`);if(rrNet<1.2&&tps.length<3)warn('After the spread this trade has little reward left for the risk.');}
+  // probability vs the no-edge baseline
+  const prob=_num(g.probability),base=rrNet!=null&&rrNet>0?100/(1+rrNet):null;let ev=null;
+  if(prob!=null&&base!=null){
+    ev=prob/100*rrNet-(1-prob/100);
+    const edge=prob-base;
+    if(tps.length<3){
+      if(edge>20) warn(`Stated ${prob}% is ${edge.toFixed(0)} points above the no-edge baseline of ${base.toFixed(0)}% for this R:R: that is a large claimed edge, so check the reasons.`);
+      else ok(`Stated ${prob}% vs no-edge baseline ${base.toFixed(0)}% for 1:${rrNet.toFixed(2)}: claimed edge ${edge>=0?'+':''}${edge.toFixed(0)} points.`);
+      if(ev<=0) bad(`Expected value is ${ev.toFixed(2)}R at the stated probability${sp>0?' after the spread':''}: the plan has no edge as written.`);
+      else ok(`Expected value at the stated probability: +${ev.toFixed(2)}R per trade${sp>0?' after the spread':''}.`);
+    }
+  }
+  // second entry
+  if(e2!=null){
+    if(!(T(e2)<T(en)&&T(e2)>T(sl))) bad(`Entry 2 (${f2(e2)}) must sit between Entry and the stop.`);
+    else if(atr&&Math.abs(en-e2)<0.5*atr) warn(`Entry 2 is only ${(Math.abs(en-e2)/atr).toFixed(2)} x 1H ATR from Entry (the rule is at least 0.5).`);
+  }
+  // validity
+  const vm=String(g['valid until']||'').match(/(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})/);
+  if(!vm) warn('No "Valid until" time in UTC: the order has no expiry.');
+  else{const vt=Date.parse(vm[1]+'T'+vm[2].padStart(2,'0')+':'+vm[3]+':00Z');if(vt<=now)bad('"Valid until" is already in the past.');}
+  return {items,rr,rrNet,base,ev,prob,side};
+}
+// Probability adjusted toward the trader's real hit rate once there are enough closed trades (shrunk for small samples).
+function adjProb(prob,entries){
+  if(prob==null) return null;
+  const cl=(entries||[]).filter(e=>(e.st==='win'||e.st==='loss')&&e.prob!=null&&e.ord!=='WEEKLY OUTLOOK');
+  if(cl.length<30) return null;
+  const st=cl.reduce((t,e)=>t+e.prob,0)/cl.length,ac=cl.filter(e=>e.st==='win').length/cl.length*100,off=(ac-st)*cl.length/(cl.length+30);
+  return {p:Math.max(5,Math.min(95,Math.round((prob+off)/5)*5)),off,n:cl.length};
+}
+// ==== CHECK PURE END
+
+// ==== RESOLVE PURE START
+// Works out what happened to a saved plan from hourly candles (oldest first, {t,o,h,l,c}).
+// Returns {st:'win'|'loss'|'skip', hit?, note, fillT} when settled, {pending:true, filled, hit, note} when not yet, or null if the plan can't be read.
+// Conservative: a candle that touches both the stop and a target counts as the stop; a target is not counted on the candle that filled the order.
+function resolveOutcome(e,bars,now){
+  const dec=String(e.dec||'').toUpperCase(),side=dec.includes('BUY')?1:dec.includes('SELL')?-1:0;
+  const en=_num(e.entry),sl=_num(e.sl),tp1=_num(e.tp1);
+  if(!side||en==null||sl==null||tp1==null||side*(sl-en)>=0||side*(tp1-en)<=0) return null;
+  const T=x=>side*x,market=/MARKET/i.test(e.ord||''),vm=String(e.valid||'').match(/(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})/);
+  const validT=vm?Date.parse(vm[1]+'T'+vm[2].padStart(2,'0')+':'+vm[3]+':00Z'):e.id+24*36e5;
+  const lad=e.tps&&e.tps.length>=3?e.tps.map(x=>x.px):[tp1];
+  const start=Math.ceil(e.id/36e5)*36e5; // first full hour after the plan was made
+  let filled=market,fillT=market?e.id:null,k=0,last=null;
+  for(const b of bars){
+    if(b.t<start) continue; last=b.t;
+    const H=T(b.h),L=T(b.l),hi=side>0?H:T(b.l),lo=side>0?L:T(b.h); // favourable extreme, adverse extreme
+    let fresh=false;
+    if(!filled){ if(b.t>=validT) return {st:'skip',note:'Expired before the entry was reached.'}; if(lo<=T(en)){filled=true;fillT=b.t;fresh=true;} else continue; }
+    const stopLv=k>0?T(en):T(sl);
+    if(lo<=stopLv){
+      if(k===0) return {st:'loss',note:'Stop loss hit'+(fresh?' in the hour the order filled':'')+'.',fillT};
+      return {st:'win',hit:k,note:`TP${k} reached, then the rest closed at break-even.`,fillT};
+    }
+    if(!fresh) while(k<lad.length&&hi>=T(lad[k])) k++;
+    if(lad.length===1&&k>=1) return {st:'win',hit:1,note:'TP1 hit before the stop.',fillT};
+    if(k>=lad.length) return {st:'win',hit:k,note:'Every target reached.',fillT};
+  }
+  if(!filled&&last!=null&&last>=validT) return {st:'skip',note:'Expired before the entry was reached.'};
+  if(!filled&&now>validT+2*36e5&&last==null) return null;
+  return {pending:true,filled,hit:k,fillT,note:filled?(k?`Filled; TP${k} reached so far, still running.`:'Filled and still running.'):'Not filled yet.'};
+}
+// ==== RESOLVE PURE END
 
 // ==== ODDS PURE START
 const HC={};
