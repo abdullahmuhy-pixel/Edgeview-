@@ -105,3 +105,17 @@ Gold plans with a take-profit ladder are saved with their targets and the share 
 ## Open exposure and live calendar (v31)
 - **Your open trades are taken into account.** Each analysis now includes the plans in your journal that are still live: filled trades, plus pending orders that haven't expired. It also shows your net exposure per currency, in units of one trade's risk. For example, buying EUR/USD, GBP/USD and gold together is USD -3, which is really one bet against the dollar. Claude halves the suggested risk when a plan adds to a currency you're already 2 units long or short in, prefers NO TRADE at 3 units, and flags a plan that goes against an open position on the same pair. The plan check shows the same thing in numbers. Mark trades as closed (or let the candle check do it) so this stays accurate.
 - **Live economic calendar.** Edgeview reads this week's ForexFactory calendar feed (medium and high impact, for the pair's currencies; gold and crypto use USD), with times converted to UTC and the forecast and previous values. The feed is cached for an hour to stay within its limits. The feed has no actual results, so screenshots and headlines still supply those. The plan check warns when a high-impact release falls before an order's "Valid until". If the browser can't reach the feed, the "Live data used" card says so and the screenshots work as before.
+
+## No screenshots needed (v32)
+- **Type what you want.** Write the instrument in plain words: "gold", "eurusd", "bitcoin", "cable" or "USD/JPY" all work. Leave the chart box empty and tap Analyze. Screenshots are still accepted and still used when you add them.
+- **The app reads the charts itself.** It pulls live candles for 1W, 1D, 4H, 1H, 15M and 5M. For each timeframe, Claude gets an exact candle table plus a market-structure summary worked out in code:
+  - higher or lower highs and lows (equal highs and lows marked)
+  - breaks of structure and changes of character
+  - open fair value gaps
+  - Fibonacci levels of the last leg
+  - the pattern of the last closed candle
+
+  Every price is exact, which is more accurate than reading levels off a screenshot.
+- **App-drawn charts.** When a pair has no screenshots, the app also draws 1D, 4H, 1H and 15M charts (candles, EMA 20/50/200, key zones, live price) and sends them to Claude, so it can see the shape of the market as well. You can switch this off on the Analyze page to save cost.
+- **Live chart.** Open "📈 Live chart" on the Analyze page for a chart drawn inside the app (5M to 1W, zoom, drag back in time). It shows the key zones and, after an analysis, the entry, stop and targets. Each result card has a **Chart** button. It refreshes every 90 seconds while open.
+- With a Twelve Data key each analysis now uses 6 calls (5-minute candles were added). Pairs 2 and 3 are still spaced a minute apart for the free plan. Gold and forex need the key; crypto works without one.

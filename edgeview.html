@@ -93,7 +93,7 @@
   <section class="view" id="v-analyze">
   <div class="card">
     <div class="row">
-      <div><label>Pair 1 symbol (Twelve Data format)</label><input id="symbol" value="XAU/USD"></div>
+      <div><label>Pair 1: what to analyze</label><input id="symbol" value="XAU/USD" placeholder="gold, EUR/USD, bitcoin…" autocapitalize="characters"></div>
       <div><label>Market</label>
         <select id="market"><option value="forex">Forex / Metals</option><option value="crypto">Crypto</option></select>
       </div>
@@ -102,7 +102,7 @@
     <input id="manualPx" inputmode="decimal" placeholder="e.g. 4117.50">
     <label>Your broker's typical spread (optional, in price, e.g. 0.30 for gold, 0.00012 for EUR/USD)</label>
     <input id="spread" inputmode="decimal" placeholder="leave empty to ignore costs">
-    <label>Charts for this pair (any order, up to 10)</label>
+    <label>Charts for this pair (optional with live data: leave empty and the app draws them from live candles)</label>
     <div class="drop" id="drop">Tap to add screenshots<br><small>Select several at once: press and hold one image, then tap the others</small></div>
     <input id="file" type="file" accept="image/*" multiple hidden>
     <input id="fileAlt" type="file" accept=".jpg,.jpeg,.png,.webp,.gif" multiple hidden>
@@ -117,10 +117,17 @@
     <div class="thumbs" id="thumbsN"></div>
     <label>Your note (optional: events, bias, account size)</label>
     <textarea id="note" placeholder="e.g. CPI today 13:30 GMT. Account $5,000."></textarea>
+    <label style="display:flex;gap:8px;align-items:center;font-size:13px;color:var(--text);margin-top:12px"><input type="checkbox" id="autoImg" style="width:auto" checked> When a pair has no screenshots, also send Claude the charts the app draws (better pattern reading, slightly higher cost)</label>
     <div style="margin-top:12px"><button id="go">Analyze</button></div>
     <div class="hint" id="runSummary"></div>
   </div>
 
+  <details class="card" id="lcBox"><summary style="cursor:pointer;font-weight:600">📈 Live chart</summary>
+    <div class="row" style="margin-top:10px;flex-wrap:wrap;gap:6px" id="lcTf"></div>
+    <div class="row" style="margin-top:6px;gap:6px;flex-wrap:wrap;align-items:center"><button class="sec" id="lcOut">−</button><button class="sec" id="lcIn">+</button><button class="sec" id="lcRef">Refresh</button><span class="hint" id="lcStat"></span></div>
+    <canvas id="lcCv" style="width:100%;height:380px;margin-top:8px;border-radius:8px;touch-action:none;display:block"></canvas>
+    <div class="hint">Drag to scroll back in time. EMA 20 yellow, 50 blue, 200 purple. Shaded bands are key zones; the last analysis's entry, stop and targets are drawn when the symbol matches. Refreshes every 90 seconds while open (one Twelve Data credit each time).</div>
+  </details>
   <div id="results"></div>
   </section>
   <section class="view" id="v-weekend" hidden>
@@ -177,7 +184,7 @@
 const SYSTEM = `You are a multi-timeframe trading analyst for forex, metals and crypto. The user uploads chart screenshots (e.g. 1W, 1D, 4H, 1H, 30M, 15M, 5M), plus optional screenshots of news and the economic calendar (e.g. from the Investing.com app), plus live market data and recent headlines fetched from data providers, plus an optional note. Analyze only what is visible or provided. Never invent price levels you cannot read from the charts.
 
 PROCESS
-1. Identify the instrument, the timeframes provided (read them from each chart), and the current price. If live data conflicts with the charts, trust the live quote and say so.
+1. Identify the instrument, the timeframes provided (read them from each chart), and the current price. If live data conflicts with the charts, trust the live quote and say so. If no screenshots were uploaded, the charts were drawn by the app from live candles and come with exact candle tables and a market-structure summary for 1W, 1D, 4H, 1H, 15M and 5M: use those for structure (higher highs and lows, breaks of structure, fair value gaps, Fibonacci of the last leg, candle patterns) and treat their prices as exact. Use the 5M data for scalp triggers.
 2. Top-down analysis:
  - 1W/1D: trend direction, major support/resistance, key swing highs/lows, structure breaks.
  - 4H/1H: supply/demand zones, range boundaries, trendlines, patterns, Fibonacci retracement of the latest impulse, order blocks, liquidity sweeps.
@@ -383,7 +390,7 @@ function weeklyFromDaily(daily){
 }
 // Merge swing levels from every timeframe into zones, and count how often price reacted there.
 // Weight: higher timeframes count more (1W 4, 1D 3, 4H 2, 1H/15M 1).
-function zoneMap(acc,px,tol){
+function zoneMap(acc,px,tol,keep){
   if(!acc||!acc.length||!(tol>0)||!isFinite(px)) return '';
   const W={'1W':4,'1D':3,'4H':2,'1H':1,'15M':1},pts=[];
   for(const a of acc) for(const lv of a.levels) if(isFinite(lv)&&Math.abs(lv-px)<tol*40) pts.push({lv,tf:a.tf});
@@ -396,12 +403,13 @@ function zoneMap(acc,px,tol){
   const strong=zs.filter(z=>z.score>=3||z.tfs.length>=2);
   const res=strong.filter(z=>z.lo>px).sort((a,b)=>a.lo-b.lo).slice(0,4), sup=strong.filter(z=>z.hi<px).sort((a,b)=>b.hi-a.hi).slice(0,4);
   const at=strong.filter(z=>z.lo<=px&&z.hi>=px);
+  if(keep){keep.push(...res,...sup,...at);}
   if(!res.length&&!sup.length&&!at.length) return '';
   return `KEY ZONES (swing levels merged across timeframes within ${f2(tol)}; strength = timeframes that agree, higher timeframes weigh more): `+(at.length?`price is inside ${at.map(fmt).join(', ')}; `:'')+`resistance above: ${res.map(fmt).join('; ')||'none'}; support below: ${sup.map(fmt).join('; ')||'none'}`;
 }
 // ==== IND PURE END
 // Latest live numbers per symbol, used by the plan check and the result tracker.
-const LIVE={};
+const LIVE={}, CND={};
 // Builds the indicator block shared by Twelve Data and Binance. src: {h1,h4,d1,m15} newest-first candle arrays.
 function liveBlock(sym,px,src){
   const acc=[],now=Date.now(),IV={'1H':60,'4H':240,'15M':15};let t='';
@@ -415,14 +423,14 @@ function liveBlock(sym,px,src){
     const d=[...src.d1].reverse();atrD=atrCalc(d.map(x=>+x.high),d.map(x=>+x.low),d.map(x=>+x.close));}
   const h1a=acc.find(a=>a.tf==='1H');
   const tol=(h1a&&h1a.atr?h1a.atr*0.5:atrD?atrD*0.12:null);
-  const zm=zoneMap(acc,px,tol); if(zm) t+='\n'+zm;
-  LIVE[String(sym).toUpperCase()]={px,atr1h:h1a?h1a.atr:null,atrD,at:now};
+  const keep=[],zm=zoneMap(acc,px,tol,keep); if(zm) t+='\n'+zm;
+  LIVE[String(sym).toUpperCase()]={px,atr1h:h1a?h1a.atr:null,atrD,at:now,zones:keep.map(z=>({lo:z.lo,hi:z.hi})),tol};
   return t;
 }
 async function twelve(sym,key){
   const q=encodeURIComponent(sym), base='https://api.twelvedata.com';
   const ts=iv=>`${base}/time_series?symbol=${q}&interval=${iv}&outputsize=1000&timezone=UTC&apikey=${key}`;
-  const calls={quote:`${base}/quote?symbol=${q}&apikey=${key}`,h1:ts('1h'),h4:ts('4h'),d1:ts('1day'),m15:ts('15min')};
+  const calls={quote:`${base}/quote?symbol=${q}&apikey=${key}`,h1:ts('1h'),h4:ts('4h'),d1:ts('1day'),m15:ts('15min'),m5:`${base}/time_series?symbol=${q}&interval=5min&outputsize=300&timezone=UTC&apikey=${key}`};
   const out={};
   await Promise.all(Object.entries(calls).map(async([k,u])=>{ try{ out[k]=await getJSON(u); }catch(e){ out[k]=null; } }));
   const bad=o=>!o||o.status==='error';
@@ -430,7 +438,8 @@ async function twelve(sym,key){
   if(bad(out.quote)) throw new Error(out.quote?.message||'Twelve Data failed');
   const qt=out.quote, px=+qt.close;
   let t=`Symbol ${qt.symbol}: price ${f2(qt.close)}, day change ${Number(qt.percent_change).toFixed(2)}%, day range ${f2(qt.low)}-${f2(qt.high)}, previous close ${f2(qt.previous_close)}`;
-  const src={err:{}};for(const k of ['h1','h4','d1','m15']){if(!bad(out[k])&&out[k].values)src[k]=out[k].values;else src.err[k]=out[k]?.message||'no data';}
+  const src={err:{}};for(const k of ['h1','h4','d1','m15','m5']){if(!bad(out[k])&&out[k].values)src[k]=out[k].values;else src.err[k]=out[k]?.message||'no data';}
+  CND[sym.toUpperCase()]={...src,at:Date.now(),px};
   t+=liveBlock(sym,px,src);
   if(!bad(out.d1)&&out.d1.values?.length>1){ const y=out.d1.values[1], H=+y.high,L=+y.low,C=+y.close, P=(H+L+C)/3; t+=`\nYesterday: high ${f2(H)}, low ${f2(L)}, close ${f2(C)}. Daily pivots: P ${f2(P)}, R1 ${f2(2*P-L)}, R2 ${f2(P+H-L)}, S1 ${f2(2*P-H)}, S2 ${f2(P-(H-L))}`; }
   const cm=await corrMarkets(base,key); t+=cm.v;
@@ -452,7 +461,8 @@ async function binance(sym){
   const pair=sym.toUpperCase().replace('/','').replace(/USD$/,'USDT');
   const base='https://data-api.binance.vision/api/v3/klines';
   const get=async iv=>{ const r=await getJSON(`${base}?symbol=${pair}&interval=${iv}&limit=1000`); return r.map(k=>({datetime:new Date(k[0]).toISOString(),open:k[1],high:k[2],low:k[3],close:k[4],volume:k[5]})).reverse(); };
-  const [h1,h4,d1,m15]=await Promise.all([get('1h'),get('4h'),get('1d'),get('15m')]);
+  const [h1,h4,d1,m15,m5]=await Promise.all([get('1h'),get('4h'),get('1d'),get('15m'),get('5m').catch(()=>null)]);
+  CND[sym.toUpperCase()]={h1,h4,d1,m15,m5,at:Date.now(),px:+h1[0].close};
   HC[sym.toUpperCase()]=h1.slice(0,300);
   const px=+h1[0].close, pc=+d1[1].close;
   let t=`Symbol ${pair} (Binance): price ${f2(px)}, change vs yesterday's close ${((px-pc)/pc*100).toFixed(2)}%, today's range ${f2(d1[0].low)}-${f2(d1[0].high)}`;
@@ -544,15 +554,18 @@ function attachZone(name){const z=zones[name];
 function activePairs(){
   const P=[{n:1,sym:$('symbol').value.trim(),market:$('market').value,px:$('manualPx').value.trim(),sp:$('spread').value.trim(),key:'charts'}];
   for(const n of [2,3])P.push({n,sym:$('symbol'+n).value.trim(),market:$('market'+n).value,px:$('manualPx'+n).value.trim(),sp:$('spread'+n).value.trim(),key:'charts'+n});
-  return P.filter(p=>p.sym&&lists[p.key].length);
+  P.forEach(p=>{p.sym=aliasSym(p.sym);});
+  const liveOK=p=>!!$('kTwelve').value.trim()||p.market==='crypto'||isCrypto(p.sym);
+  return P.filter(p=>p.sym&&(lists[p.key].length||liveOK(p)));
 }
 function updSummary(){const P=activePairs(),im=P.reduce((t,p)=>t+lists[p.key].length,0),nn=lists.news.length;
-  $('runSummary').textContent=P.length?`Ready: ${P.length} pair${P.length>1?'s':''}, ${im} chart${im!==1?'s':''}`+(nn?`, ${nn} calendar image${nn>1?'s':''}${P.length>1?' (read once, shared by all pairs)':''}`:'')+` · about ${P.length} min`:'Add a symbol and at least one chart.';}
+  $('runSummary').textContent=P.length?`Ready: ${P.length} pair${P.length>1?'s':''}, ${im?im+' chart'+(im!==1?'s':''):'charts drawn from live data'}`+(nn?`, ${nn} calendar image${nn>1?'s':''}${P.length>1?' (read once, shared by all pairs)':''}`:'')+` · about ${P.length} min`:'Add a symbol and at least one chart.';}
 function newResult(sym){
   const d=document.createElement('div');d.className='card res';d.dataset.sym=sym;
-  d.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px"><b>${esc(sym.toUpperCase())}</b><span><button class="sec rc-calc">Position size</button> <button class="sec rc-copy">Copy</button></span></div><details class="rc-live"><summary class="hint" style="cursor:pointer">Live data used</summary><div class="rc-livetxt" style="font-size:13px;color:var(--mute);white-space:pre-wrap"></div></details><div class="rc-out"></div>`;
+  d.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px"><b>${esc(sym.toUpperCase())}</b><span><button class="sec rc-chart">Chart</button> <button class="sec rc-calc">Position size</button> <button class="sec rc-copy">Copy</button></span></div><details class="rc-live"><summary class="hint" style="cursor:pointer">Live data used</summary><div class="rc-livetxt" style="font-size:13px;color:var(--mute);white-space:pre-wrap"></div></details><div class="rc-out"></div>`;
   $('results').appendChild(d);
   d.querySelector('.rc-copy').onclick=()=>copyText(d.dataset.raw||d.querySelector('.rc-out').innerText);
+  d.querySelector('.rc-chart').onclick=()=>showOnChart(d.dataset.sym);
   d.querySelector('.rc-calc').onclick=()=>{if(d.dataset.raw){fillCalc(d.dataset.raw,d.dataset.sym);go('size');}};
   return d;
 }
@@ -586,7 +599,7 @@ $('go').onclick=async()=>{
   if(!ak){ go('settings'); return alert('Enter your Anthropic API key'); }
   for(const n of [2,3]) if(lists['charts'+n].length&&!$('symbol'+n).value.trim()) return alert('Pair '+n+' has charts but no symbol.');
   const pairs=activePairs();
-  if(!pairs.length) return alert('Add a symbol and at least one chart.');
+  if(!pairs.length) return alert('Type an instrument (for example gold or EUR/USD). Without a Twelve Data key, add chart screenshots, or use a crypto pair.');
   saveAll('Saved ✓');
   const btn=$('go'); btn.disabled=true;
   const tk=$('kTwelve').value.trim(), fk=$('kFinnhub').value.trim(), N=pairs.length, deep=$('depth').value==='deep';
@@ -604,7 +617,13 @@ $('go').onclick=async()=>{
       error:(i,e)=>{ q(i).innerHTML=`<span class="err">${esc(String(e&&e.message||e))}</span>`; }
     },
     analyze:async(p,L,digest,i)=>{
-      const content=[{type:'text',text:'CHART SCREENSHOTS for '+p.sym+' (in the order uploaded):'},...lists[p.key].map(imgBlock)];
+      const shots=lists[p.key],cd=CND[String(p.sym).toUpperCase()];
+      const content=shots.length?[{type:'text',text:'CHART SCREENSHOTS for '+p.sym+' (in the order uploaded):'},...shots.map(imgBlock)]:[];
+      if(cd){
+        if(!shots.length&&$('autoImg').checked){const im=autoCharts(p.sym,cd);if(im.length)content.push({type:'text',text:`CHARTS DRAWN BY THE APP from live candles for ${p.sym} (not user screenshots): ${im.map(x=>x.tf).join(', ')}. Each shows the last closed candles with EMA 20 (yellow), 50 (blue) and 200 (purple), key zones (shaded) and the live price (dotted). Prices on the right axis are exact.`},...im.map(x=>imgBlock({b64:x.b64})));}
+        content.push({type:'text',text:'EXACT CANDLE DATA AND MARKET STRUCTURE (computed from closed candles; prefer these numbers over anything read from images):\n'+structureBlock(cd)});
+      }
+      if(!content.length) throw new Error('No charts and no live candles for '+p.sym+'. Add screenshots or a Twelve Data key.');
       if(digest) content.push({type:'text',text:"ECONOMIC CALENDAR / NEWS (transcribed from the user's screenshots):\n"+digest});
       else if(lists.news.length) content.push({type:'text',text:'NEWS / ECONOMIC CALENDAR SCREENSHOTS (read every event and headline in them):'},...lists.news.map(imgBlock));
       const others=pairs.filter(x=>x!==p).map(x=>x.sym).join(', ');
@@ -614,7 +633,7 @@ $('go').onclick=async()=>{
       const text=co.text,stop=co.stop;
       if(stop==='max_tokens') q(i).innerHTML+='<p class="err">The answer was cut off. Run this pair again or remove a few screenshots.</p>';
       if(!text.trim()) throw new Error(emptyMsg(co));
-      saveHistory(text,p.sym); addOdds(card,text,p.sym); addCheck(card,text,{...p,cal:L.cal}); if(N===1) fillCalc(text,p.sym); renderHist();
+      PLAN[String(p.sym).toUpperCase()]=parseFinal(text); saveHistory(text,p.sym); addOdds(card,text,p.sym); addCheck(card,text,{...p,cal:L.cal}); if(N===1) fillCalc(text,p.sym); renderHist();
       return text;
     }
   });
@@ -676,7 +695,7 @@ function parseFinal(raw){const i=raw.search(/^### *Final trade plan/mi);if(i<0)r
 const num=x=>{const m=String(x||'').replace(/,/g,'').match(/-?\d+(\.\d+)?/);return m?+m[0]:null;};
 // ---- history + journal
 const HS={get:()=>{try{return JSON.parse(localStorage.getItem('ca_hist')||'[]')}catch(e){return[]}},set:a=>{const now=Date.now(),pack=(n,k)=>JSON.stringify(a.slice(0,n).map((e,i)=>(i<k||(e.ord==='WEEKLY OUTLOOK'&&now-e.id<20*86400000))?e:{...e,text:''}));try{localStorage.setItem('ca_hist',pack(400,40));}catch(e){try{localStorage.setItem('ca_hist',pack(150,12));}catch(e2){}}}};
-const APP_VER='edgeview-v31';
+const APP_VER='edgeview-v32';
 function META(){return {model:$('model').value.trim()||'claude-sonnet-5-5',deep:$('depth').value,ver:APP_VER};}
 
 function addOdds(card,text,sym){
@@ -706,6 +725,76 @@ function viewH(id){const e=HS.get().find(x=>x.id==id);if(!e)return;if(!e.text){a
 const expOf=v=>{const m=String(v||'').match(/(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/);return m?Date.parse(m[1]+'T'+m[2]+':00Z'):null;};
 function tagOf(e){const x=expOf(e.valid);if(!x)return'';return e.st=='open'&&x<Date.now()?' | <b style="color:var(--red)">EXPIRED: cancel if unfilled</b>':' | valid till '+new Date(x).toLocaleString([],{weekday:'short',hour:'2-digit',minute:'2-digit'});}
 
+
+// ---- data-only analysis (v32): structure text and app-drawn charts
+function structureBlock(cd){
+  const px=cd.px,now=Date.now(),out=[],IV={m5:5,m15:15,h1:60,h4:240};
+  const wk=cd.d1&&cd.d1.length>60?weeklyFromDaily(cd.d1):null;
+  const tfs=[['1W',wk,20,null],['1D',cd.d1,30,null],['4H',cd.h4,30,'h4'],['1H',cd.h1,36,'h1'],['15M',cd.m15,32,'m15'],['5M',cd.m5,24,'m5']];
+  for(const [lab,v,n,k] of tfs){if(!v||v.length<30)continue;const c=k?closedOnly(v,IV[k],now).vals:(lab==='1W'?v.slice(1):v.slice(1));
+    const st=structureOf(lab,c,px,{k:lab==='5M'||lab==='15M'?2:3});if(st)out.push(st);out.push(candleTable(lab,c,n));}
+  return out.join('\n');
+}
+function chartBars(cd,tf){const m={'5M':'m5','15M':'m15','1H':'h1','4H':'h4','1D':'d1'};if(tf==='1W')return cd.d1?toBars(weeklyFromDaily(cd.d1)):[];return toBars(cd[m[tf]]||[]);}
+function zonesFor(sym){const L=LIVE[String(sym).toUpperCase()];return (L&&L.zones||[]).map(z=>({lo:z.lo-(L.tol||0)/4,hi:z.hi+(L.tol||0)/4,c:z.lo>L.px?'rgba(244,97,107,.13)':'rgba(45,212,167,.12)'}));}
+const EMAS=[[20,'#f5c542'],[50,'#4aa3ff'],[200,'#b07cff']];
+function autoCharts(sym,cd){
+  const out=[];let cv=document.createElement('canvas');cv.width=1000;cv.height=560;
+  for(const [tf,cnt] of [['1D',120],['4H',120],['1H',120],['15M',110]]){
+    const b=chartBars(cd,tf);if(b.length<30)continue;
+    drawCandles(cv,b,{title:`${String(sym).toUpperCase()} ${tf}`,emas:EMAS,count:cnt,lines:planLines(sym),zones:zonesFor(sym)});
+    out.push({tf,b64:cv.toDataURL('image/jpeg',0.85).split(',')[1]});
+  }
+  return out;
+}
+// plan lines from the latest analysis of this symbol, drawn on charts
+const PLAN={};
+function planLines(sym){const g=PLAN[String(sym).toUpperCase()];if(!g)return [];const L=[],add=(v,c,lab,dash)=>{const x=_num(String(v||'').split('|')[0]);if(x!=null&&!/^\s*none/i.test(String(v)))L.push({p:x,c,label:lab,dash});};
+  add(g.entry,'#4aa3ff','Entry');add(g['entry 2'],'#4aa3ff','Entry 2',[6,4]);add(g['stop loss'],'#f4616b','Stop');for(let k=1;k<=6;k++)add(g['tp'+k],'#2dd4a7','TP'+k);return L;}
+
+// ---- live chart panel (v32)
+const LC={tf:'1H',count:120,off:0,bars:[],sym:'',timer:null};
+const TFI={'5M':['5min','5m',5],'15M':['15min','15m',15],'1H':['1h','1h',60],'4H':['4h','4h',240],'1D':['1day','1d',1440],'1W':['1week','1w',10080]};
+async function fetchTF(sym,tf,force){
+  const S=String(sym).toUpperCase(),cd=CND[S],key={'5M':'m5','15M':'m15','1H':'h1','4H':'h4','1D':'d1'}[tf];
+  if(!force&&cd&&Date.now()-cd.at<120000){if(key&&cd[key])return toBars(cd[key]);if(tf==='1W'&&cd.d1)return toBars(weeklyFromDaily(cd.d1));}
+  const tk=$('kTwelve').value.trim(),[tdI,bnI]=TFI[tf];
+  if(!tk&&isCrypto(S)){const pair=S.replace('/','').replace(/USD$/,'USDT');const r=await getJSON(`https://data-api.binance.vision/api/v3/klines?symbol=${pair}&interval=${bnI}&limit=500`);return r.map(k=>({t:k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4]}));}
+  if(!tk) throw new Error('Live charts need a Twelve Data key (or a crypto pair).');
+  const j=await getJSON(`https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(S)}&interval=${tdI}&outputsize=500&timezone=UTC&apikey=${tk}`);
+  if(!j||j.status==='error'||!j.values) throw new Error(j&&j.message||'no data');
+  return toBars(j.values);
+}
+function lcDraw(){
+  const cv=$('lcCv'),r=cv.getBoundingClientRect(),dpr=Math.min(2,window.devicePixelRatio||1),w=Math.max(300,Math.round(r.width||360));
+  cv.width=Math.round(w*dpr);cv.height=Math.round(380*dpr);
+  const off=document.createElement('canvas');off.width=w;off.height=380;
+  drawCandles(off,LC.bars,{title:`${LC.sym} ${LC.tf}`,emas:EMAS,count:LC.count,end:LC.bars.length-LC.off,lines:planLines(LC.sym),zones:zonesFor(LC.sym)});
+  const ctx=cv.getContext('2d');ctx.drawImage(off,0,0,cv.width,cv.height);
+}
+async function lcLoad(force){
+  const sym=aliasSym($('symbol').value);if(!sym)return;LC.sym=sym.toUpperCase();
+  $('lcStat').textContent='Loading '+LC.sym+' '+LC.tf+'…';
+  try{LC.bars=await fetchTF(LC.sym,LC.tf,force);LC.off=Math.min(LC.off,Math.max(0,LC.bars.length-20));lcDraw();const b=LC.bars[LC.bars.length-1];$('lcStat').textContent=b?`Last ${f2(b.c)} · ${new Date().toISOString().slice(11,16)} UTC`:'No data';}
+  catch(e){$('lcStat').textContent=String(e.message||e);}
+}
+(function(){
+  const box=$('lcTf');Object.keys(TFI).forEach(tf=>{const b=document.createElement('button');b.className='sec';b.textContent=tf;b.onclick=()=>{LC.tf=tf;LC.off=0;[...box.children].forEach(x=>x.style.outline=x===b?'2px solid var(--acc)':'');lcLoad(false);};box.appendChild(b);if(tf===LC.tf)b.style.outline='2px solid var(--acc)';});
+  $('lcIn').onclick=()=>{LC.count=Math.max(30,Math.round(LC.count/1.4));lcDraw();};
+  $('lcOut').onclick=()=>{LC.count=Math.min(400,Math.round(LC.count*1.4));lcDraw();};
+  $('lcRef').onclick=()=>lcLoad(true);
+  $('lcBox').addEventListener('toggle',()=>{clearInterval(LC.timer);if($('lcBox').open){lcLoad(false);LC.timer=setInterval(()=>{if(!document.hidden&&$('lcBox').open)lcLoad(true);},90000);}});
+  let drag=null;const cv=$('lcCv');
+  cv.addEventListener('pointerdown',e=>{drag={x:e.clientX,off:LC.off};try{cv.setPointerCapture(e.pointerId);}catch(_){}});
+  cv.addEventListener('pointermove',e=>{if(!drag)return;const w=cv.getBoundingClientRect().width/LC.count;LC.off=Math.max(0,Math.min(Math.max(0,LC.bars.length-20),drag.off+Math.round((e.clientX-drag.x)/w)));lcDraw();});
+  cv.addEventListener('pointerup',()=>drag=null);cv.addEventListener('pointercancel',()=>drag=null);
+  window.addEventListener('resize',()=>{if($('lcBox').open&&LC.bars.length)lcDraw();});
+  $('symbol').addEventListener('change',()=>{const v=aliasSym($('symbol').value);if(v&&v!==$('symbol').value){$('symbol').value=v;store.set('ca_symbol',v);}if($('lcBox').open){LC.off=0;lcLoad(false);}});
+  try{$('autoImg').checked=store.get('ca_autoImg')!=='0';}catch(e){}
+  $('autoImg').onchange=()=>store.set('ca_autoImg',$('autoImg').checked?'1':'0');
+})();
+function showOnChart(sym){$('symbol').value=sym;$('lcBox').open=true;LC.off=0;lcLoad(false);$('lcBox').scrollIntoView({behavior:'smooth'});}
+
 // ---- plan check card (v30)
 function addCheck(card,text,p){
   try{
@@ -731,7 +820,7 @@ function addCheck(card,text,p){
 }
 // ---- automatic results from candles (v30)
 let resolving=false;
-const isCrypto=sym=>/^(BTC|ETH|SOL|XRP|BNB|ADA|DOGE|AVAX|DOT|LINK|LTC|TRX|TON|MATIC|SHIB|PEPE|SUI|APT|ARB|OP|NEAR|ATOM)\b/i.test(String(sym).replace('/',' '));
+function isCrypto(sym){return /^(BTC|ETH|SOL|XRP|BNB|ADA|DOGE|AVAX|DOT|LINK|LTC|TRX|TON|MATIC|SHIB|PEPE|SUI|APT|ARB|OP|NEAR|ATOM)\b/i.test(String(sym).replace('/',' '));}
 async function hourlyBars(sym,fromMs){
   const tk=$('kTwelve').value.trim();
   if(isCrypto(sym)&&!tk){
@@ -1243,6 +1332,88 @@ function pairBrief(sym,withTrack){
 }
 // ==== PAIR PURE END
 
+
+
+// ==== STRUCT PURE START
+// Bars helper: newest-first API candles -> oldest-first numbers {t,o,h,l,c}.
+function toBars(vals){return [...(vals||[])].reverse().map(x=>({t:barT(x),o:+x.open,h:+x.high,l:+x.low,c:+x.close})).filter(b=>b.t!=null&&isFinite(b.c));}
+// Typed instrument names -> data-provider symbols ("gold" -> XAU/USD, "eurusd" -> EUR/USD).
+function aliasSym(s){const t=String(s||'').trim(),k=t.toLowerCase().replace(/[\s_-]/g,'');
+  const A={gold:'XAU/USD',xau:'XAU/USD',xauusd:'XAU/USD',silver:'XAG/USD',xag:'XAG/USD',xagusd:'XAG/USD',bitcoin:'BTC/USD',btc:'BTC/USD',btcusd:'BTC/USD',btcusdt:'BTC/USD',ethereum:'ETH/USD',eth:'ETH/USD',ethusd:'ETH/USD',ethusdt:'ETH/USD',solana:'SOL/USD',sol:'SOL/USD',euro:'EUR/USD',fiber:'EUR/USD',cable:'GBP/USD',gu:'GBP/USD',eu:'EUR/USD',uj:'USD/JPY',gj:'GBP/JPY',rand:'USD/ZAR',dollarrand:'USD/ZAR',loonie:'USD/CAD',aussie:'AUD/USD',kiwi:'NZD/USD'};
+  if(A[k]) return A[k]; if(/^[a-z]{6}$/.test(k)) return (k.slice(0,3)+'/'+k.slice(3)).toUpperCase(); return t.toUpperCase();}
+function pivots(b,k){const P=[];for(let i=k;i<b.length-k;i++){let hi=true,lo=true;for(let j=i-k;j<=i+k;j++){if(j===i)continue;if(j<i?b[j].h>=b[i].h:b[j].h>b[i].h)hi=false;if(j<i?b[j].l<=b[i].l:b[j].l<b[i].l)lo=false;}if(hi)P.push({i,t:b[i].t,p:b[i].h,k:'H'});if(lo)P.push({i,t:b[i].t,p:b[i].l,k:'L'});}return P;}
+function candleName(b){const n=b.length;if(n<2)return '';const a=b[n-2],c=b[n-1],body=Math.abs(c.c-c.o),rng=c.h-c.l||1e-12,up=c.h-Math.max(c.o,c.c),dn=Math.min(c.o,c.c)-c.l;
+  if(c.c>c.o&&a.c<a.o&&c.c>=a.o&&c.o<=a.c) return 'bullish engulfing';
+  if(c.c<c.o&&a.c>a.o&&c.c<=a.c&&c.o>=a.o) return 'bearish engulfing';
+  if(dn>=2*body&&dn>=0.6*rng) return 'hammer / bullish pin bar (long lower wick)';
+  if(up>=2*body&&up>=0.6*rng) return 'shooting star / bearish pin bar (long upper wick)';
+  if(c.h<=a.h&&c.l>=a.l) return 'inside bar (compression)';
+  if(body<=0.1*rng) return 'doji (indecision)';
+  return c.c>c.o?'bullish candle':'bearish candle';}
+// Market structure for one timeframe from closed candles. px = live price.
+function structureOf(label,vals,px,opt){
+  opt=opt||{};const b=toBars(vals).slice(-300);if(b.length<30)return '';
+  const P=pivots(b,opt.k||3),H=P.filter(x=>x.k==='H').slice(-4),L=P.filter(x=>x.k==='L').slice(-4);
+  const eps=Math.abs(b[b.length-1].c)*2e-5,lab=(a,up)=>a.map((x,i)=>i?(Math.abs(x.p-a[i-1].p)<=eps?(up?'EQH':'EQL'):x.p>a[i-1].p?(up?'HH':'HL'):(up?'LH':'LL')):'').filter(Boolean);
+  const hl=lab(H,true),ll=lab(L,false),lastH=hl[hl.length-1],lastL=ll[ll.length-1];
+  const trend=lastH==='HH'&&lastL==='HL'?'uptrend (higher highs and higher lows)':lastH==='LH'&&lastL==='LL'?'downtrend (lower highs and lower lows)':'range or transition (mixed swings)';
+  const c=b[b.length-1].c,sh=H[H.length-1],sl=L[L.length-1];let bos='no break of the last swing';
+  if(sh&&c>sh.p) bos=`closed above the last swing high ${f2(sh.p)}: bullish break of structure${/downtrend/.test(trend)?' (change of character against the downtrend)':''}`;
+  else if(sl&&c<sl.p) bos=`closed below the last swing low ${f2(sl.p)}: bearish break of structure${/uptrend/.test(trend)?' (change of character against the uptrend)':''}`;
+  // fair value gaps (3-candle imbalances) still open
+  const fv=[];for(let i=Math.max(2,b.length-120);i<b.length;i++){
+    if(b[i].l>b[i-2].h){let top=b[i].l,bot=b[i-2].h;for(let j=i+1;j<b.length;j++)top=Math.min(top,b[j].l);if(top>bot)fv.push({lo:bot,hi:top,d:'bullish'});}
+    if(b[i].h<b[i-2].l){let bot=b[i].h,top=b[i-2].l;for(let j=i+1;j<b.length;j++)bot=Math.max(bot,b[j].h);if(top>bot)fv.push({lo:bot,hi:top,d:'bearish'});}}
+  const ref=px!=null?px:c,fa=fv.filter(x=>x.lo>ref).sort((a,z)=>a.lo-z.lo).slice(0,2),fb=fv.filter(x=>x.hi<ref).sort((a,z)=>z.hi-a.hi).slice(0,2);
+  const fz=x=>`${f2(x.lo)}-${f2(x.hi)} (${x.d})`;
+  // fib of the latest leg between the last swing high and low
+  let fib='';if(sh&&sl){const upLeg=sl.i<sh.i,a=upLeg?sl.p:sh.p,z=upLeg?sh.p:sl.p,r=x=>z-(z-a)*x;fib=`; last ${upLeg?'up':'down'} leg ${f2(a)} to ${f2(z)}: retracements 38.2% ${f2(r(.382))}, 50% ${f2(r(.5))}, 61.8% ${f2(r(.618))}, 78.6% ${f2(r(.786))}`;}
+  return `${label} structure: ${trend}; swings ${H.map((x,i)=>(i?hl[i-1]+' ':'')+f2(x.p)).join(' > ')} (highs), ${L.map((x,i)=>(i?ll[i-1]+' ':'')+f2(x.p)).join(' > ')} (lows); ${bos}; last closed candle: ${candleName(b)}; open fair value gaps above ${fa.map(fz).join(', ')||'none'}, below ${fb.map(fz).join(', ')||'none'}${fib}`;
+}
+// Last n closed candles as a compact table.
+function candleTable(label,vals,n){const b=toBars(vals).slice(-n),d=label==='1D'||label==='1W';
+  return `${label} last ${b.length} closed candles (UTC ${d?'date':'time'} open high low close): `+b.map(x=>`${new Date(x.t).toISOString().slice(d?5:5,d?10:16).replace('T',' ')} ${f2(x.o)} ${f2(x.h)} ${f2(x.l)} ${f2(x.c)}`).join(' | ');}
+// ==== STRUCT PURE END
+
+// ==== DRAW START
+// Candlestick chart on a canvas. bars oldest-first {t,o,h,l,c}. o: {title, emas:[[n,color]], lines:[{p,c,label,dash}], zones:[{lo,hi,c}], count, end}
+function drawCandles(cv,bars,o){
+  o=o||{};const ctx=cv.getContext('2d'),W=cv.width,Hh=cv.height,pr=W>700?1:1;
+  const C={bg:'#0e1117',grid:'#1d2330',txt:'#8b94a5',up:'#2dd4a7',dn:'#f4616b',wick:'#9aa3b2'};
+  ctx.fillStyle=C.bg;ctx.fillRect(0,0,W,Hh);
+  if(!bars||bars.length<2){ctx.fillStyle=C.txt;ctx.font='14px system-ui';ctx.fillText('No candles',20,30);return;}
+  const n=Math.min(bars.length,Math.max(20,o.count||120)),end=Math.min(bars.length,o.end||bars.length),v=bars.slice(Math.max(0,end-n),end);
+  const axW=78,top=30,bot=24,cw=(W-axW-8)/v.length;
+  const closes=bars.map(b=>b.c),em=(o.emas||[]).map(([k,col])=>{const s=emaSeries(closes,k);return {col,k,s:s.slice(Math.max(0,end-n),end)};});
+  let lo=Math.min(...v.map(b=>b.l)),hi=Math.max(...v.map(b=>b.h));
+  for(const l of o.lines||[]) if(l.p>lo-(hi-lo)*0.6&&l.p<hi+(hi-lo)*0.6){lo=Math.min(lo,l.p);hi=Math.max(hi,l.p);}
+  const pad=(hi-lo)*0.06||hi*0.001;lo-=pad;hi+=pad;
+  const Y=p=>top+(hi-p)/(hi-lo)*(Hh-top-bot),X=i=>4+i*cw+cw/2;
+  // grid + price axis
+  const raw=(hi-lo)/6,mag=Math.pow(10,Math.floor(Math.log10(raw))),step=[1,2,2.5,5,10].map(m=>m*mag).find(s=>s>=raw)||raw;
+  ctx.font='12px system-ui';ctx.textBaseline='middle';
+  for(let p=Math.ceil(lo/step)*step;p<=hi;p+=step){const y=Y(p);ctx.strokeStyle=C.grid;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W-axW,y);ctx.stroke();ctx.fillStyle=C.txt;ctx.fillText(f2(p),W-axW+6,y);}
+  // time labels
+  const day=v.length>1&&(v[1].t-v[0].t)>=864e5;ctx.textBaseline='alphabetic';
+  const nl=Math.max(2,Math.min(6,Math.floor((W-axW)/(day?60:100))));for(let i=0;i<v.length;i+=Math.max(1,Math.round(v.length/nl))){const d=new Date(v[i].t).toISOString();ctx.fillStyle=C.txt;ctx.fillText(day?d.slice(5,10):d.slice(5,10)+' '+d.slice(11,16),Math.max(2,X(i)-30),Hh-6);}
+  // zones
+  for(const z of o.zones||[]){const y1=Y(z.hi),y2=Y(z.lo);if(y2<top||y1>Hh-bot)continue;ctx.fillStyle=z.c||'rgba(139,95,214,.16)';ctx.fillRect(0,Math.max(top,y1),W-axW,Math.max(2,Math.min(Hh-bot,y2)-Math.max(top,y1)));}
+  // candles
+  const bw=Math.max(1,cw*0.7);
+  v.forEach((b,i)=>{const x=X(i),upc=b.c>=b.o;ctx.strokeStyle=upc?C.up:C.dn;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x,Y(b.h));ctx.lineTo(x,Y(b.l));ctx.stroke();
+    ctx.fillStyle=upc?C.up:C.dn;const y1=Y(Math.max(b.o,b.c)),y2=Y(Math.min(b.o,b.c));ctx.fillRect(x-bw/2,y1,bw,Math.max(1,y2-y1));});
+  // EMAs
+  for(const e of em){ctx.strokeStyle=e.col;ctx.lineWidth=1.5;ctx.beginPath();let st=false;e.s.forEach((y,i)=>{if(y==null)return;const yy=Y(y);if(!st){ctx.moveTo(X(i),yy);st=true;}else ctx.lineTo(X(i),yy);});ctx.stroke();}
+  // horizontal lines (plan, last price)
+  const last=v[v.length-1].c,lines=[...(o.lines||[]),{p:last,c:'#e6e9ef',label:'',dash:[2,3]}];
+  for(const l of lines){const y=Y(l.p);if(y<top-2||y>Hh-bot+2)continue;ctx.strokeStyle=l.c;ctx.lineWidth=l.label?1.5:1;ctx.setLineDash(l.dash||[]);ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W-axW,y);ctx.stroke();ctx.setLineDash([]);
+    ctx.fillStyle=l.c;ctx.fillRect(W-axW,y-9,axW,18);ctx.fillStyle='#0e1117';ctx.textBaseline='middle';ctx.fillText(f2(l.p),W-axW+4,y);if(l.label){ctx.fillStyle=l.c;ctx.fillText(l.label,8,y-9);}}
+  // title + legend
+  ctx.textBaseline='alphabetic';ctx.fillStyle='#e6e9ef';ctx.font='bold 14px system-ui';ctx.fillText(o.title||'',8,18);
+  let lx=8+ctx.measureText(o.title||'').width+14;ctx.font='12px system-ui';
+  for(const e of em){ctx.fillStyle=e.col;ctx.fillText('EMA'+e.k,lx,18);lx+=58;}
+}
+// ==== DRAW END
 
 // ==== CHECK PURE START
 // Recomputes the plan's numbers in code and flags mistakes. g = parsed Final trade plan, ctx = {px, atr1h, spread, now}.
