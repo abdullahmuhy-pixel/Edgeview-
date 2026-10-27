@@ -21,9 +21,10 @@ const f2 = x => x == null || isNaN(x) ? 'n/a' : Number(x).toFixed(pxDec(x));
 
 const W = existsSync('watchlist.json') ? JSON.parse(readFileSync('watchlist.json', 'utf8')) : { pairs: ['XAU/USD'] };
 const pairs = (W.pairs || []).slice(0, 12), minScore = +W.minScore || 60, model = W.model || 'claude-haiku-5-5';
-let S = { alerts: [], sessions: {} };
+let S = { alerts: [], sessions: {}, sig: [] };
 try { if (existsSync(STATE)) S = { ...S, ...JSON.parse(readFileSync(STATE, 'utf8')) }; } catch (e) { }
 S.alerts = (S.alerts || []).filter(a => now - a.t < 2 * 864e5);
+S.sig = (S.sig || []).filter(x => now - x.seen < 120 * 864e5).slice(0, 600);   // every signal seen, scored for follow-through once its window has passed
 const recent = (sym, side) => S.alerts.some(a => a.sym === sym && a.side === side && now - a.t < 4 * 36e5);
 
 // markets: forex and gold are shut from Friday 21:00 UTC to Sunday 21:00 UTC; crypto never closes
@@ -97,7 +98,10 @@ for (const sym of pairs) {
   try {
     const a = await bars(sym, '15M', 300), b = await bars(sym, '1H', 300), h4 = D.to4h(b.closed), pxNow = (a.last || b.last).c;
     const sig = freshSignals(a.closed, b.closed, h4, pxNow);
-    const data = D.brief(sym, a.closed, b.closed, h4) + `\nPRICE NOW ${f2(pxNow)}\nEARLY-MOVE SIGNALS (last hour):\n` + (sig.length ? sig.map(sigText).join('\n') : 'none');
+    for (const p of S.sig) { if (p.sym !== sym || p.res) continue; const r = D.scoreSignal(p, p.tf === '15M' ? a.closed : b.closed); if (r) { p.res = r.res; p.mfe = r.mfe; p.mae = r.mae; } else if (now - p.seen > 3 * 864e5) p.res = 'void'; }
+    for (const x of sig) if (!S.sig.some(p => p.sym === sym && p.tf === x.tf && p.at === x.at && p.side === x.side)) S.sig.unshift({ sym, tf: x.tf, side: x.side, score: x.score, atr: x.atr, price: x.price, at: x.at, patterns: x.patterns, why: x.why.filter(w => /trend/.test(w)), seen: now });
+    const track = [...new Set(sig.map(x => D.sigVerdict(x, S.sig).line).filter(Boolean))];
+    const data = D.brief(sym, a.closed, b.closed, h4) + `\nPRICE NOW ${f2(pxNow)}\nEARLY-MOVE SIGNALS (last hour):\n` + (sig.length ? sig.map(sigText).join('\n') : 'none') + (track.length ? '\nPAST FOLLOW-THROUGH OF THESE SIGNAL TYPES (1 ATR with the signal before 1 ATR against): ' + track.join(' ') : '');
     if (doSession) {
       const v = await haiku(`${sess.name} session open screen. Current UTC time ${new Date(now).toISOString()}.\n${data}`);
       log(sym, 'session', JSON.stringify(v));
@@ -105,12 +109,14 @@ for (const sym of pairs) {
         sent.push({ sym, side: v.direction, t: now });
         await telegram(`🔔 <b>${esc(sym)}: possible ${esc(v.direction)}</b> (${esc(v.quality)}/5) at the ${esc(sess.name)} open\n${esc(v.setup)}. ${esc(v.why)}\nTrigger: ${esc(v.trigger)}\nInvalidation: ${v.invalidation != null ? esc(f2(+v.invalidation)) : 'n/a'}\nPrice ${esc(f2(pxNow))}. Open Edgeview for a full analysis.`);
       }
+    } else if (W.earlyDetection !== false && sig.length && sig[0].score >= minScore && !recent(sym, sig[0].side) && D.sigVerdict(sig[0], S.sig).weak && sig[0].score < minScore + 15) {
+      log(sym, 'skipped weak signal type', D.sigVerdict(sig[0], S.sig).line);
     } else if (W.earlyDetection !== false && sig.length && sig[0].score >= minScore && !recent(sym, sig[0].side)) {
       const s = sig[0], v = await haiku(`An early-move signal fired in the last hour. Confirm or reject it. Current UTC time ${new Date(now).toISOString()}.\n${data}`);
       log(sym, 'early', s.side, s.score, JSON.stringify(v));
       if (!AK || (v && v.opportunity !== 'no' && (v.direction === s.side || v.direction === 'NONE'))) {
         sent.push({ sym, side: s.side, t: now });
-        await telegram(`⚡ <b>${esc(sym)}: early ${esc(s.side)} move</b> (${esc(s.tf)}, score ${s.score})\n${esc(v ? `${v.setup}. ${v.why}` : s.why.join('; '))}\n${v ? 'Trigger: ' + esc(v.trigger) + '\n' : ''}Origin ${esc(f2(s.origin))}, stop idea ${esc(f2(s.stopIdea))}, price ${esc(f2(pxNow))}. Open Edgeview for a full analysis.`);
+        await telegram(`⚡ <b>${esc(sym)}: early ${esc(s.side)} move</b> (${esc(s.tf)}, score ${s.score})\n${esc(v ? `${v.setup}. ${v.why}` : s.why.join('; '))}\n${v ? 'Trigger: ' + esc(v.trigger) + '\n' : ''}${(() => { const t = D.sigVerdict(s, S.sig).line; return t ? esc(t) + '\n' : ''; })()}Origin ${esc(f2(s.origin))}, stop idea ${esc(f2(s.stopIdea))}, price ${esc(f2(pxNow))}. Open Edgeview for a full analysis.`);
       }
     } else log(sym, 'no alert', sig.length ? `best ${sig[0].side} ${sig[0].score}` : 'no signal');
   } catch (e) { log(sym, 'error', e.message || e); }

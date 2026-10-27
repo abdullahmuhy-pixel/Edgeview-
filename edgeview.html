@@ -195,10 +195,15 @@
     <input id="model" value="claude-sonnet-5-5">
     <label>Screening model (watchlist robot)</label>
     <input id="mHaiku" value="claude-haiku-5-5">
-    <label>GitHub token (only to send your watchlist to the background scanner)</label>
+    <label>GitHub token (sends your watchlist to the background scanner and keeps the encrypted backup)</label>
     <input id="kGh" type="password" autocomplete="off" placeholder="github_pat_...">
     <label>GitHub repository (owner/name)</label>
     <input id="ghRepo" placeholder="worked out from the page address">
+    <label>Backup passphrase (encrypts your journal before it leaves this device)</label>
+    <input id="kSync" type="password" autocomplete="off" placeholder="at least 10 characters; you need it on every device">
+    <label style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="syncOn"> Back up the journal, lessons and signal record automatically</label>
+    <div class="row" style="margin-top:8px"><button class="sec" id="syncNow">Back up now</button><button class="sec" id="syncPull">Restore from backup</button></div>
+    <div class="hint" id="syncStat">The backup is encrypted in this browser (AES-256) and saved to the edgeview-data branch of your repository, so GitHub Pages is not rebuilt and nobody can read it without the passphrase. Open the app on another device with the same token and passphrase to share one memory.</div>
     <div class="row" style="margin-top:12px">
       <button class="sec" id="saveKeys">Save now</button>
       <button class="sec" id="clearKeys">Forget keys</button>
@@ -241,6 +246,7 @@
     <div class="hint" id="botStat"></div>
   </div>
   <div class="card"><div class="ttl">Robot trades</div><div id="botList" class="list"></div></div>
+  <div class="card"><div class="ttl">Early-move signals: did they follow through?</div><div id="sigStats"></div></div>
 
   <div class="card">
     <div class="ttl">Watchlist scanner</div>
@@ -439,11 +445,11 @@ RULES
 const $ = id => document.getElementById(id);
 const store = { get:k=>localStorage.getItem(k)||'', set:(k,v)=>localStorage.setItem(k,v), del:k=>localStorage.removeItem(k) };
 // ---- keys
-['kAnthropic','kTwelve','kFinnhub','kFred','model','mHaiku','kGh','ghRepo','symbol','market'].forEach(id=>{ const v=store.get('ca_'+id); if(v) $(id).value=v; });
+['kAnthropic','kTwelve','kFinnhub','kFred','model','mHaiku','kGh','ghRepo','kSync','symbol','market'].forEach(id=>{ const v=store.get('ca_'+id); if(v) $(id).value=v; });
 
 $('tdplan').value=store.get('ca_tdplan')||'free';$('tdplan').onchange=()=>store.set('ca_tdplan',$('tdplan').value);
 $('depth').value=store.get('ca_depth')||'std';$('depth').onchange=()=>store.set('ca_depth',$('depth').value);
-const KEY_IDS=['kAnthropic','kTwelve','kFinnhub','kFred','model','mHaiku','kGh','ghRepo'];
+const KEY_IDS=['kAnthropic','kTwelve','kFinnhub','kFred','model','mHaiku','kGh','ghRepo','kSync'];
 function saveAll(msg){
   KEY_IDS.forEach(id=>store.set('ca_'+id,$(id).value.trim()));
   const el=$('saveStatus'); el.textContent=msg||'Saved on this device ✓';
@@ -811,14 +817,14 @@ $('go').onclick=async()=>{
       if(digest) content.push({type:'text',text:"ECONOMIC CALENDAR / NEWS (transcribed from the user's screenshots):\n"+digest});
       else if(lists.news.length) content.push({type:'text',text:'NEWS / ECONOMIC CALENDAR SCREENSHOTS (read every event and headline in them):'},...lists.news.map(imgBlock));
       const others=pairs.filter(x=>x!==p).map(x=>x.sym).join(', ');
-      const LV=LIVE[String(p.sym).toUpperCase()]||{},MS=cd?marketState(cd,LV.px,Date.now()):null;let learn='';try{learn=learnText(HS.get(),LS.get(),p.sym,MS);}catch(e){}
+      const LV=LIVE[String(p.sym).toUpperCase()]||{},MS=cd?marketState(cd,LV.px,Date.now()):null;let learn='';try{learn=learnText(allLearn(),LS.get(),p.sym,MS);}catch(e){}
       content.push({type:'text',text:`Instrument: ${p.sym}.${lists[p.key].length>6?` There are ${lists[p.key].length} charts: read them all but keep every section brief so the answer finishes through the Final trade plan.`:''}${pairBrief(p.sym,true)}${learn?learn+'\n\n':''}${others?` Also being analyzed in this session: ${others}. In the Risk line of the Final trade plan, mention correlated exposure with them if relevant (for example both are USD-driven, so they are not independent bets).`:''}\n\nLIVE DATA (${L.at}; active sessions: ${sessions()}):\n${L.live||('none. '+(p.px?('User-provided current price: '+p.px+'. Treat it as approximate.'):'No live price; read price from the charts and say levels are approximate.'))}\n\n${p.sp&&+p.sp>0?`BROKER SPREAD: about ${p.sp} in price. Buys fill at the ask and sells at the bid: keep stops and targets clear of it, and check that every R:R still meets 1:1.5 after the spread.\n\n`:''}RECENT HEADLINES:\n${L.news||'none'}\n\nUSER NOTE: ${$('note').value.trim()||'none'}`});
       const card=cards[i];
       const co=await claudeStream(ak,SYSTEM,content,t=>{ q(i).innerHTML=md(t); card.dataset.raw=t; if(!scrolled&&t){scrolled=true;card.scrollIntoView({behavior:'smooth'});} btn.textContent=tag(i)+'analyzing… ('+t.length+' chars)'; },deep);
       const text=co.text,stop=co.stop;
       if(stop==='max_tokens') q(i).innerHTML+='<p class="err">The answer was cut off. Run this pair again.</p>';
       if(!text.trim()) throw new Error(emptyMsg(co));
-      const G=parseFinal(text);PLAN[String(p.sym).toUpperCase()]=G;let F=null,LP=null;try{F=featuresOf(G,{ms:MS||{},L:LIVE[String(p.sym).toUpperCase()]||{},cal:L.cal,now:Date.now()});if(F.side)LP=learnedProb({...F,sym:p.sym},learnPool(HS.get()));}catch(e){} saveHistory(text,p.sym,{f:F,...(LP?{lp:LP.p}:{})}); addOdds(card,text,p.sym); addCheck(card,text,{...p,cal:L.cal,f:F,lp:LP}); if(N===1) fillCalc(text,p.sym); renderHist();
+      const G=parseFinal(text);PLAN[String(p.sym).toUpperCase()]=G;let F=null,LP=null;try{F=featuresOf(G,{ms:MS||{},L:LIVE[String(p.sym).toUpperCase()]||{},cal:L.cal,now:Date.now()});if(F.side)LP=learnedProb({...F,sym:p.sym},learnPool(allLearn()));}catch(e){} saveHistory(text,p.sym,{f:F,...(LP?{lp:LP.p}:{})});try{const id=HS.get()[0].id,LVx=LIVE[String(p.sym).toUpperCase()]||{},sh=shadowEntries(text,p.sym,G,id,LVx.tol?LVx.tol/2:null).map(o=>({...o,f:{...featuresOf({decision:o.dec,order:o.ord,entry:o.entry,'stop loss':o.sl,tp1:o.tp1,'valid until':o.valid,'setup type':F&&F.side===(o.dec==='BUY'?1:-1)?G['setup type']:''},{ms:MS||{},L:LVx,cal:L.cal,now:Date.now()}),style:o.style}}));if(sh.length)SH.set(sh.concat(SH.get()));}catch(e){} addOdds(card,text,p.sym); addCheck(card,text,{...p,cal:L.cal,f:F,lp:LP}); if(N===1) fillCalc(text,p.sym); renderHist();
       return text;
     }
   });
@@ -1099,8 +1105,21 @@ async function haiku(system,user){
 const sigText=s=>`${s.tf} ${s.side} score ${s.score}: ${s.patterns.join(' + ')}; ${s.why.join('; ')}; origin ${f2(s.origin)}, price ${f2(s.price)}, ATR ${f2(s.atr)}`;
 
 // ---- the scanner (v33)
-const SG={get:()=>{try{return JSON.parse(store.get('ca_sig')||'[]');}catch(e){return [];}},set:a=>store.set('ca_sig',JSON.stringify(a.slice(0,60)))};
+const SG={get:()=>{try{return JSON.parse(store.get('ca_sig')||'[]');}catch(e){return [];}},set:a=>{try{store.set('ca_sig',JSON.stringify(a.slice(0,300)));}catch(e){store.set('ca_sig',JSON.stringify(a.slice(0,120)));}}};
 let scanning=false;
+const SH={get:()=>{try{return JSON.parse(store.get('ev_shadow')||'[]');}catch(e){return [];}},set:a=>{const k=a.slice(0,600).map(e=>{const{text,...r}=e;return r;});try{store.set('ev_shadow',JSON.stringify(k));}catch(e){try{store.set('ev_shadow',JSON.stringify(k.slice(0,250)));}catch(e2){}}}};
+const allLearn=()=>HS.get().concat(SH.get());
+function resolveShadows(sym,bars,barMs,now){if(!bars||!bars.length)return 0;const S=String(sym).toUpperCase(),first=bars[0].t;let n=0;
+  SH.set(SH.get().map(e=>{if(e.st!=='open'||e.sym!==S)return e;if(e.id<first-barMs){return now-e.id>21*864e5?{...e,st:'void'}:e;}
+    const r=resolveOutcome(e,bars,now,barMs);if(!r)return now-e.id>21*864e5?{...e,st:'void'}:e;if(r.pending)return e;n++;return {...e,st:r.st,x:r.x,auto:'shadow'};}));return n;}
+const SHDUE={};let shBusy=false;
+async function shadowCheck(){if(shBusy)return;const now=Date.now(),open=SH.get().filter(e=>e.st==='open'&&now-e.id>36e5);if(!open.length)return;
+  const syms=[...new Set(open.map(e=>e.sym))].filter(s=>now-(SHDUE[s]||0)>30*6e4).slice(0,2);if(!syms.length)return;shBusy=true;
+  try{for(const sym of syms){SHDUE[sym]=now;const crypto=isCrypto(sym)&&!$('kTwelve').value.trim();if(!crypto&&(!$('kTwelve').value.trim()||tdUse()>700))continue;
+    try{const from=Math.min(...open.filter(e=>e.sym===sym).map(e=>e.id))-36e5,bars=await hourlyBars(sym,from);if(bars)resolveShadows(sym,bars,36e5,now);}catch(e){}}}finally{shBusy=false;}
+  renderLearn();}
+function renderSigStats(){const box=$('sigStats');if(!box)return;const G=EVDetect.sigStats(SG.get()),rows=Object.values(G).filter(g=>g.hit+g.miss>=3).sort((a,b)=>a.k==='all'?-1:b.k==='all'?1:(b.hit+b.miss)-(a.hit+a.miss));
+  box.innerHTML=rows.length?`<table class="ct"><tr><th>Signal</th><th>Followed through</th><th>Rate</th></tr>${rows.slice(0,14).map(g=>`<tr><td>${esc(g.k)}</td><td>${g.hit}/${g.hit+g.miss}${g.flat?` <small>(+${g.flat} flat)</small>`:''}</td><td style="color:${g.shrunk>=0.5?'var(--bull)':'var(--bear)'}">${Math.round(g.rate*100)}%${g.hit+g.miss<20?'<small> *</small>':''}</td></tr>`).join('')}</table><div class="hint">Followed through = price went 1 ATR with the signal before 1 ATR against it, within 16 bars (15M) or 12 bars (1H). Signal types under 40% after 20 tries need a higher score before they alert you. * under 20: weak evidence.</div>`:'<div class="hint">Each early-move signal is scored once its window has passed. The table appears after a few resolved signals.</div>';}
 // ---- post-trade reviews and lessons (v34)
 const LS={get:()=>{try{return JSON.parse(store.get('ev_lessons')||'[]');}catch(e){return [];}},set:a=>{try{store.set('ev_lessons',JSON.stringify(a.slice(0,150)));}catch(e){}}};
 const PM_SYS='You review one closed paper trade for a trader\'s journal so the next analysis can learn from it. You get the final plan, a fingerprint of the setup computed in code, the outcome, how far price went for (MFE) and against (MAE) the entry in R, and the candles from before the entry to the exit. Judge honestly. A loss on a sound plan is normal variance: say so. A win on a poor plan is luck: say so. Write ONE specific, actionable lesson for future plans of this kind, naming the condition it applies to (setup, volatility, session, level or news). No generic advice such as "use risk management". Return only JSON: {"verdict":"variance|entry|stop|target|timing|news|structure|luck|good","lesson":"max 220 characters","applies":"short condition, max 60 characters"}';
@@ -1126,7 +1145,7 @@ function reviewBacklog(){const have=new Set(LS.get().map(l=>l.id));const todo=HS
   $('learnStat').textContent=`Reviewing ${todo.length} closed trade${todo.length>1?'s':''} (needs candles: Twelve Data key, or crypto)…`;
   (async()=>{for(const e of todo){try{const fill=e.x.fillMin!=null?e.id+e.x.fillMin*6e4:e.id;const b=await hourlyBars(e.sym,fill-7*36e5);if(b)PMQ.q.push({id:e.id,bars:b.filter(x=>x.t<=((e.run&&e.run.exitT)||Date.now())+36e5).slice(-60)});}catch(err){}}
     await PMQ.run();$('learnStat').textContent='Reviews done. New lessons are listed below.';})();}
-function renderLearn(){const box=$('learnBox');if(!box)return;const a=HS.get(),pool=learnPool(a),ls=LS.get(),b=behaviour(a);
+function renderLearn(){const box=$('learnBox');if(!box)return;const a=allLearn(),pool=learnPool(a),ls=LS.get(),b=behaviour(a);
   let h='';
   if(pool.length<5)h+=`<div class="hint">${pool.length} resolved trade${pool.length===1?'':'s'} with a recorded setup so far. From v34 every plan is saved with a fingerprint (setup type, timeframe agreement, volatility, session, stop size, zone, news) and every result with how far price went for and against it. The tables appear after 5 resolved trades; adjustments only count from about 20.</div>`;
   else{const win=pool.filter(t=>t.win).length,exp=pool.reduce((s,t)=>s+t.base/100,0);
@@ -1135,25 +1154,32 @@ function renderLearn(){const box=$('learnBox');if(!box)return;const a=HS.get(),p
     if(g.length)h+=`<table class="ct" style="margin-top:8px"><tr><th>Condition</th><th>Won</th><th>Edge</th></tr>${g.slice(0,14).map(x=>`<tr><td>${esc(x.dim)}: <b>${esc(String(x.val))}</b></td><td>${x.w}/${x.n}</td><td style="color:${x.shrunk>=0?'var(--bull)':'var(--bear)'}">${fP(x.shrunk)}${x.n<20?'<small> *</small>':''}</td></tr>`).join('')}</table><div class="hint">Edge = win rate minus the no-edge rate for each trade's R:R, shrunk toward 0 for small samples. * under 20 trades: weak evidence.</div>`;}
   if(b.lines.length)h+=`<div style="margin-top:10px"><b style="font-size:13px">How trades behaved</b>${b.lines.map(x=>`<div class="hint" style="color:var(--text)">• ${esc(x)}</div>`).join('')}</div>`;
   h+=`<div style="margin-top:10px"><b style="font-size:13px">Lessons from post-trade reviews (${ls.length})</b>`+(ls.length?ls.slice(0,12).map(l=>`<div class="hint" style="color:var(--text);margin:4px 0">• <b>${esc(l.sym)} ${l.side>0?'BUY':'SELL'} ${esc(l.setup||'')}</b> ${l.res==='win'?'✅':'❌'} <i>${esc(l.verdict||'')}</i>: ${esc(l.text)} <button class="sec" style="padding:2px 8px;font-size:11px" onclick="delLesson(${l.id})">✕</button></div>`).join(''):'<div class="hint">None yet. After each closed robot trade, Claude Haiku compares the plan with what price did and writes one lesson. The most relevant lessons are sent with every new analysis.</div>')+'</div>';
+  const sh=SH.get(),so=sh.filter(e=>e.st==='open').length,sr=sh.filter(e=>e.st==='win'||e.st==='loss').length;
+  h+=`<div class="hint" style="margin-top:8px">Includes ${sr} resolved shadow trade${sr===1?'':'s'} (the Scalp, Intraday and Swing limit orders of each analysis, followed on paper without touching the robot's balance); ${so} still open.</div>`;
   box.innerHTML=h;}
 function delLesson(id){LS.set(LS.get().filter(l=>l.id!=id));renderLearn();}
 async function scanPair(sym,mode){
   const m15=await robotBars(sym,'15M',300),h1=await robotBars(sym,'1H',300),h4=EVDetect.to4h(h1);
   const sig=[...EVDetect.detect(m15,h1,{tf:'15M'}),...EVDetect.detect(h1,h4,{tf:'1H'})].sort((a,b)=>b.score-a.score);
   const now=Date.now(),min=+$('wlMin').value||60,prev=SG.get();
+  // score older signals on this pair with the candles just fetched (no extra API calls)
+  for(const p of prev){if(p.sym!==sym||p.res)continue;const r=EVDetect.scoreSignal(p,p.tf==='15M'?m15:h1);if(r){p.res=r.res;p.mfe=r.mfe;p.mae=r.mae;}else if(now-p.seen>3*864e5)p.res='void';}
   for(const s of sig){if(!prev.some(p=>p.sym===sym&&p.tf===s.tf&&p.at===s.at&&p.side===s.side))prev.unshift({sym,...s,seen:now});}
-  SG.set(prev);
+  SG.set(prev);renderSigStats();
   const best=sig[0],recent=a=>AL.get().some(x=>x.sym===sym&&x.side===a&&now-x.t<4*36e5);
-  const data=EVDetect.brief(sym,m15,h1,h4)+'\nEARLY-MOVE SIGNALS:\n'+(sig.length?sig.map(sigText).join('\n'):'none');
+  const tr=[...new Set(sig.map(x=>EVDetect.sigVerdict(x,SG.get()).line).filter(Boolean))];
+  const data=EVDetect.brief(sym,m15,h1,h4)+'\nEARLY-MOVE SIGNALS:\n'+(sig.length?sig.map(sigText).join('\n'):'none')+(tr.length?'\nPAST FOLLOW-THROUGH OF THESE SIGNAL TYPES on this trader\'s watchlist (1 ATR with the signal before 1 ATR against): '+tr.join(' '):'');
   if(mode==='session'){
     let v=null;try{v=await haiku(SCREEN_SYS,`Session open screen. Current UTC time ${new Date().toISOString()}.\n${data}`);}catch(e){return {sym,err:e.message};}
     if(v&&v.opportunity==='yes'&&(+v.quality||0)>=3&&!recent(v.direction))pushAlert({kind:'session',sym,side:v.direction,title:`${sym}: possible ${v.direction} (${v.quality}/5)`,body:`${v.setup||''}. ${v.why||''} Trigger: ${v.trigger||'n/a'}. Wrong below/above ${v.invalidation!=null?f2(+v.invalidation):'n/a'}.`});
     return {sym,v,sig};
   }
+  const sv=best?EVDetect.sigVerdict(best,SG.get()):null;
+  if(best&&best.score>=min&&!recent(best.side)&&sv&&sv.weak&&best.score<min+15){$('wlStat').textContent=`${sym}: skipped a ${best.tf} ${best.side} signal (score ${best.score}). ${sv.line} Signals of this kind need a score of ${min+15}+ to alert.`;return {sym,sig};}
   if(best&&best.score>=min&&!recent(best.side)){
     let v=null;try{v=$('kAnthropic').value.trim()?await haiku(SCREEN_SYS,`An early-move signal just fired on a closed candle. Confirm or reject it. Current UTC time ${new Date().toISOString()}.\n${data}`):null;}catch(e){v=null;}
     if(!v||(v.opportunity!=='no'&&(v.direction===best.side||v.direction==='NONE')))
-      pushAlert({kind:'early',sym,side:best.side,score:best.score,title:`${sym}: early ${best.side} move (${best.tf}, score ${best.score})`,body:(v?`${v.setup||best.patterns.join(' + ')}. ${v.why||''} Trigger: ${v.trigger||'n/a'}.`:best.why.join('; ')+'. (Not confirmed by Haiku: no Anthropic key.)')+` Origin ${f2(best.origin)}, stop idea ${f2(best.stopIdea)}.`});
+      pushAlert({kind:'early',sym,side:best.side,score:best.score,title:`${sym}: early ${best.side} move (${best.tf}, score ${best.score})`,body:(sv&&sv.line?sv.line+' ':'')+(v?`${v.setup||best.patterns.join(' + ')}. ${v.why||''} Trigger: ${v.trigger||'n/a'}.`:best.why.join('; ')+'. (Not confirmed by Haiku: no Anthropic key.)')+` Origin ${f2(best.origin)}, stop idea ${f2(best.stopIdea)}.`});
   }
   return {sym,sig};
 }
@@ -1179,6 +1205,7 @@ async function robotTick(){
   if(cfg.sess){const s=EVDetect.justOpened(now,65),done=store.get('ca_sessDone');if(s&&done!==s.name+s.t){store.set('ca_sessDone',s.name+s.t);pushAlert({kind:'info',title:`${s.name} session open`,body:`Screening ${WL.get().length} pairs with Claude Haiku.`});await scanAll('session');store.set('ca_lastQ',String(Math.floor(now/9e5)));return;}}
   if(cfg.early){const q=Math.floor((now-45000)/9e5),last=+store.get('ca_lastQ')||0;if(q>last){store.set('ca_lastQ',String(q));await scanAll('early');}}
   await botCheck(false);
+  shadowCheck();
 }
 (function(){
   const c=WLS.get();$('wlSess').checked=c.sess;$('wlEarly').checked=c.early;$('wlNotify').checked=c.notify&&'Notification' in window&&Notification.permission==='granted';$('wlMin').value=c.min;
@@ -1238,7 +1265,7 @@ async function botCheck(force){
     try{
       const from=Math.min(...by[sym].map(e=>e.id))-36e5,fine=now-from<14*864e5;
       const bars=fine?await barsSince(sym,from,'5M'):await hourlyBars(sym,from);if(!bars||!bars.length)continue;
-      const ms=fine?3e5:36e5;
+      const ms=fine?3e5:36e5;try{resolveShadows(sym,bars,ms,now);}catch(e){}
       HS.set(HS.get().map(e=>{if(!(e.bot&&e.st==='open'&&e.sym===sym))return e;const r=resolveOutcome(e,bars,now,ms);if(!r)return e;
         if(r.pending){const was=e.run||{};const run={filled:r.filled,hit:r.hit,lastP:r.lastP,fillT:r.fillT,at:now,x:r.x};
           if(r.filled&&!was.filled)changes.push({e,msg:`filled at ${e.entry.split('|')[0].trim()}`});
@@ -1351,7 +1378,7 @@ async function autoResolve(force){
       const from=Math.min(...bySym[sym].map(e=>e.id))-36e5, bars=await hourlyBars(sym,from);
       if(!bars){fails.push(sym+' (needs a Twelve Data key)');continue;}
       const upd={};
-      for(const e of bySym[sym]){const r=resolveOutcome(e,bars,now);if(!r)continue;upd[e.id]=r;}
+      for(const e of bySym[sym]){const r=resolveOutcome(e,bars,now);if(!r)continue;upd[e.id]=r;}try{resolveShadows(sym,bars,36e5,now);}catch(e){}
       HS.set(HS.get().map(e=>{const r=upd[e.id];if(!r||e.st!=='open')return e;
         if(r.pending) return {...e,run:{filled:r.filled,hit:r.hit,note:r.note,at:now}};
         const st=r.st,o={...e,st,auto:'candles',autoNote:r.note,x:r.x,run:null};if(st!=='skip')PMQ.add(o,bars,36e5);
@@ -1360,16 +1387,66 @@ async function autoResolve(force){
     }catch(err){fails.push(sym+' ('+(err.message||err)+')');}
     await sleep(1500);
   }
-  resolving=false; renderHist(); PMQ.run();
+  resolving=false; renderHist(); PMQ.run(); shadowCheck();
   if(el) el.textContent=`Last checked ${new Date().toISOString().slice(11,16)} UTC: ${done} plan${done===1?'':'s'} settled from the candles.`+(fails.length?` Could not check: ${fails.join(', ')}.`:'');
 }
 function renderHist(){const a=HS.get(),cl=a.filter(e=>e.st=='win'||e.st=='loss'),w=cl.filter(e=>e.st=='win').length,pr=cl.filter(e=>e.prob!=null);
 $('stats').textContent=cl.length?`Closed ${cl.length}: ${w} wins, ${cl.length-w} losses, win rate ${(w/cl.length*100).toFixed(0)}%`+(pr.length?` | Edgeview's stated average probability ${(pr.reduce((t,e)=>t+e.prob,0)/pr.length).toFixed(0)}%`:''):'No closed trades yet. Open plans are checked against the candles automatically; you can also mark Win or Loss yourself.';
 $('hist').innerHTML=a.map(e=>`<div class="hi"><b>${esc(e.sym)} ${esc(e.dec)}</b> ${esc(e.ord)}${e.ord==='WEEKLY OUTLOOK'?'':' @ '+esc(e.entry)}<br><small>${new Date(e.id).toISOString().slice(0,16).replace('T',' ')}Z${e.ord==='WEEKLY OUTLOOK'?'':' | SL '+esc(e.sl)+' | TP1 '+esc(e.tp1)}${e.prob!=null?' | '+e.prob+'%':''} | <b>${e.st.toUpperCase()}</b>${isLad(e)&&e.hit!=null?' | '+(e.hit?'TP'+e.hit+' of '+e.tps.length+' hit':'stopped')+' | '+fR(rOf(e)):''}${tagOf(e)}${e.auto==='candles'?' | <i>auto: '+esc(e.autoNote||'from candles')+'</i>':''}${e.st==='open'&&e.run?' | <i>'+esc(String(e.run.note||(e.run.filled?'Filled, still running.':'Not filled yet.')))+'</i>':''}</small><div class="row" style="margin-top:6px;flex-wrap:wrap"><button class="sec" onclick="viewH(${e.id})">View</button>${hitBtns(e)}<button class="sec" onclick="setSt(${e.id},'skip')">Skipped</button>${e.ord!=='WEEKLY OUTLOOK'&&e.st!=='open'?`<button class="sec" onclick="copyResult(this,${e.id})">Post result</button>`:''}<button class="sec" onclick="delH(${e.id})">Delete</button></div></div>`).join('')||'<small>Nothing saved yet. Every analysis is saved here automatically.</small>';
 $('calib').innerHTML=calibHTML(a);renderLearn();}
-$('resolveNow').onclick=()=>autoResolve(true);$('learnRev').onclick=reviewBacklog;$('pmOn').checked=store.get('ev_pmOff')!=='1';$('pmOn').onchange=()=>store.set('ev_pmOff',$('pmOn').checked?'0':'1');setTimeout(()=>autoResolve(false),4000);
+$('resolveNow').onclick=()=>autoResolve(true);$('learnRev').onclick=reviewBacklog;renderSigStats();$('pmOn').checked=store.get('ev_pmOff')!=='1';$('pmOn').onchange=()=>store.set('ev_pmOff',$('pmOn').checked?'0':'1');setTimeout(()=>autoResolve(false),4000);
 $('recapW').onclick=function(){copyRecap(this,7);};$('recapM').onclick=function(){copyRecap(this,30);};
 renderHist();
+// ---- encrypted backup and sync through GitHub (v34)
+const b64=u8=>{let s='';for(let i=0;i<u8.length;i+=32768)s+=String.fromCharCode.apply(null,u8.subarray(i,i+32768));return btoa(s);};
+const unb64=t=>Uint8Array.from(atob(t),c=>c.charCodeAt(0));
+async function zipT(str,un){if(typeof CompressionStream==='undefined')return null;const st=new Blob([str]).stream().pipeThrough(un?new DecompressionStream('gzip'):new CompressionStream('gzip'));return new Uint8Array(await new Response(st).arrayBuffer());}
+async function cryptoKey(pass,salt){const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(pass),'PBKDF2',false,['deriveKey']);
+  return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:210000,hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);}
+async function sealData(obj,pass){const js=JSON.stringify(obj),z=await zipT(js),plain=z||new TextEncoder().encode(js),salt=crypto.getRandomValues(new Uint8Array(16)),iv=crypto.getRandomValues(new Uint8Array(12));
+  const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},await cryptoKey(pass,salt),plain));return {v:1,app:'edgeview',gz:!!z,salt:b64(salt),iv:b64(iv),ct:b64(ct)};}
+async function openData(box,pass){const pt=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(box.iv)},await cryptoKey(pass,unb64(box.salt)),unb64(box.ct)));
+  return JSON.parse(box.gz?new TextDecoder().decode(await zipT(pt,true)):new TextDecoder().decode(pt));}
+// Merge two lists by id. A settled record beats an open one; otherwise the more recently checked one wins; text is kept if either has it.
+const rank=e=>(e.st&&e.st!=='open'?2:0)+(e.x?1:0);
+function mergeById(cur,inc){const m=new Map();for(const e of cur||[])if(e&&e.id!=null)m.set(e.id,e);
+  for(const e of inc||[]){if(!e||e.id==null)continue;const a=m.get(e.id);if(!a){m.set(e.id,e);continue;}
+    const pick=rank(e)>rank(a)||(rank(e)===rank(a)&&((e.run&&e.run.at)||0)>((a.run&&a.run.at)||0))?e:a,other=pick===a?e:a;m.set(e.id,{...pick,...(!pick.text&&other.text?{text:other.text}:{}),...(!pick.f&&other.f?{f:other.f}:{})});}
+  return [...m.values()].sort((a,b)=>b.id-a.id);}
+function mergeSigs(cur,inc){const k=x=>x.sym+'|'+x.tf+'|'+x.at+'|'+x.side,m=new Map();for(const x of cur||[])m.set(k(x),x);for(const x of inc||[]){const a=m.get(k(x));if(!a||(!a.res&&x.res))m.set(k(x),x);}return [...m.values()].sort((a,b)=>(b.seen||0)-(a.seen||0));}
+const SYNC_PATH='edgeview-sync.json',SYNC_BR='edgeview-data';
+function syncCfg(){const tok=$('kGh').value.trim(),pass=$('kSync').value;if(!tok)throw new Error('add a GitHub token first');if(pass.length<10)throw new Error('set a backup passphrase of at least 10 characters');
+  return {tok,pass,repo:ghRepo(),H:{Authorization:'Bearer '+tok,Accept:'application/vnd.github+json'}};}
+async function ghBranch(c){const api=`https://api.github.com/repos/${c.repo}`;let r=await fetch(`${api}/git/ref/heads/${SYNC_BR}`,{headers:c.H});if(r.ok)return;
+  const rp=await fetch(api,{headers:c.H}),j=await rp.json().catch(()=>({}));if(!rp.ok)throw new Error(j.message||'cannot read the repository');
+  const m=await fetch(`${api}/git/ref/heads/${j.default_branch||'main'}`,{headers:c.H}),mj=await m.json();if(!m.ok)throw new Error(mj.message||'cannot read the main branch');
+  r=await fetch(`${api}/git/refs`,{method:'POST',headers:c.H,body:JSON.stringify({ref:'refs/heads/'+SYNC_BR,sha:mj.object.sha})});if(!r.ok&&r.status!==422){const e=await r.json().catch(()=>({}));throw new Error(e.message||'cannot create the data branch');}}
+async function syncGet(c){const r=await fetch(`https://api.github.com/repos/${c.repo}/contents/${SYNC_PATH}?ref=${SYNC_BR}`,{headers:{...c.H,Accept:'application/vnd.github.raw+json'}});
+  if(r.status===404)return null;if(!r.ok)throw new Error('HTTP '+r.status);return {box:await r.json()};}
+async function syncSha(c){const r=await fetch(`https://api.github.com/repos/${c.repo}/contents/${SYNC_PATH}?ref=${SYNC_BR}`,{headers:c.H});if(r.status===404)return null;const j=await r.json().catch(()=>({}));return j.sha||null;}
+function syncPayload(){const h=HS.get().map((e,i)=>i<25||!e.text?e:{...e,text:''});return {hist:h,lessons:LS.get(),shadow:SH.get(),sig:SG.get(),at:Date.now(),ver:APP_VER};}
+function applyRemote(d){if(!d||!Array.isArray(d.hist))return 0;const before=HS.get().length;
+  const hist=mergeById(HS.get(),d.hist);HS.set(hist);SH.set(mergeById(SH.get(),d.shadow));SG.set(mergeSigs(SG.get(),d.sig));
+  const lm=new Map(LS.get().map(l=>[l.id,l]));for(const l of d.lessons||[])if(!lm.has(l.id))lm.set(l.id,l);LS.set([...lm.values()].sort((a,b)=>b.t-a.t));
+  return HS.get().length-before;}
+let syncBusy=false;
+async function syncRun(mode){if(syncBusy)return;syncBusy=true;const st=$('syncStat');
+  try{const c=syncCfg();st.textContent=mode==='pull'?'Reading the backup…':'Backing up…';
+    await ghBranch(c);let added=0;const cur=await syncGet(c).catch(()=>null);
+    if(cur&&cur.box&&cur.box.ct){let d;try{d=await openData(cur.box,c.pass);}catch(e){throw new Error('the backup could not be decrypted: wrong passphrase?');}added=applyRemote(d);}
+    if(mode!=='pull'){const box=await sealData(syncPayload(),c.pass),sha=await syncSha(c);
+      const r=await fetch(`https://api.github.com/repos/${c.repo}/contents/${SYNC_PATH}`,{method:'PUT',headers:c.H,body:JSON.stringify({message:'Edgeview encrypted backup',branch:SYNC_BR,content:btoa(JSON.stringify(box)),...(sha?{sha}:{})})});
+      const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.message||('HTTP '+r.status));}
+    store.set('ev_syncAt',String(Date.now()));store.set('ev_syncSig',syncSig());
+    st.textContent=`${mode==='pull'?'Restored':'Backed up'} ${new Date().toISOString().slice(11,16)} UTC to ${c.repo} (${SYNC_BR} branch)${added?`, ${added} new journal entr${added===1?'y':'ies'} merged in from another device`:''}.`;
+    if(added){renderHist();renderBot();}renderLearn();renderSigStats();}
+  catch(e){const m=String(e.message||e);st.textContent='Backup failed: '+m+(/decrypt|passphrase|token first/.test(m)?'.':'. The token needs Contents: read and write on this repository.');}
+  finally{syncBusy=false;}}
+const syncSig=()=>{const a=HS.get();return [a.length,a.filter(e=>e.st!=='open').length,LS.get().length,SH.get().filter(e=>e.st!=='open').length,SG.get().filter(x=>x.res).length].join('|');};
+$('syncOn').checked=store.get('ev_syncOn')==='1';$('syncOn').onchange=()=>{store.set('ev_syncOn',$('syncOn').checked?'1':'0');if($('syncOn').checked)syncRun('push');};
+$('syncNow').onclick=()=>syncRun('push');$('syncPull').onclick=()=>syncRun('pull');
+setInterval(()=>{if(store.get('ev_syncOn')==='1'&&!document.hidden&&syncSig()!==store.get('ev_syncSig')&&Date.now()-(+store.get('ev_syncAt')||0)>10*6e4)syncRun('push');},60000);
+setTimeout(()=>{if(store.get('ev_syncOn')==='1')syncRun('push');},8000);
 // ---- position size
 const VPP=sy=>/XAU/i.test(sy)?100:/XAG/i.test(sy)?5000:/BTC|ETH|SOL|XRP|BNB/i.test(sy)?1:/ZAR/i.test(sy)?5500:/JPY/i.test(sy)?650:/CAD/i.test(sy)?72000:/CHF/i.test(sy)?110000:100000;
 ['cBal','cRisk'].forEach(i=>{const v=store.get('ca_'+i);if(v)$(i).value=v;});
@@ -2071,7 +2148,7 @@ function featuresOf(g,ctx){ctx=ctx||{};const dec=String(g.decision||'').toUpperC
 function baseOf(rr){return 100/(1+(rr>0?rr:1.5));}
 // Resolved trades that carry a fingerprint.
 function learnPool(entries){return (entries||[]).filter(e=>e&&e.f&&e.f.side&&(e.st==='win'||e.st==='loss')&&e.ord!=='WEEKLY OUTLOOK')
-  .map(e=>({...e.f,sym:e.sym,id:e.id,win:e.st==='win',r:rOf(e),x:e.x||null,base:baseOf(e.f.rr)}));}
+  .map(e=>({...e.f,style:e.shadow?e.style:e.f.style,sym:e.sym,id:e.id,win:e.st==='win',r:rOf(e),x:e.x||null,base:baseOf(e.f.rr)}));}
 function simDist(a,b){let d=a.side!==b.side?3:0;
   if(a.setup&&b.setup&&a.setup!==b.setup)d+=2;
   if(a.align!=null&&b.align!=null)d+=Math.abs(a.align-b.align)*0.8;
@@ -2092,7 +2169,7 @@ function learnedProb(probe,pool){const nb=neighbours(probe,pool,15,3.5);if(nb.le
 function LDIMS(){return [['Setup',t=>t.setup],['Volatility regime',t=>t.reg],['Session',t=>t.sess],['Timeframes agreeing with the trade (1D/4H/1H)',t=>t.align==null?null:t.align+' of 3'],
   ['Against the daily trend',t=>t.counter?'yes':'no'],['RSI 1H relative to the trade',t=>t.rsiZ],['Entry at a zone of strength 3+',t=>t.zone==null?null:t.zone>=3?'yes':'no'],
   ['High-impact news inside the order window',t=>t.news==null?null:t.news?'yes':'no'],['Stop size (x 1H ATR)',t=>t.stopA==null?null:t.stopA<0.5?'under 0.5':t.stopA<1?'0.5-1':t.stopA<2?'1-2':'2 and over'],
-  ['Order',t=>t.mkt?'market':'limit'],['Direction',t=>t.side>0?'buy':'sell'],['Setup in this volatility',t=>t.setup&&t.reg?t.setup+' / '+t.reg:null]];}
+  ['Plan',t=>t.style||'final plan'],['Order',t=>t.mkt?'market':'limit'],['Direction',t=>t.side>0?'buy':'sell'],['Setup in this volatility',t=>t.setup&&t.reg?t.setup+' / '+t.reg:null]];}
 // Win rate of each condition against what its R:R would win with no edge. Edge is shrunk toward zero (prior of 10 trades).
 function groupStats(pool){const out=[];for(const [dim,f] of LDIMS()){const m={};for(const t of pool){const k=f(t);if(k==null)continue;(m[k]=m[k]||[]).push(t);}
   const ent=Object.entries(m);if(ent.length<2)continue;for(const [k,g] of ent){if(g.length<3)continue;const n=g.length,w=g.filter(t=>t.win).length,exp=g.reduce((s,t)=>s+t.base/100,0),rs=g.map(t=>t.r).filter(x=>x!=null);
@@ -2126,6 +2203,23 @@ function learnText(entries,lessons,sym,ms){const pool=learnPool(entries);const h
     t+=`\nIn conditions like now (1D ${tw(ms.trD)}, 4H ${tw(ms.tr4)}, 1H ${tw(ms.tr1)}, ${ms.reg||'unknown'} volatility, ${ms.sess}): `+(parts.join('; ')||'no similar past trades yet')+'.';}
   const rl=relevantLessons(lessons,{sym,reg:ms&&ms.reg},6);if(rl.length)t+='\nLESSONS from post-trade reviews (most relevant first):\n'+rl.map(l=>`- [${new Date(l.t).toISOString().slice(0,10)} ${l.sym} ${l.side>0?'BUY':'SELL'} ${l.setup||''} ${l.res}${l.reg?', '+l.reg+' volatility':''}] ${l.text}`).join('\n');
   return t;}
+// Limit orders from the Scalp, Intraday and Swing blocks, followed as "shadow" paper trades so every analysis
+// teaches the robot several times over. They never touch the robot's balance.
+function styleOrders(text){const out=[];let style=null;
+  for(const raw of String(text||'').split('\n')){const ln=raw.replace(/\*\*/g,'').trim();
+    const h=ln.match(/^#{2,4}\s*(.*)$/);if(h){const m=h[1].match(/^(Scalp|Intraday|Swing)/i);style=m?m[1].toLowerCase():null;continue;}
+    if(!style)continue;
+    const m=ln.match(/^[-*•]?\s*(BUY|SELL)\s+LIMIT\s*:?\s*(.*)$/i);if(!m)continue;
+    const parts=m[2].split('|').map(x=>x.trim());if(/\bSKIP\b/i.test(m[2])||/^(none|n\/a|-|–)/i.test(parts[0]))continue;
+    const lab=re=>parts.find(x=>re.test(x)),val=x=>x==null?null:_num(String(x).replace(/^\s*(stop\s*loss|stop|SL|TP\s*1|TP)\s*[:=]?\s*/i,''));
+    const entry=_num(parts[0]),sl=val(lab(/^(stop|SL\b)/i)),tp1=val(lab(/^TP\s*1\b|^TP\s*[:=]?\s*\d/i)),side=/BUY/i.test(m[1])?1:-1;
+    if(entry==null||sl==null||tp1==null||side*(entry-sl)<=0||side*(tp1-entry)<=0)continue;
+    const pp=lab(/prob/i),vp=lab(/valid/i),vm=vp&&vp.match(/\d{4}-\d{2}-\d{2}[ T]\d{1,2}:\d{2}/);
+    out.push({style,dec:side>0?'BUY':'SELL',ord:(side>0?'BUY':'SELL')+' LIMIT',entry:String(entry),sl:String(sl),tp1:String(tp1),prob:pp?_num(pp):null,valid:vm?vm[0]+' UTC':''});}
+  const seen=new Set();return out.filter(o=>{const k=o.dec+o.entry+o.sl;if(seen.has(k))return false;seen.add(k);return true;});}
+// Shadow entries for one analysis: drop orders that duplicate the final plan.
+function shadowEntries(text,sym,g,id,tol){const fe=_num(g.entry),fd=/SELL/i.test(g.decision||'')?'SELL':/BUY/i.test(g.decision||'')&&!/NO\s*TRADE/i.test(g.decision||'')?'BUY':null;
+  return styleOrders(text).filter(o=>!(fd===o.dec&&fe!=null&&Math.abs(_num(o.entry)-fe)<=(tol||Math.abs(fe)*2e-4))).map((o,i)=>({id:id+i+1,src:id,sym:String(sym).toUpperCase(),...o,st:'open',shadow:1}));}
 // ==== LEARN PURE END
 
 

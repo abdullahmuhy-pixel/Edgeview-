@@ -188,6 +188,42 @@
     return sessionOpens(now).filter(s => s.t <= now && now - s.t <= (withinMin || 65) * 60000).pop() || null;
   }
 
-  const api = { ema, atr, bandwidths, pivots, trendOf, to4h, sweep, choch, squeeze, ignition, detect, brief, sessionOpens, justOpened };
+  // ---- signal follow-through (v34): did price travel 1 ATR in the signal's direction before 1 ATR against it?
+  // bars: candles of the signal's timeframe, oldest first. Returns null while the signal is still inside its window.
+  // A candle that touches both counts as a miss (cautious). "flat" = neither within the window (16 x 15M, 12 x 1H).
+  function scoreSignal(s, bars) {
+    const side = s.side === 'BUY' ? 1 : -1, a = +s.atr, p = +s.price, ms = s.tf === '15M' ? 9e5 : 36e5, H = s.tf === '15M' ? 16 : 12;
+    if (!(a > 0) || !isFinite(p) || !bars || !bars.length) return null;
+    let n = 0, mfe = 0, mae = 0;
+    for (const b of bars) {
+      if (b.t < s.at + ms) continue; n++;
+      const fav = side > 0 ? b.h - p : p - b.l, adv = side > 0 ? p - b.l : b.h - p;
+      mfe = Math.max(mfe, fav); mae = Math.max(mae, adv);
+      const r = x => +(x / a).toFixed(2);
+      if (adv >= a) return { res: 'miss', mfe: r(Math.min(mfe, a)), mae: 1, bars: n };
+      if (fav >= a) return { res: 'hit', mfe: 1, mae: r(mae), bars: n };
+      if (n >= H) return { res: 'flat', mfe: r(mfe), mae: r(mae), bars: n };
+    }
+    return null;
+  }
+  const sigKey = s => s.tf + ' ' + [...(s.patterns || [])].sort().join('+');
+  const withTrend = s => (s.why || []).some(w => /with the higher-timeframe trend/.test(w)) ? 'with trend' : (s.why || []).some(w => /against the higher-timeframe/.test(w)) ? 'counter-trend' : 'no clear trend';
+  // follow-through rates of resolved signals, grouped. hit rate = hits / (hits + misses); flats are counted apart.
+  function sigStats(list) {
+    const done = (list || []).filter(s => s.res && s.res !== 'pending'), groups = {};
+    const add = (k, s) => { const g = groups[k] || (groups[k] = { k, n: 0, hit: 0, miss: 0, flat: 0 }); g.n++; g[s.res]++; };
+    for (const s of done) { add('type: ' + sigKey(s), s); add('score: ' + (s.score >= 70 ? '70+' : s.score >= 50 ? '50-69' : 'under 50'), s); add('trend: ' + withTrend(s), s); add('all', s); }
+    for (const g of Object.values(groups)) { const d = g.hit + g.miss; g.rate = d ? g.hit / d : null; g.shrunk = d ? (g.hit + 5) / (d + 10) : 0.5; }
+    return groups;
+  }
+  // a line for an alert, and whether this kind of signal has proved itself unreliable (20+ resolved, under 40% after shrinking)
+  function sigVerdict(s, list) {
+    const G = sigStats(list), g = G['type: ' + sigKey(s)];
+    if (!g || g.hit + g.miss < 5) return { line: '', weak: false, n: g ? g.hit + g.miss : 0 };
+    const d = g.hit + g.miss;
+    return { line: `Track record of ${sigKey(s)} signals: ${g.hit} of ${d} followed through 1 ATR before reversing 1 ATR (${Math.round(g.rate * 100)}%)${g.flat ? `, ${g.flat} went nowhere` : ''}.`, weak: d >= 20 && g.shrunk < 0.4, strong: d >= 20 && g.shrunk > 0.6, n: d, rate: g.rate };
+  }
+
+  const api = { ema, atr, bandwidths, pivots, trendOf, to4h, sweep, choch, squeeze, ignition, detect, brief, sessionOpens, justOpened, scoreSignal, sigKey, sigStats, sigVerdict };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.EVDetect = api;
 })(typeof window !== 'undefined' ? window : globalThis);
