@@ -1,4 +1,4 @@
-const CACHE = 'edgeview-v35';
+const CACHE = 'edgeview-v36';
 const ASSETS = ['./edgeview.html', './detect.js', './ta.js', './manifest.json', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
 
 self.addEventListener('install', e => {

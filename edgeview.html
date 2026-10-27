@@ -191,6 +191,11 @@
     <select id="depth"><option value="std">Standard (faster, cheaper)</option><option value="deep">Deep (extended thinking, slower, costs more)</option></select>
     <label>Twelve Data plan</label>
     <select id="tdplan"><option value="free">Free (skips dollar index and US10Y, saves 2 calls)</option><option value="paid">Paid (also fetches dollar index and US10Y)</option></select>
+    <label>Broker (for spreads and commission in plans, paper results and backtests)</label>
+    <div class="row"><select id="brk"><option value="xm">XM</option><option value="none">Other / ignore costs</option></select><select id="brkAcc"><option value="standard">Standard or Micro</option><option value="ultralow">Ultra Low</option><option value="zero">Zero ($7 per lot round turn)</option></select></div>
+    <label>Your spreads, in price (optional, overrides the defaults: read them from the Spread column in MT5)</label>
+    <input id="brkOv" placeholder="e.g. XAU/USD=0.30, GBP/JPY=0.035, USD/ZAR=0.0150">
+    <div class="hint" id="brkInfo"></div>
     <label>Model</label>
     <input id="model" value="claude-sonnet-5-5">
     <label>Screening model (watchlist robot)</label>
@@ -238,7 +243,7 @@
   <section class="view" id="v-robot" hidden>
   <div class="card">
     <div class="ttl">Auto-trader</div>
-    <div class="hint" style="margin-top:0">Every analysis that ends in a BUY or SELL becomes a paper trade. The robot follows it on 5-minute candles: it waits for the entry, then records the stop, each target, or expiry. Results go into your journal automatically. No real orders are sent.</div>
+    <div class="hint" style="margin-top:0">Every analysis that ends in a BUY or SELL becomes a paper trade. The robot follows it on 5-minute candles: it waits for the entry, then records the stop, each target, or expiry. Results go into your journal automatically, after your broker's spread and commission (Settings). No real orders are sent.</div>
     <label class="switch"><span>Auto-trade every analysis<small>Paper trading from the live candles</small></span><input type="checkbox" class="tgl" id="botOn"></label>
     <div class="row"><div><label>Paper balance ($)</label><input id="botBal" inputmode="decimal"></div><div><label>Risk per trade (%)</label><input id="botRisk" inputmode="decimal"></div></div>
     <div class="row"><div><label>Daily loss limit (R)</label><input id="botDayR" inputmode="decimal"></div><div><label>Half size after losses in a row</label><input id="botStreak" inputmode="numeric"></div><div><label>Max open trades</label><input id="botMaxOpen" inputmode="numeric"></div></div>
@@ -459,6 +464,12 @@ const store = { get:k=>localStorage.getItem(k)||'', set:(k,v)=>localStorage.setI
 // ---- keys
 ['kAnthropic','kTwelve','kFinnhub','kFred','model','mHaiku','kGh','ghRepo','kSync','symbol','market'].forEach(id=>{ const v=store.get('ca_'+id); if(v) $(id).value=v; });
 
+const BRK={get:()=>{try{return {broker:'xm',acc:'standard',ov:'',...JSON.parse(store.get('ev_brk')||'{}')};}catch(e){return {broker:'xm',acc:'standard',ov:''};}},set:o=>store.set('ev_brk',JSON.stringify(o))};
+const costFor=sym=>brokerCost(sym,BRK.get());
+function brkInfo(){const b=BRK.get();if(b.broker!=='xm'&&!b.ov.trim()){$('brkInfo').textContent='Costs are ignored: paper results and backtests are before spread and commission, so they look better than real trading.';return;}
+  const ex=['XAU/USD','EUR/USD','GBP/USD','USD/JPY','GBP/JPY'].map(s=>{const c=costFor(s);return `${s} ${c.spr}${c.com?' + '+c.com+' commission':''}${c.rough?'*':''}`;}).join(', ');
+  $('brkInfo').textContent=`Spreads used (price units): ${ex}. * rough estimate: enter your own from MT5 for accuracy. XM spreads widen around news and the daily rollover; these are typical values.`;}
+(()=>{const b=BRK.get();$('brk').value=b.broker;$('brkAcc').value=b.acc;$('brkOv').value=b.ov;const sv=()=>{BRK.set({broker:$('brk').value,acc:$('brkAcc').value,ov:$('brkOv').value.trim()});brkInfo();};['brk','brkAcc','brkOv'].forEach(id=>$(id).onchange=sv);setTimeout(brkInfo,0);})();
 $('tdplan').value=store.get('ca_tdplan')||'free';$('tdplan').onchange=()=>store.set('ca_tdplan',$('tdplan').value);
 $('depth').value=store.get('ca_depth')||'std';$('depth').onchange=()=>store.set('ca_depth',$('depth').value);
 const KEY_IDS=['kAnthropic','kTwelve','kFinnhub','kFred','model','mHaiku','kGh','ghRepo','kSync'];
@@ -755,10 +766,11 @@ function attachZone(name){const z=zones[name];
 })();
 function activePairs(){
   const P=[{n:1,sym:$('symbol').value.trim(),market:$('market').value,px:$('manualPx').value.trim(),sp:$('spread').value.trim(),key:'charts'}];
+  const fillSp=x=>{if(!x.sp&&x.sym){try{const c=costFor(aliasSym(x.sym));if(c.spr>0){x.sp=String(+(c.spr+c.com).toPrecision(6));x.spSrc=c.src+(c.com?' (spread + commission)':'');}}catch(e){}}return x;};
   for(const n of [2,3])P.push({n,sym:$('symbol'+n).value.trim(),market:$('market'+n).value,px:$('manualPx'+n).value.trim(),sp:$('spread'+n).value.trim(),key:'charts'+n});
   P.forEach(p=>{p.sym=aliasSym(p.sym);});
   const liveOK=p=>!!$('kTwelve').value.trim()||p.market==='crypto'||isCrypto(p.sym);
-  return P.filter(p=>p.sym&&(lists[p.key].length||liveOK(p)));
+  return P.filter(p=>p.sym&&(lists[p.key].length||liveOK(p))).map(fillSp);
 }
 function updSummary(){const P=activePairs(),im=P.reduce((t,p)=>t+lists[p.key].length,0),nn=lists.news.length;
   $('runSummary').textContent=P.length?`Ready: ${P.length} pair${P.length>1?'s':''}, ${im?im+' chart'+(im!==1?'s':''):'charts drawn from live data'}`+(nn?`, ${nn} calendar image${nn>1?'s':''}${P.length>1?' (read once, shared by all pairs)':''}`:'')+` · about ${P.length} min`:'Type an instrument, for example gold or EUR/USD.';}
@@ -873,13 +885,13 @@ $('go').onclick=async()=>{
       else if(lists.news.length) content.push({type:'text',text:'NEWS / ECONOMIC CALENDAR SCREENSHOTS (read every event and headline in them):'},...lists.news.map(imgBlock));
       const others=pairs.filter(x=>x!==p).map(x=>x.sym).join(', ');
       const LV=LIVE[String(p.sym).toUpperCase()]||{},MS=cd?marketState(cd,LV.px,Date.now()):null;let learn='';try{learn=learnText(allLearn(),LS.get(),p.sym,MS);}catch(e){}try{const rs=riskText(riskState(HS.get(),Date.now(),BOTC.get()));learn=(learn?learn+'\n\n':'')+rs;}catch(e){}
-      content.push({type:'text',text:`Instrument: ${p.sym}.${lists[p.key].length>6?` There are ${lists[p.key].length} charts: read them all but keep every section brief so the answer finishes through the Final trade plan.`:''}${pairBrief(p.sym,true)}${learn?learn+'\n\n':''}${others?` Also being analyzed in this session: ${others}. In the Risk line of the Final trade plan, mention correlated exposure with them if relevant (for example both are USD-driven, so they are not independent bets).`:''}\n\nLIVE DATA (${L.at}; active sessions: ${sessions()}):\n${L.live||('none. '+(p.px?('User-provided current price: '+p.px+'. Treat it as approximate.'):'No live price; read price from the charts and say levels are approximate.'))}\n\n${p.sp&&+p.sp>0?`BROKER SPREAD: about ${p.sp} in price. Buys fill at the ask and sells at the bid: keep stops and targets clear of it, and check that every R:R still meets 1:1.5 after the spread.\n\n`:''}RECENT HEADLINES:\n${L.news||'none'}\n\nUSER NOTE: ${$('note').value.trim()||'none'}`});
+      content.push({type:'text',text:`Instrument: ${p.sym}.${lists[p.key].length>6?` There are ${lists[p.key].length} charts: read them all but keep every section brief so the answer finishes through the Final trade plan.`:''}${pairBrief(p.sym,true)}${learn?learn+'\n\n':''}${others?` Also being analyzed in this session: ${others}. In the Risk line of the Final trade plan, mention correlated exposure with them if relevant (for example both are USD-driven, so they are not independent bets).`:''}\n\nLIVE DATA (${L.at}; active sessions: ${sessions()}):\n${L.live||('none. '+(p.px?('User-provided current price: '+p.px+'. Treat it as approximate.'):'No live price; read price from the charts and say levels are approximate.'))}\n\n${p.sp&&+p.sp>0?`BROKER COSTS${p.spSrc?' ('+p.spSrc+')':''}: about ${p.sp} in price per round trip. Buys fill at the ask and sells at the bid: keep stops and targets clear of it, and check that every R:R still meets 1:1.5 after the spread.\n\n`:''}RECENT HEADLINES:\n${L.news||'none'}\n\nUSER NOTE: ${$('note').value.trim()||'none'}`});
       const card=cards[i];
       const co=await claudeStream(ak,SYSTEM,content,t=>{ q(i).innerHTML=md(t); card.dataset.raw=t; if(!scrolled&&t){scrolled=true;card.scrollIntoView({behavior:'smooth'});} btn.textContent=tag(i)+'analyzing… ('+t.length+' chars)'; },deep);
       const text=co.text,stop=co.stop;
       if(stop==='max_tokens') q(i).innerHTML+='<p class="err">The answer was cut off. Run this pair again.</p>';
       if(!text.trim()) throw new Error(emptyMsg(co));
-      const G=parseFinal(text);PLAN[String(p.sym).toUpperCase()]=G;let F=null,LP=null;try{F=augF(featuresOf(G,{ms:MS||{},L:LIVE[String(p.sym).toUpperCase()]||{},cal:L.cal,now:Date.now()}),p.sym,G.entry,LIVE[String(p.sym).toUpperCase()]);if(F.side)LP=learnedProb({...F,sym:p.sym},learnPool(allLearn()));}catch(e){} saveHistory(text,p.sym,{f:F,...(LP?{lp:LP.p}:{})});try{const id=HS.get()[0].id,LVx=LIVE[String(p.sym).toUpperCase()]||{},sh=shadowEntries(text,p.sym,G,id,LVx.tol?LVx.tol/2:null).map(o=>({...o,f:{...augF(featuresOf({decision:o.dec,order:o.ord,entry:o.entry,'stop loss':o.sl,tp1:o.tp1,'valid until':o.valid,'setup type':F&&F.side===(o.dec==='BUY'?1:-1)?G['setup type']:''},{ms:MS||{},L:LVx,cal:L.cal,now:Date.now()}),p.sym,o.entry,LVx),style:o.style}}));if(sh.length)SH.set(sh.concat(SH.get()));}catch(e){} addOdds(card,text,p.sym); addCheck(card,text,{...p,cal:L.cal,f:F,lp:LP}); if(N===1) fillCalc(text,p.sym); renderHist();
+      const G=parseFinal(text);PLAN[String(p.sym).toUpperCase()]=G;let F=null,LP=null;try{F=augF(featuresOf(G,{ms:MS||{},L:LIVE[String(p.sym).toUpperCase()]||{},cal:L.cal,now:Date.now()}),p.sym,G.entry,LIVE[String(p.sym).toUpperCase()]);if(F.side)LP=learnedProb({...F,sym:p.sym},learnPool(allLearn()));}catch(e){} const CO=(()=>{try{const c=costFor(p.sym);return c.spr>0||c.com>0?{spr:c.spr,com:c.com}:null;}catch(e){return null;}})();saveHistory(text,p.sym,{f:F,...(LP?{lp:LP.p}:{}),...(CO?{cost:CO}:{})});try{const id=HS.get()[0].id,LVx=LIVE[String(p.sym).toUpperCase()]||{},sh=shadowEntries(text,p.sym,G,id,LVx.tol?LVx.tol/2:null).map(o=>({...o,...(CO?{cost:CO}:{}),f:{...augF(featuresOf({decision:o.dec,order:o.ord,entry:o.entry,'stop loss':o.sl,tp1:o.tp1,'valid until':o.valid,'setup type':F&&F.side===(o.dec==='BUY'?1:-1)?G['setup type']:''},{ms:MS||{},L:LVx,cal:L.cal,now:Date.now()}),p.sym,o.entry,LVx),style:o.style}}));if(sh.length)SH.set(sh.concat(SH.get()));}catch(e){} addOdds(card,text,p.sym); addCheck(card,text,{...p,cal:L.cal,f:F,lp:LP}); if(N===1) fillCalc(text,p.sym); renderHist();
       return text;
     }
   });
@@ -942,7 +954,7 @@ function parseFinal(raw){const i=raw.search(/^### *Final trade plan/mi);if(i<0)r
 const num=x=>{const m=String(x||'').replace(/,/g,'').match(/-?\d+(\.\d+)?/);return m?+m[0]:null;};
 // ---- history + journal
 const HS={get:()=>{try{return JSON.parse(localStorage.getItem('ca_hist')||'[]')}catch(e){return[]}},set:a=>{const now=Date.now(),pack=(n,k)=>JSON.stringify(a.slice(0,n).map((e,i)=>(i<k||(e.ord==='WEEKLY OUTLOOK'&&now-e.id<20*86400000))?e:{...e,text:''}));try{localStorage.setItem('ca_hist',pack(400,40));}catch(e){try{localStorage.setItem('ca_hist',pack(150,12));}catch(e2){}}}};
-const APP_VER='edgeview-v35';
+const APP_VER='edgeview-v36';
 function META(){return {model:$('model').value.trim()||'claude-sonnet-5-5',deep:$('depth').value,ver:APP_VER};}
 
 function addOdds(card,text,sym){
@@ -961,7 +973,7 @@ function addOdds(card,text,sym){
     card.appendChild(d);
   }catch(e){}
 }
-function saveHistory(text,sym,extra){const g=parseFinal(text),a=HS.get(),tps=ladderFromPlan(g);a.unshift({id:Date.now(),...(tps?{tps,hit:null}:{}),sym:(sym||'').toUpperCase(),dec:g.decision||'?',ord:g.order||'',entry:g.entry||'',sl:g['stop loss']||'',tp1:g.tp1||'',prob:num(g.probability),valid:g['valid until']||'',st:/no trade/i.test(g.decision||'')?'skip':'open',...(extra&&extra.f?{f:extra.f}:{}),...(extra&&extra.lp!=null?{lp:extra.lp}:{}),...(BOTC.get().on&&/BUY|SELL/i.test(g.decision||'')&&!/no trade/i.test(g.decision||'')?(()=>{const rs=riskState(a,Date.now(),BOTC.get());if(rs.halt||rs.full){setTimeout(()=>pushAlert({kind:'info',sym:(sym||'').toUpperCase(),title:'Robot did not take this plan',body:rs.why.join('; ')+'. The plan is saved in the journal as usual.'}),0);return {botSkip:rs.why.join('; ')};}return rs.mult<1?{bot:1,rm:rs.mult}:{bot:1};})():{}),text});HS.set(a);setTimeout(()=>{renderBot();renderChartSide();},0);}
+function saveHistory(text,sym,extra){const g=parseFinal(text),a=HS.get(),tps=ladderFromPlan(g);a.unshift({id:Date.now(),...(tps?{tps,hit:null}:{}),sym:(sym||'').toUpperCase(),dec:g.decision||'?',ord:g.order||'',entry:g.entry||'',sl:g['stop loss']||'',tp1:g.tp1||'',prob:num(g.probability),valid:g['valid until']||'',st:/no trade/i.test(g.decision||'')?'skip':'open',...(extra&&extra.f?{f:extra.f}:{}),...(extra&&extra.lp!=null?{lp:extra.lp}:{}),...(extra&&extra.cost?{cost:extra.cost}:{}),...(BOTC.get().on&&/BUY|SELL/i.test(g.decision||'')&&!/no trade/i.test(g.decision||'')?(()=>{const rs=riskState(a,Date.now(),BOTC.get());if(rs.halt||rs.full){setTimeout(()=>pushAlert({kind:'info',sym:(sym||'').toUpperCase(),title:'Robot did not take this plan',body:rs.why.join('; ')+'. The plan is saved in the journal as usual.'}),0);return {botSkip:rs.why.join('; ')};}return rs.mult<1?{bot:1,rm:rs.mult}:{bot:1};})():{}),text});HS.set(a);setTimeout(()=>{renderBot();renderChartSide();},0);}
 
 async function copyResult(btn,id){const e=HS.get().find(x=>x.id==id);if(!e)return;const ok=await copyText(resultPost(e));const old=btn.textContent;btn.textContent=ok?'Copied ✓':'Copy failed';setTimeout(()=>btn.textContent=old,1800);}
 async function copyRecap(btn,days){const ok=await copyText(recapText(HS.get(),Date.now(),days));const old=btn.textContent;btn.textContent=ok?'Copied ✓ Paste it in Telegram':'Copy failed';setTimeout(()=>btn.textContent=old,2200);}
@@ -1176,15 +1188,15 @@ async function btBars(sym,tf){const S=String(sym).toUpperCase(),tk=$('kTwelve').
   return toBars(j.values).filter(b=>b.t+iv[2]<=Date.now());}
 let btBusy=false;
 async function btRun(){if(btBusy)return;const sym=aliasSym($('btSym').value.trim()||LC.sym||'XAU/USD').toUpperCase(),tf=$('btTf').value,st=$('btStat');btBusy=true;$('btRun').disabled=true;
-  try{st.textContent='Downloading candles…';const b=await btBars(sym,tf),htf=await btBars(sym,tf==='15M'?'1H':'4H');if(b.length<400)throw new Error('not enough candles ('+b.length+')');
-    let out=[];const step=150;for(let i=300;i<b.length-1;i+=step){out=out.concat(btReplay(b,htf,tf,EVDetect,EVTA,i,i+step));st.textContent=`Replaying ${sym} ${tf}: ${Math.min(100,Math.round((i-300)/(b.length-300)*100))}%`;await sleep(0);}
+  try{const cc=costFor(sym),bc=(cc.spr||0)+(cc.com||0);st.textContent='Downloading candles…';const b=await btBars(sym,tf),htf=await btBars(sym,tf==='15M'?'1H':'4H');if(b.length<400)throw new Error('not enough candles ('+b.length+')');
+    let out=[];const step=150;for(let i=300;i<b.length-1;i+=step){out=out.concat(btReplay(b,htf,tf,EVDetect,EVTA,i,i+step,bc));st.textContent=`Replaying ${sym} ${tf}: ${Math.min(100,Math.round((i-300)/(b.length-300)*100))}%`;await sleep(0);}
     out.sort((x,y)=>x.at-y.at);const ms=tf==='15M'?9e5:36e5,ded=[];for(const x of out){if(!ded.some(o=>o.side===x.side&&x.at-o.at>=0&&x.at-o.at<=3*ms&&o.at>=x.at-3*ms))ded.push(x);}
     const all=BT.get();all[sym+'|'+tf]={at:Date.now(),from:b[0].t,to:b[b.length-1].t,n:b.length,sigs:ded.slice(-1500).map(x=>({...x,why:x.why.slice(0,1)}))};BT.set(all);
     st.textContent=`${sym} ${tf}: ${b.length} candles from ${new Date(b[0].t).toISOString().slice(0,10)} to ${new Date(b[b.length-1].t).toISOString().slice(0,10)}, ${ded.length} signals.`;renderBT();renderSigStats();}
   catch(e){st.textContent='Backtest failed: '+(e.message||e);}finally{btBusy=false;$('btRun').disabled=false;}}
 function renderBT(){const box=$('btOut');if(!box)return;const all=BT.get(),keys=Object.keys(all);if(!keys.length){box.innerHTML='';return;}
   box.innerHTML=keys.map(k=>{const v=all[k],rows=btSummary(v.sigs||[]).filter(r=>r.n>=5);return `<div style="margin-top:10px"><b style="font-size:13px">${esc(k.replace('|',' '))}</b> <span class="hint">${new Date(v.from).toISOString().slice(0,10)} to ${new Date(v.to).toISOString().slice(0,10)}</span>`+
-    (rows.length?`<table class="ct"><tr><th>Signals</th><th>Followed through</th><th>2R trade</th></tr>${rows.slice(0,12).map(r=>`<tr><td>${esc(r.k)}</td><td>${r.hit}/${r.hit+r.miss} (${Math.round(r.rate*100)}%)</td><td style="color:${(r.avgR||0)>=0?'var(--bull)':'var(--bear)'}">${r.avgR==null?'n/a':(r.avgR>=0?'+':'')+r.avgR.toFixed(2)+'R'}</td></tr>`).join('')}</table>`:'<div class="hint">Too few signals.</div>')+'</div>';}).join('')+'<div class="hint">2R trade = average result per signal in R (stop at the signal\'s stop idea, target 2R, closed after 48 candles if neither is hit; no spread). Past results on one market do not guarantee future ones.</div>';}
+    (rows.length?`<table class="ct"><tr><th>Signals</th><th>Followed through</th><th>2R trade</th></tr>${rows.slice(0,12).map(r=>`<tr><td>${esc(r.k)}</td><td>${r.hit}/${r.hit+r.miss} (${Math.round(r.rate*100)}%)</td><td style="color:${(r.avgR||0)>=0?'var(--bull)':'var(--bear)'}">${r.avgR==null?'n/a':(r.avgR>=0?'+':'')+r.avgR.toFixed(2)+'R'}</td></tr>`).join('')}</table>`:'<div class="hint">Too few signals.</div>')+'</div>';}).join('')+'<div class="hint">2R trade = average result per signal in R (stop at the signal\'s stop idea, target 2R, closed after 48 candles if neither is hit), after your broker\'s spread and commission from Settings. Past results on one market do not guarantee future ones.</div>';}
 $('btRun').onclick=btRun;$('btClear').onclick=()=>{BT.set({});renderBT();renderSigStats();$('btStat').textContent='Cleared.';};setTimeout(renderBT,500);
 const SH={get:()=>{try{return JSON.parse(store.get('ev_shadow')||'[]');}catch(e){return [];}},set:a=>{const k=a.slice(0,600).map(e=>{const{text,...r}=e;return r;});try{store.set('ev_shadow',JSON.stringify(k));}catch(e){try{store.set('ev_shadow',JSON.stringify(k.slice(0,250)));}catch(e2){}}}};
 const allLearn=()=>HS.get().concat(SH.get());
@@ -1902,7 +1914,9 @@ function ladderFromPlan(g){
   return t;
 }
 function isLad(e){return !!(e&&e.tps&&e.tps.length>=3);}
-function rOf(e){
+function costR(e){const c=e&&e.cost;if(!c)return 0;const en=_n(e.entry),sl=_n(e.sl);if(en==null||sl==null||en===sl)return 0;const risk=Math.abs(en-sl);return ((+c.com||0)+(/MARKET/i.test(e.ord||'')?(+c.spr||0)/2:0))/risk;}
+function rOf(e){const g=rGross(e);return g==null?null:g-costR(e);}
+function rGross(e){
   if(isLad(e)&&e.hit!=null){
     const en=_n(e.entry),sl=_n(e.sl); if(en==null||sl==null||en===sl) return null;
     if(e.hit===0) return -1;
@@ -2170,21 +2184,21 @@ function resolveOutcome(e,bars,now,barMs){
   const validT=vm?Date.parse(vm[1]+'T'+vm[2].padStart(2,'0')+':'+vm[3]+':00Z'):e.id+24*36e5;
   const lad=e.tps&&e.tps.length>=3?e.tps.map(x=>x.px):[tp1];
   const bm=barMs||36e5,start=Math.ceil(e.id/bm)*bm; // first full bar after the plan was made
-  const risk=Math.abs(en-sl);let mfe=0,mae=0,near=null; // excursions in price, measured from the entry
+  const risk=Math.abs(en-sl),hs=Math.max(0,+(e.cost&&e.cost.spr)||0)/2;let mfe=0,mae=0,near=null; // excursions in price from the entry; hs = half the spread (the feed is a mid price)
   let filled=market,fillT=market?e.id:null,k=0,last=null,lastP=null;
   const X=(endT)=>({filled:!!filled,mfe:+(mfe/risk).toFixed(2),mae:+Math.min(1,mae/risk).toFixed(2),near:filled?0:near==null?null:+(near/risk).toFixed(2),fillMin:filled&&fillT!=null?Math.round((fillT-e.id)/6e4):null,holdMin:filled&&fillT!=null&&endT!=null?Math.round((endT-fillT)/6e4):null});
   for(const b of bars){
     if(b.t<start) continue; last=b.t; lastP=b.c;
     const H=T(b.h),L=T(b.l),hi=side>0?H:T(b.l),lo=side>0?L:T(b.h); // favourable extreme, adverse extreme
     let fresh=false;
-    if(!filled){ if(b.t>=validT) return {st:'skip',note:'Expired before the entry was reached.',exitT:b.t,x:X(b.t)}; const gap=lo-T(en); near=near==null?gap:Math.min(near,gap); if(lo<=T(en)){filled=true;fillT=b.t;fresh=true;} else continue; }
+    if(!filled){ if(b.t>=validT) return {st:'skip',note:'Expired before the entry was reached.',exitT:b.t,x:X(b.t)}; const gap=lo+hs-T(en); near=near==null?gap:Math.min(near,gap); if(lo+hs<=T(en)){filled=true;fillT=b.t;fresh=true;} else continue; }
     mae=Math.max(mae,T(en)-lo); if(!fresh) mfe=Math.max(mfe,hi-T(en));
     const stopLv=k>0?T(en):T(sl);
-    if(lo<=stopLv){
+    if(lo-hs<=stopLv){
       if(k===0) return {st:'loss',note:'Stop loss hit'+(fresh?' in the candle the order filled':'')+'.',fillT,exitT:b.t,exitP:sl,x:X(b.t)};
       return {st:'win',hit:k,note:`TP${k} reached, then the rest closed at break-even.`,fillT,exitT:b.t,exitP:en,x:X(b.t)};
     }
-    if(!fresh) while(k<lad.length&&hi>=T(lad[k])) k++;
+    if(!fresh) while(k<lad.length&&hi-hs>=T(lad[k])) k++;
     if(lad.length===1&&k>=1) return {st:'win',hit:1,note:'TP1 hit before the stop.',fillT,exitT:b.t,exitP:tp1,x:X(b.t)};
     if(k>=lad.length) return {st:'win',hit:k,note:'Every target reached.',fillT,exitT:b.t,exitP:lad[lad.length-1],x:X(b.t)};
   }
@@ -2193,6 +2207,25 @@ function resolveOutcome(e,bars,now,barMs){
   return {pending:true,filled,hit:k,fillT,lastP,lastT:last,x:X(last),note:filled?(k?`Filled; TP${k} reached so far, still running.`:'Filled and still running.'):'Not filled yet.'};
 }
 // ==== RESOLVE PURE END
+// ==== COST PURE START
+// Broker costs (v36). XM's published figures for EUR/USD, GBP/USD, USD/JPY and gold; the rest are rough estimates
+// to be replaced with the spread your MT5 shows (overrides). Spreads in pips; returns price units.
+function pipOf(sym){const S=normSym(sym);return /^XAU/.test(S)?0.01:/^XAG/.test(S)?0.001:/^(BTC|ETH|SOL)/.test(S)?1:/JPY$/.test(S)?0.01:0.0001;}
+function XM_TABLE(){return {
+  standard:{EURUSD:1.7,GBPUSD:2.4,USDJPY:1.6,XAUUSD:35,_AUDUSD:1.8,_NZDUSD:2.2,_USDCAD:2.2,_USDCHF:2.0,_EURJPY:2.5,_GBPJPY:3.5,_EURGBP:2.0,_AUDJPY:2.5,_CHFJPY:3.0,_CADJPY:2.8,_EURAUD:3.0,_GBPAUD:4.0,_USDZAR:150,_XAGUSD:35,_BTCUSD:40,_ETHUSD:3,_other:3.0},
+  ultralow:{EURUSD:0.8,GBPUSD:1.1,USDJPY:0.8,XAUUSD:25,_k:0.55},
+  zero:{EURUSD:0.1,GBPUSD:0.3,USDJPY:0.1,XAUUSD:21,_k:0.2,_com:7}};}
+const VPPX=sy=>/XAU/i.test(sy)?100:/XAG/i.test(sy)?5000:/BTC|ETH|SOL|XRP|BNB/i.test(sy)?1:/ZAR/i.test(sy)?5500:/JPY/i.test(sy)?650:/CAD/i.test(sy)?72000:/CHF/i.test(sy)?110000:100000;
+function parseOv(t){const o={};String(t||'').split(/[,;\n]/).forEach(x=>{const m=x.match(/([A-Za-z\/]{6,8})\s*[=:]\s*(\d*\.?\d+)/);if(m)o[normSym(m[1])]=+m[2];});return o;}
+// prof: {broker:'xm'|'none', acc:'standard'|'ultralow'|'zero', ov:'XAU/USD=0.30, GBPJPY=0.035'}. Overrides are in price units.
+function brokerCost(sym,prof){prof=prof||{};const S=normSym(sym).replace(/USDT$/,'USD'),ov=parseOv(prof.ov);
+  if(ov[S]!=null)return {spr:ov[S],com:0,rough:false,src:'your spread'};
+  if(prof.broker!=='xm')return {spr:0,com:0,rough:false,src:'none'};
+  const T=XM_TABLE(),st=T.standard,acc=T[prof.acc]||st,pip=pipOf(S);
+  let pips=acc[S],rough=false;if(pips==null){const base=st[S]!=null?st[S]:st['_'+S]!=null?st['_'+S]:st._other;rough=st[S]==null;pips=acc===st?base:base*(acc._k||1);rough=rough||acc!==st&&st[S]!=null&&acc[S]==null;}
+  const com=acc._com?acc._com/VPPX(S):0;
+  return {spr:+(pips*pip).toPrecision(6),com:+com.toPrecision(6),rough,src:'XM '+({standard:'Standard',ultralow:'Ultra Low',zero:'Zero'}[prof.acc]||'Standard')};}
+// ==== COST PURE END
 // ==== LEARN PURE START
 // v34 learning loop. Every plan is saved with a fingerprint of the setup (worked out in code), every resolved trade with
 // how far price went for and against it. These functions turn that history into evidence for the next analysis.
@@ -2330,14 +2363,14 @@ function mgmtWhatIf(entries){const T=(entries||[]).filter(e=>e&&e.x&&e.x.filled&
 function mgmtText(m){if(!m)return '';const base=m.rows.find(r=>r.name==='As planned');return `Management test on ${m.n} closed trades (average R per trade; estimates from MFE/MAE): `+m.rows.map(r=>`${r.name} ${r.exp>=0?'+':''}${r.exp.toFixed(2)}R`).join(', ')+`. Best: ${m.rows[0].name}${m.rows[0].name!=='As planned'&&m.rows[0].exp-base.exp>=0.1?` (+${(m.rows[0].exp-base.exp).toFixed(2)}R per trade better than as planned; consider it in Management)`:''}.`;}
 // ---- backtest of the early-move signals on history (no look-ahead: each step only sees closed bars up to that point)
 // b: bars of the signal timeframe, htf: bars of the next timeframe up, both oldest first. D = EVDetect, A = EVTA.
-function btReplay(b,htf,tf,D,A,from,to){const ms=tf==='15M'?9e5:36e5,hms=tf==='15M'?36e5:144e5,out=[],H=tf==='15M'?16:12;let hj=0;while(hj<htf.length&&htf[hj].t+hms<=b[Math.max(300,from||0)].t+ms-hms*301)hj++;
+function btReplay(b,htf,tf,D,A,from,to,cost){const ms=tf==='15M'?9e5:36e5,hms=tf==='15M'?36e5:144e5,out=[],H=tf==='15M'?16:12;let hj=0;while(hj<htf.length&&htf[hj].t+hms<=b[Math.max(300,from||0)].t+ms-hms*301)hj++;
   for(let i=Math.max(300,from||0);i<Math.min(b.length-1,to||b.length);i++){const t=b[i].t;while(hj<htf.length&&htf[hj].t+hms<=t+ms)hj++;
     const sub=b.slice(i-299,i+1),hs=htf.slice(Math.max(0,hj-300),hj);const sig=D.detect(sub,hs,{tf});if(!sig.length)continue;
     for(const s of sig){if(out.some(o=>o.side===s.side&&t-o.at<=3*ms))continue;
       const fut=b.slice(i+1,i+1+Math.max(H,48)),sc=D.scoreSignal(s,fut);if(!sc)continue;
       // a simple trade: enter at the close, stop at the signal's stop idea, target 2R, at most 48 bars
       const side=s.side==='BUY'?1:-1,en=s.price,sl=s.stopIdea,risk=Math.abs(en-sl);let tr=null;
-      if(risk>0&&side*(en-sl)>0){const tp=en+side*2*risk;for(const x of fut){const adv=side>0?x.l<=sl:x.h>=sl,fav=side>0?x.h>=tp:x.l<=tp;if(adv){tr=-1;break;}if(fav){tr=2;break;}}if(tr==null){const last=fut[fut.length-1];tr=last?Math.max(-1,Math.min(2,side*(last.c-en)/risk)):null;}}
+      if(risk>0&&side*(en-sl)>0){const tp=en+side*2*risk;for(const x of fut){const adv=side>0?x.l<=sl:x.h>=sl,fav=side>0?x.h>=tp:x.l<=tp;if(adv){tr=-1;break;}if(fav){tr=2;break;}}if(tr==null){const last=fut[fut.length-1];tr=last?Math.max(-1,Math.min(2,side*(last.c-en)/risk)):null;}if(tr!=null&&cost>0)tr-=cost/risk;}
       const rg=A.regimeOf(sub.slice(-120));
       out.push({tf,side:s.side,score:s.score,patterns:s.patterns,why:s.why.filter(w=>/trend/.test(w)),at:s.at,price:s.price,atr:s.atr,res:sc.res,mfe:sc.mfe,mae:sc.mae,tr,reg:rg?rg.kind:null,h:new Date(t).getUTCHours(),bt:1});}}
   return out;}
