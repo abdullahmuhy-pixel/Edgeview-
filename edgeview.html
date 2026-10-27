@@ -193,6 +193,7 @@
     <select id="tdplan"><option value="free">Free (skips dollar index and US10Y, saves 2 calls)</option><option value="paid">Paid (also fetches dollar index and US10Y)</option></select>
     <label>Broker (for spreads and commission in plans, paper results and backtests)</label>
     <div class="row"><select id="brk"><option value="xm">XM</option><option value="none">Other / ignore costs</option></select><select id="brkAcc"><option value="standard">Standard or Micro</option><option value="ultralow">Ultra Low</option><option value="zero">Zero ($7 per lot round turn)</option></select></div>
+    <div class="row"><div><label>Account currency</label><select id="acct"><option value="ZAR">South African rand (ZAR)</option><option value="USD">US dollar (USD)</option><option value="EUR">Euro (EUR)</option><option value="GBP">British pound (GBP)</option></select></div><div><label>USD/ZAR rate (optional, filled in live)</label><input id="usdzar" inputmode="decimal" placeholder="live"></div></div>
     <label>Your spreads, in price (optional, overrides the defaults: read them from the Spread column in MT5)</label>
     <input id="brkOv" placeholder="e.g. XAU/USD=0.30, GBP/JPY=0.035, USD/ZAR=0.0150">
     <div class="hint" id="brkInfo"></div>
@@ -245,7 +246,7 @@
     <div class="ttl">Auto-trader</div>
     <div class="hint" style="margin-top:0">Every analysis that ends in a BUY or SELL becomes a paper trade. The robot follows it on 5-minute candles: it waits for the entry, then records the stop, each target, or expiry. Results go into your journal automatically, after your broker's spread and commission (Settings). No real orders are sent.</div>
     <label class="switch"><span>Auto-trade every analysis<small>Paper trading from the live candles</small></span><input type="checkbox" class="tgl" id="botOn"></label>
-    <div class="row"><div><label>Paper balance ($)</label><input id="botBal" inputmode="decimal"></div><div><label>Risk per trade (%)</label><input id="botRisk" inputmode="decimal"></div></div>
+    <div class="row"><div><label>Paper balance (<span class="ccyL">ZAR</span>)</label><input id="botBal" inputmode="decimal"></div><div><label>Risk per trade (%)</label><input id="botRisk" inputmode="decimal"></div></div>
     <div class="row"><div><label>Daily loss limit (R)</label><input id="botDayR" inputmode="decimal"></div><div><label>Half size after losses in a row</label><input id="botStreak" inputmode="numeric"></div><div><label>Max open trades</label><input id="botMaxOpen" inputmode="numeric"></div></div>
     <div class="hint" id="botRiskStat"></div>
     <div class="stats" id="botStats"></div>
@@ -313,7 +314,7 @@
     <div class="thumbs" id="thumbsN"></div>
     </div>
     <label>Your note (optional: events, bias, account size)</label>
-    <textarea id="note" placeholder="e.g. CPI today 13:30 GMT. Account $5,000."></textarea>
+    <textarea id="note" placeholder="e.g. CPI today 13:30 GMT. Account ZAR 50,000."></textarea>
     <label style="display:flex;gap:8px;align-items:center;font-size:13px;color:var(--text);margin-top:12px"><input type="checkbox" id="fxOn" style="width:auto" checked> Currency strength and intermarket (gold, silver, oil, S&amp;P 500). Refreshed hourly in the background: about 11 Twelve Data credits an hour, only while you use the app</label>
     <label style="display:flex;gap:8px;align-items:center;font-size:13px;color:var(--text);margin-top:12px"><input type="checkbox" id="autoImg" style="width:auto" checked> Also send Claude the charts the app draws from live candles (better pattern reading, slightly higher cost)</label>
     <div style="margin-top:12px"><button id="go">Analyze</button></div>
@@ -347,7 +348,7 @@
     <div class="thumbs" id="thumbsWN"></div>
     </div>
     <label>Your note (optional: weekend news, your view, account size)</label>
-    <textarea id="wNote" placeholder="e.g. Fed chair speaks Wednesday. Account $5,000."></textarea>
+    <textarea id="wNote" placeholder="e.g. Fed chair speaks Wednesday. Account ZAR 50,000."></textarea>
     <div style="margin-top:12px"><button id="wGo">Run weekend analysis</button></div>
     <div class="hint">Reads the whole week from candles (day by day, weekly stats, indicators, pivots, gaps, dollar and yields, positioning), the live calendar and headlines, then plans the week ahead.</div>
   </div>
@@ -356,11 +357,11 @@
   <section class="view" id="v-size" hidden>
   <div class="card">
     <b>Position size</b>
-    <div class="row"><div><label>Balance ($)</label><input id="cBal" inputmode="decimal"></div><div><label>Risk %</label><input id="cRisk" inputmode="decimal" value="1"></div></div>
-    <div class="row"><div><label>Entry</label><input id="cEn" inputmode="decimal"></div><div><label>Stop loss</label><input id="cSl" inputmode="decimal"></div><div><label>$ per 1.0 move / lot</label><input id="cV" inputmode="decimal"></div></div>
+    <div class="row"><div><label>Balance (<span class="ccyL">ZAR</span>)</label><input id="cBal" inputmode="decimal"></div><div><label>Risk %</label><input id="cRisk" inputmode="decimal" value="1"></div></div>
+    <div class="row"><div><label>Entry</label><input id="cEn" inputmode="decimal"></div><div><label>Stop loss</label><input id="cSl" inputmode="decimal"></div><div><label><span class="ccyL">ZAR</span> per 1.0 move / lot</label><input id="cV" inputmode="decimal"></div></div>
     <div class="row"><div><label>Entry 2 (optional)</label><input id="cEn2" inputmode="decimal"></div><div><label>% of risk on Entry 1</label><input id="cSp" inputmode="decimal" value="50"></div></div>
     <div id="cOut" class="hint" style="color:var(--acc);font-size:14px"></div>
-    <div class="hint">Entry and stop fill in from the final plan. XAU/USD is 100 per lot, most USD forex pairs 100000, crypto 1. Check your broker's contract size.</div>
+    <div class="hint">Entry and stop fill in from the final plan. The value per 1.0 move fills in for your account currency from live exchange rates (gold 100 oz per lot, forex 100,000 units, crypto 1). Check XM's contract size; Micro account lots are 100 times smaller.</div>
   </div>
   </section>
   <section class="view" id="v-journal" hidden>
@@ -466,10 +467,25 @@ const store = { get:k=>localStorage.getItem(k)||'', set:(k,v)=>localStorage.setI
 
 const BRK={get:()=>{try{return {broker:'xm',acc:'standard',ov:'',...JSON.parse(store.get('ev_brk')||'{}')};}catch(e){return {broker:'xm',acc:'standard',ov:''};}},set:o=>store.set('ev_brk',JSON.stringify(o))};
 const costFor=sym=>brokerCost(sym,BRK.get());
+const ACCT=()=>BRK.get().ccy||'ZAR';
+function money(x,dp){const c=ACCT(),v=(+x||0).toLocaleString(undefined,{minimumFractionDigits:dp||0,maximumFractionDigits:dp||0});return c==='USD'?'$'+v:c+' '+v;}
+// exchange rates for converting to the account currency: manual USD/ZAR, then majors from the strength cache, then a live quote
+function fxRates(){const r={},fx=(()=>{try{return JSON.parse(store.get('ev_fx')||'null');}catch(e){return null;}})();
+  if(fx&&fx.s)for(const [k,c] of Object.entries(fx.s))if(c&&c.length)r[k]=c[c.length-1];
+  for(const k of Object.keys(LIVE)){const m=k.match(/^([A-Z]{3})\/?([A-Z]{3})$/);if(m&&LIVE[k].px)r[m[1]+'/'+m[2]]=LIVE[k].px;}
+  const z=(()=>{try{return JSON.parse(store.get('ev_usdzar')||'null');}catch(e){return null;}})();if(z&&z.r)r['USD/ZAR']=z.r;
+  const man=+BRK.get().usdzar;if(man>0)r['USD/ZAR']=man;return r;}
+async function refreshUsdZar(force){const z=(()=>{try{return JSON.parse(store.get('ev_usdzar')||'null');}catch(e){return null;}})();if(!force&&z&&Date.now()-z.t<6*36e5)return z.r;
+  let r=null;const tk=$('kTwelve').value.trim();
+  if(tk&&tdUse()<760){try{const j=await getJSON(`https://api.twelvedata.com/quote?symbol=USD/ZAR&apikey=${tk}`);if(j&&+j.close>0)r=+j.close;}catch(e){}}
+  if(!r){try{const j=await getJSON('https://open.er-api.com/v6/latest/USD');if(j&&j.rates&&+j.rates.ZAR>0)r=+j.rates.ZAR;}catch(e){}}
+  if(r){store.set('ev_usdzar',JSON.stringify({t:Date.now(),r}));if($('usdzar')&&!BRK.get().usdzar)$('usdzar').placeholder='live: '+r.toFixed(4);}return r;}
+const lotVal=sym=>lotValue(sym,ACCT(),fxRates());
+function ccyLabels(){document.querySelectorAll('.ccyL').forEach(x=>x.textContent=ACCT());}setTimeout(ccyLabels,0);
 function brkInfo(){const b=BRK.get();if(b.broker!=='xm'&&!b.ov.trim()){$('brkInfo').textContent='Costs are ignored: paper results and backtests are before spread and commission, so they look better than real trading.';return;}
   const ex=['XAU/USD','EUR/USD','GBP/USD','USD/JPY','GBP/JPY'].map(s=>{const c=costFor(s);return `${s} ${c.spr}${c.com?' + '+c.com+' commission':''}${c.rough?'*':''}`;}).join(', ');
   $('brkInfo').textContent=`Spreads used (price units): ${ex}. * rough estimate: enter your own from MT5 for accuracy. XM spreads widen around news and the daily rollover; these are typical values.`;}
-(()=>{const b=BRK.get();$('brk').value=b.broker;$('brkAcc').value=b.acc;$('brkOv').value=b.ov;const sv=()=>{BRK.set({broker:$('brk').value,acc:$('brkAcc').value,ov:$('brkOv').value.trim()});brkInfo();};['brk','brkAcc','brkOv'].forEach(id=>$(id).onchange=sv);setTimeout(brkInfo,0);})();
+(()=>{const b=BRK.get();$('brk').value=b.broker;$('brkAcc').value=b.acc;$('brkOv').value=b.ov;$('acct').value=b.ccy||'ZAR';$('usdzar').value=b.usdzar||'';const sv=()=>{BRK.set({broker:$('brk').value,acc:$('brkAcc').value,ov:$('brkOv').value.trim(),ccy:$('acct').value,usdzar:$('usdzar').value.trim()});brkInfo();ccyLabels();try{renderBot();}catch(e){}};['brk','brkAcc','brkOv','acct','usdzar'].forEach(id=>$(id).onchange=sv);setTimeout(brkInfo,0);setTimeout(()=>refreshUsdZar(false).then(()=>{try{renderBot();}catch(e){}}),3000);})();
 $('tdplan').value=store.get('ca_tdplan')||'free';$('tdplan').onchange=()=>store.set('ca_tdplan',$('tdplan').value);
 $('depth').value=store.get('ca_depth')||'std';$('depth').onchange=()=>store.set('ca_depth',$('depth').value);
 const KEY_IDS=['kAnthropic','kTwelve','kFinnhub','kFred','model','mHaiku','kGh','ghRepo','kSync'];
@@ -885,7 +901,7 @@ $('go').onclick=async()=>{
       else if(lists.news.length) content.push({type:'text',text:'NEWS / ECONOMIC CALENDAR SCREENSHOTS (read every event and headline in them):'},...lists.news.map(imgBlock));
       const others=pairs.filter(x=>x!==p).map(x=>x.sym).join(', ');
       const LV=LIVE[String(p.sym).toUpperCase()]||{},MS=cd?marketState(cd,LV.px,Date.now()):null;let learn='';try{learn=learnText(allLearn(),LS.get(),p.sym,MS);}catch(e){}try{const rs=riskText(riskState(HS.get(),Date.now(),BOTC.get()));learn=(learn?learn+'\n\n':'')+rs;}catch(e){}
-      content.push({type:'text',text:`Instrument: ${p.sym}.${lists[p.key].length>6?` There are ${lists[p.key].length} charts: read them all but keep every section brief so the answer finishes through the Final trade plan.`:''}${pairBrief(p.sym,true)}${learn?learn+'\n\n':''}${others?` Also being analyzed in this session: ${others}. In the Risk line of the Final trade plan, mention correlated exposure with them if relevant (for example both are USD-driven, so they are not independent bets).`:''}\n\nLIVE DATA (${L.at}; active sessions: ${sessions()}):\n${L.live||('none. '+(p.px?('User-provided current price: '+p.px+'. Treat it as approximate.'):'No live price; read price from the charts and say levels are approximate.'))}\n\n${p.sp&&+p.sp>0?`BROKER COSTS${p.spSrc?' ('+p.spSrc+')':''}: about ${p.sp} in price per round trip. Buys fill at the ask and sells at the bid: keep stops and targets clear of it, and check that every R:R still meets 1:1.5 after the spread.\n\n`:''}RECENT HEADLINES:\n${L.news||'none'}\n\nUSER NOTE: ${$('note').value.trim()||'none'}`});
+      content.push({type:'text',text:`Instrument: ${p.sym}.${lists[p.key].length>6?` There are ${lists[p.key].length} charts: read them all but keep every section brief so the answer finishes through the Final trade plan.`:''}${pairBrief(p.sym,true)}${learn?learn+'\n\n':''}${others?` Also being analyzed in this session: ${others}. In the Risk line of the Final trade plan, mention correlated exposure with them if relevant (for example both are USD-driven, so they are not independent bets).`:''}\n\nLIVE DATA (${L.at}; active sessions: ${sessions()}):\n${L.live||('none. '+(p.px?('User-provided current price: '+p.px+'. Treat it as approximate.'):'No live price; read price from the charts and say levels are approximate.'))}\n\n${(()=>{try{const v=lotVal(p.sym),rz=fxRates()['USD/ZAR'];return `ACCOUNT CURRENCY: ${ACCT()}${ACCT()==='ZAR'&&rz?` (USD/ZAR ${rz.toFixed(4)})`:''}. ${v!=null?`One standard lot of ${p.sym} gains or loses about ${ACCT()} ${Math.round(v).toLocaleString('en-US')} per 1.0 price move.`:''} In the Risk line, give the risk and lot size for a ${ACCT()} account.\n\n`;}catch(e){return '';}})()}${p.sp&&+p.sp>0?`BROKER COSTS${p.spSrc?' ('+p.spSrc+')':''}: about ${p.sp} in price per round trip. Buys fill at the ask and sells at the bid: keep stops and targets clear of it, and check that every R:R still meets 1:1.5 after the spread.\n\n`:''}RECENT HEADLINES:\n${L.news||'none'}\n\nUSER NOTE: ${$('note').value.trim()||'none'}`});
       const card=cards[i];
       const co=await claudeStream(ak,SYSTEM,content,t=>{ q(i).innerHTML=md(t); card.dataset.raw=t; if(!scrolled&&t){scrolled=true;card.scrollIntoView({behavior:'smooth'});} btn.textContent=tag(i)+'analyzing… ('+t.length+' chars)'; },deep);
       const text=co.text,stop=co.stop;
@@ -954,7 +970,7 @@ function parseFinal(raw){const i=raw.search(/^### *Final trade plan/mi);if(i<0)r
 const num=x=>{const m=String(x||'').replace(/,/g,'').match(/-?\d+(\.\d+)?/);return m?+m[0]:null;};
 // ---- history + journal
 const HS={get:()=>{try{return JSON.parse(localStorage.getItem('ca_hist')||'[]')}catch(e){return[]}},set:a=>{const now=Date.now(),pack=(n,k)=>JSON.stringify(a.slice(0,n).map((e,i)=>(i<k||(e.ord==='WEEKLY OUTLOOK'&&now-e.id<20*86400000))?e:{...e,text:''}));try{localStorage.setItem('ca_hist',pack(400,40));}catch(e){try{localStorage.setItem('ca_hist',pack(150,12));}catch(e2){}}}};
-const APP_VER='edgeview-v36';
+const APP_VER='edgeview-v36.1';
 function META(){return {model:$('model').value.trim()||'claude-sonnet-5-5',deep:$('depth').value,ver:APP_VER};}
 
 function addOdds(card,text,sym){
@@ -1380,7 +1396,7 @@ function renderBot(){
   const closed=a.filter(e=>e.st==='win'||e.st==='loss').sort((x,y)=>((x.run&&x.run.exitT)||x.id)-((y.run&&y.run.exitT)||y.id));
   const R=closed.reduce((t,e)=>t+(rOf(e)||0)*(e.rm||1),0),w=closed.filter(e=>e.st==='win').length,live=a.filter(e=>e.st==='open');
   const unreal=live.reduce((t,e)=>t+(openR(e)||0),0),eq=c.bal+R*risk;
-  $('botStats').innerHTML=`<div><small>Equity</small><b>$${eq.toLocaleString(undefined,{maximumFractionDigits:0})}</b></div><div><small>Net result</small><b style="color:${R>=0?'var(--bull)':'var(--bear)'}">${fR(R)}</b></div><div><small>Win rate</small><b>${closed.length?Math.round(w/closed.length*100)+'%':'–'}</b></div><div><small>Open</small><b>${live.length}${unreal?` <span style="font-size:12px;color:${unreal>=0?'var(--bull)':'var(--bear)'}">${fR(unreal)}</span>`:''}</b></div>`;
+  $('botStats').innerHTML=`<div><small>Equity</small><b>${money(eq)}</b></div><div><small>Net result</small><b style="color:${R>=0?'var(--bull)':'var(--bear)'}">${fR(R)}</b></div><div><small>Win rate</small><b>${closed.length?Math.round(w/closed.length*100)+'%':'–'}</b></div><div><small>Open</small><b>${live.length}${unreal?` <span style="font-size:12px;color:${unreal>=0?'var(--bull)':'var(--bear)'}">${fR(unreal)}</span>`:''}</b></div>`;
   // equity curve
   const cv=$('botEq');if(cv&&cv.offsetParent){const r=cv.getBoundingClientRect(),d=Math.min(2,devicePixelRatio||1);cv.width=r.width*d;cv.height=r.height*d;const x=cv.getContext('2d');x.scale(d,d);x.clearRect(0,0,r.width,r.height);
     const pts=[c.bal];closed.forEach(e=>pts.push(pts[pts.length-1]+(rOf(e)||0)*(e.rm||1)*risk));
@@ -1395,7 +1411,7 @@ function renderBot(){
 }
 function tradeRow(e,risk){const s=botStatus(e),r=e.st==='open'?openR(e):rOf(e),sd=sideOf(e)>0?'BUY':'SELL';
   return `<div class="trade"><span class="pill ${sd==='BUY'?'bull':'bear'}">${sd}</span><span class="sym">${esc(e.sym)} <span class="hint" style="font-weight:500">${new Date(e.id).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span></span><span class="pill ${s.c}">${esc(s.t)}</span>
-  <div class="lv num">Entry ${esc(String(e.entry).split('|')[0].trim())} · Stop ${esc(String(e.sl).split('|')[0].trim())} · TP1 ${esc(String(e.tp1).split('|')[0].trim())}${r!=null&&e.st!=='skip'?` · ${fR(r)}${e.rm&&e.rm<1?' (half size)':''} ≈ $${Math.round(r*risk*(e.rm||1)).toLocaleString()}`:''}</div>
+  <div class="lv num">Entry ${esc(String(e.entry).split('|')[0].trim())} · Stop ${esc(String(e.sl).split('|')[0].trim())} · TP1 ${esc(String(e.tp1).split('|')[0].trim())}${r!=null&&e.st!=='skip'?` · ${fR(r)}${e.rm&&e.rm<1?' (half size)':''} ≈ ${money(Math.round(r*risk*(e.rm||1)))}`:''}</div>
   <div class="acts"><button class="sec" data-ch="${esc(e.sym)}">Chart</button>${e.text?`<button class="sec" data-vw="${e.id}">Plan</button>`:''}${e.st==='open'?`<button class="sec" data-cx="${e.id}">Cancel</button>`:''}</div></div>`;}
 function wireTradeRows(box){box.querySelectorAll('[data-ch]').forEach(b=>b.onclick=()=>showOnChart(b.dataset.ch));box.querySelectorAll('[data-vw]').forEach(b=>b.onclick=()=>viewH(+b.dataset.vw));
   box.querySelectorAll('[data-cx]').forEach(b=>b.onclick=()=>{HS.set(HS.get().map(e=>e.id==b.dataset.cx?{...e,st:'skip',auto:'manual',autoNote:'Cancelled by you'}:e));renderBot();renderChartSide();renderHist();});}
@@ -1548,11 +1564,12 @@ function calc(){['cBal','cRisk'].forEach(i=>store.set('ca_'+i,$(i).value));const
 if(!(bal&&r&&en&&sl&&v&&en!=sl)){$('cOut').textContent='Enter balance, risk %, entry and stop loss.';return;}
 const risk=bal*r/100,d=Math.abs(en-sl);
 if(e2&&e2!==sl&&Math.sign(en-sl)===Math.sign(e2-sl)&&e2!==en){const sp=Math.min(100,Math.max(0,+$('cSp').value||50))/100,d2=Math.abs(e2-sl),l1=risk*sp/(d*v),l2=risk*(1-sp)/(d2*v),avg=(l1*en+l2*e2)/(l1+l2);
-$('cOut').textContent=`Total risk $${risk.toFixed(2)} if both fill and the stop is hit | Entry 1: ${l1.toFixed(2)} lots (risk $${(risk*sp).toFixed(2)}) | Entry 2: ${l2.toFixed(2)} lots (risk $${(risk*(1-sp)).toFixed(2)}) | average entry ${avg.toFixed(2)} | total ${(l1+l2).toFixed(2)} lots`;return;}
-if(e2)$('cOut').textContent='Entry 2 must be on the same side of the stop as Entry 1 and different from it.';else $('cOut').textContent=`Risk $${risk.toFixed(2)} | stop distance ${f2(d)} | position size ${(risk/(d*v)).toFixed(2)} lots`;}
+$('cOut').textContent=`Total risk ${money(risk,2)} if both fill and the stop is hit | Entry 1: ${l1.toFixed(2)} lots (risk ${money(risk*sp,2)}) | Entry 2: ${l2.toFixed(2)} lots (risk ${money(risk*(1-sp),2)}) | average entry ${avg.toFixed(2)} | total ${(l1+l2).toFixed(2)} lots`;return;}
+if(e2)$('cOut').textContent='Entry 2 must be on the same side of the stop as Entry 1 and different from it.';else $('cOut').textContent=`Risk ${money(risk,2)} | stop distance ${f2(d)} | position size ${(risk/(d*v)).toFixed(2)} lots`;}
 ['cBal','cRisk','cEn','cSl','cV','cEn2','cSp'].forEach(i=>$(i).addEventListener('input',calc));
-function fillCalc(text,sym){const g=parseFinal(text);$('cV').value=VPP(sym||$('symbol').value);if(num(g.entry))$('cEn').value=num(g.entry);if(num(g['stop loss']))$('cSl').value=num(g['stop loss']);$('cEn2').value=num(g['entry 2'])||'';const sp=String(g['entry 2']||'').split('|')[1]||'',m=sp.match(/(\d+)\s*%/);$('cSp').value=m?m[1]:50;calc();}
-$('cV').value=VPP($('symbol').value);calc();
+function fillCalc(text,sym){const g=parseFinal(text);$('cV').value=lotValFor(sym||$('symbol').value);if(num(g.entry))$('cEn').value=num(g.entry);if(num(g['stop loss']))$('cSl').value=num(g['stop loss']);$('cEn2').value=num(g['entry 2'])||'';const sp=String(g['entry 2']||'').split('|')[1]||'',m=sp.match(/(\d+)\s*%/);$('cSp').value=m?m[1]:50;calc();}
+function lotValFor(sym){const v=lotVal(aliasSym(sym||''));return v!=null?+v.toPrecision(5):(ACCT()==='USD'?VPP(sym):'');}
+$('cV').value=lotValFor($('symbol').value);calc();
 // ---- shareable plan card
 async function planCard(btn){const card=btn&&btn.closest('.res'),sym=card?card.dataset.sym:'',g=parseFinal(card?card.dataset.raw||'':'');if(!g.decision){alert('No final plan found.');return;}
 const c=document.createElement('canvas');c.width=1080;c.height=1350;const x=c.getContext('2d'),F='sans-serif';
@@ -2225,6 +2242,12 @@ function brokerCost(sym,prof){prof=prof||{};const S=normSym(sym).replace(/USDT$/
   let pips=acc[S],rough=false;if(pips==null){const base=st[S]!=null?st[S]:st['_'+S]!=null?st['_'+S]:st._other;rough=st[S]==null;pips=acc===st?base:base*(acc._k||1);rough=rough||acc!==st&&st[S]!=null&&acc[S]==null;}
   const com=acc._com?acc._com/VPPX(S):0;
   return {spr:+(pips*pip).toPrecision(6),com:+com.toPrecision(6),rough,src:'XM '+({standard:'Standard',ultralow:'Ultra Low',zero:'Zero'}[prof.acc]||'Standard')};}
+// Value of a 1.0 price move on one standard lot, in the account currency.
+// rates: {'USD/ZAR':18.2,'USD/JPY':150,'EUR/USD':1.08,...} (any majors known). Returns null if a needed rate is missing.
+function lotValue(sym,acct,rates){const S=normSym(sym).replace(/USDT$/,'USD'),A=String(acct||'USD').toUpperCase();rates=rates||{};
+  const size=/^XAU/.test(S)?100:/^XAG/.test(S)?5000:/^(BTC|ETH|SOL|XRP|BNB|ADA|DOGE|LTC)/.test(S)?1:100000,q=S.slice(-3);
+  const usdTo=c=>{if(c==='USD')return 1;const a=rates['USD/'+c];if(a)return a;const b=rates[c+'/USD'];return b?1/b:null;};
+  if(q===A)return size;const qu=usdTo(q),au=usdTo(A);if(qu==null||au==null)return null;return size/qu*au;}
 // ==== COST PURE END
 // ==== LEARN PURE START
 // v34 learning loop. Every plan is saved with a fingerprint of the setup (worked out in code), every resolved trade with
