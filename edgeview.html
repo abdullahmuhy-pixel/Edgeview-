@@ -345,6 +345,9 @@
   </div>
   </section>
   <section class="view" id="v-journal" hidden>
+  <div class="card"><b>What the robot has learned</b><div id="learnBox"></div>
+    <div class="row" style="margin-top:8px;align-items:center;gap:8px;flex-wrap:wrap"><button class="sec" id="learnRev">Review closed trades now</button><label class="hint" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="pmOn" checked> Write a lesson after every closed trade (Claude Haiku, about $0.002 each)</label></div>
+    <div id="learnStat" class="hint"></div></div>
   <div class="card"><b>Calibration: is Edgeview's % honest?</b><div id="calib"></div></div>
   <div class="card"><b>History &amp; journal</b>
     <div id="stats" class="hint"></div>
@@ -400,6 +403,8 @@ TP1: exact price | R:R (measured from Entry)
 TP2: exact price | R:R (measured from Entry)
 Probability: X% TP1 before stop | Y% TP2 | Expected value: +/-Z R (= p x R:R of TP1 - (1-p))  [for GOLD use the ladder format in the GOLD LADDER rule instead]
 Built from: which styles agree (e.g. Intraday + Swing) and the 2-3 strongest confluence factors
+Setup type: exactly one of TREND PULLBACK, BREAKOUT RETEST, RANGE FADE, LIQUIDITY SWEEP REVERSAL, MOMENTUM CONTINUATION, NEWS REACTION, OTHER (for NO TRADE, the setup you are waiting for)
+Edge factors: how the probability was built from the no-edge baseline, e.g. base 40 | +10 higher timeframes agree | +5 4H demand zone | -5 CPI in 3h | learning -5 (range fades in high volatility)
 Trigger: what must happen before placing or activating the order, and the best time or session to watch
 Valid until: exact date and time in UTC, e.g. 2026-10-08 16:00 UTC. If the order is not filled by then, cancel it and do not chase
 Time stop: if the trade is filled but TP1 is not hit by this UTC time, reassess or close
@@ -422,6 +427,7 @@ RULES
 - INSTRUMENT BACKGROUND: if a background block is given, use it as general knowledge about what drives the instrument and its sessions. Name the 1 or 2 drivers that matter most right now in the Market snapshot, and verify them against the live data and news; never present the background as current news or a current central-bank stance. For JPY pairs, say whether there is any intervention or BoJ risk in the data. For USDZAR, allow for wide spreads and thin liquidity in stops and timing.
 - LIVE CALENDAR: if a live calendar block is given, use it for event times and forecasts (it is in UTC and more reliable than reading times from screenshots), and use screenshots or headlines for actual results. End every order's validity before a high-impact event for its currencies, or say clearly that the order spans the release and lower the probability by 10 points.
 - OPEN EXPOSURE: if an open positions block is given, treat it as the trader's existing risk. If the new plan adds to a currency the trader is already 2 or more units long or short, say so in the Risk line and halve the suggested risk; at 3 or more units in the same direction, prefer NO TRADE or a plan that reduces the exposure. A plan in the opposite direction to an open position on the same symbol must be flagged as a conflict.
+- LEARNING FROM PAPER TRADES: if a learning block is given, it comes from this trader's own resolved paper trades and was computed in code. Treat it as evidence about what has and has not worked, not as a rule. (a) A condition or setup matching this plan with 20 or more trades and a shrunk edge of -8 points or worse: lower the probability by about that amount, or prefer NO TRADE or a different setup. A shrunk edge of +8 or better with 20 or more trades may add up to 5 points. (b) Conditions with fewer than 20 trades are weak evidence: never move the probability more than 3 points for them. (c) Use the trade-behaviour lines: if many losers were +1R in profit first, set Management to take partial profit or move the stop to break-even earlier; if most limit orders never filled, place entries nearer the price or use a trigger instead; if winners rarely went far against the entry, the stop may be wider than needed. (d) If a listed lesson applies to this plan, follow it and add a line under Built from: "Lesson applied: ...". Put every learning adjustment in Edge factors. Never let the learning block override clear structure or news: it adjusts, it does not decide.
 - USER TRACK RECORD: if a track record block is given, use it only as context. With 15 or more closed trades on that instrument you may move the probability by up to 5 points toward the real hit rate and say so in one line; with fewer, say the sample is too small to adjust. Never let it override the chart or the news.
 - WEEKEND AND TIME RULE: the data states the weekday and any weekend/Friday warning. Forex and gold close about 21:00 UTC Friday and reopen about 22:00 UTC Sunday. On Friday after 12:00 UTC, intraday plans must expire before 20:00 UTC Friday, swing plans must be flagged as carrying weekend gap risk (lower the probability by 5 to 10 points or advise waiting for the Sunday/Monday open), and no new scalps in the last hour before the close. When the market is closed, say so, give plans for the reopen only, and make validity start at the reopen. Avoid the 21:00-23:00 UTC rollover spread widening.
 - VALIDITY: every pending order and the final plan must have a "Valid until" in UTC, worked out from the current UTC time given in the data. Scalp: 1 to 3 hours (max 4). Intraday: until the end of the session that suits the setup, within the same trading day (max about 12 hours). Swing: 2 to 5 days. End the validity BEFORE a high-impact news event or session close that would change the picture. Setups go stale: if price has not reached the entry by then, the order is cancelled and the analysis must be re-run. Also give a Time stop for filled trades.
@@ -602,7 +608,7 @@ function liveBlock(sym,px,src){
   const h1a=acc.find(a=>a.tf==='1H');
   const tol=(h1a&&h1a.atr?h1a.atr*0.5:atrD?atrD*0.12:null);
   const keep=[],zm=zoneMap(acc,px,tol,keep); if(zm) t+='\n'+zm;
-  LIVE[String(sym).toUpperCase()]={px,atr1h:h1a?h1a.atr:null,atrD,at:now,zones:keep.map(z=>({lo:z.lo,hi:z.hi})),tol};
+  LIVE[String(sym).toUpperCase()]={px,atr1h:h1a?h1a.atr:null,atrD,at:now,zones:keep.map(z=>({lo:z.lo,hi:z.hi,score:z.score})),tol};
   return t;
 }
 async function twelve(sym,key){
@@ -805,13 +811,14 @@ $('go').onclick=async()=>{
       if(digest) content.push({type:'text',text:"ECONOMIC CALENDAR / NEWS (transcribed from the user's screenshots):\n"+digest});
       else if(lists.news.length) content.push({type:'text',text:'NEWS / ECONOMIC CALENDAR SCREENSHOTS (read every event and headline in them):'},...lists.news.map(imgBlock));
       const others=pairs.filter(x=>x!==p).map(x=>x.sym).join(', ');
-      content.push({type:'text',text:`Instrument: ${p.sym}.${lists[p.key].length>6?` There are ${lists[p.key].length} charts: read them all but keep every section brief so the answer finishes through the Final trade plan.`:''}${pairBrief(p.sym,true)}${others?` Also being analyzed in this session: ${others}. In the Risk line of the Final trade plan, mention correlated exposure with them if relevant (for example both are USD-driven, so they are not independent bets).`:''}\n\nLIVE DATA (${L.at}; active sessions: ${sessions()}):\n${L.live||('none. '+(p.px?('User-provided current price: '+p.px+'. Treat it as approximate.'):'No live price; read price from the charts and say levels are approximate.'))}\n\n${p.sp&&+p.sp>0?`BROKER SPREAD: about ${p.sp} in price. Buys fill at the ask and sells at the bid: keep stops and targets clear of it, and check that every R:R still meets 1:1.5 after the spread.\n\n`:''}RECENT HEADLINES:\n${L.news||'none'}\n\nUSER NOTE: ${$('note').value.trim()||'none'}`});
+      const LV=LIVE[String(p.sym).toUpperCase()]||{},MS=cd?marketState(cd,LV.px,Date.now()):null;let learn='';try{learn=learnText(HS.get(),LS.get(),p.sym,MS);}catch(e){}
+      content.push({type:'text',text:`Instrument: ${p.sym}.${lists[p.key].length>6?` There are ${lists[p.key].length} charts: read them all but keep every section brief so the answer finishes through the Final trade plan.`:''}${pairBrief(p.sym,true)}${learn?learn+'\n\n':''}${others?` Also being analyzed in this session: ${others}. In the Risk line of the Final trade plan, mention correlated exposure with them if relevant (for example both are USD-driven, so they are not independent bets).`:''}\n\nLIVE DATA (${L.at}; active sessions: ${sessions()}):\n${L.live||('none. '+(p.px?('User-provided current price: '+p.px+'. Treat it as approximate.'):'No live price; read price from the charts and say levels are approximate.'))}\n\n${p.sp&&+p.sp>0?`BROKER SPREAD: about ${p.sp} in price. Buys fill at the ask and sells at the bid: keep stops and targets clear of it, and check that every R:R still meets 1:1.5 after the spread.\n\n`:''}RECENT HEADLINES:\n${L.news||'none'}\n\nUSER NOTE: ${$('note').value.trim()||'none'}`});
       const card=cards[i];
       const co=await claudeStream(ak,SYSTEM,content,t=>{ q(i).innerHTML=md(t); card.dataset.raw=t; if(!scrolled&&t){scrolled=true;card.scrollIntoView({behavior:'smooth'});} btn.textContent=tag(i)+'analyzing… ('+t.length+' chars)'; },deep);
       const text=co.text,stop=co.stop;
       if(stop==='max_tokens') q(i).innerHTML+='<p class="err">The answer was cut off. Run this pair again.</p>';
       if(!text.trim()) throw new Error(emptyMsg(co));
-      PLAN[String(p.sym).toUpperCase()]=parseFinal(text); saveHistory(text,p.sym); addOdds(card,text,p.sym); addCheck(card,text,{...p,cal:L.cal}); if(N===1) fillCalc(text,p.sym); renderHist();
+      const G=parseFinal(text);PLAN[String(p.sym).toUpperCase()]=G;let F=null,LP=null;try{F=featuresOf(G,{ms:MS||{},L:LIVE[String(p.sym).toUpperCase()]||{},cal:L.cal,now:Date.now()});if(F.side)LP=learnedProb({...F,sym:p.sym},learnPool(HS.get()));}catch(e){} saveHistory(text,p.sym,{f:F,...(LP?{lp:LP.p}:{})}); addOdds(card,text,p.sym); addCheck(card,text,{...p,cal:L.cal,f:F,lp:LP}); if(N===1) fillCalc(text,p.sym); renderHist();
       return text;
     }
   });
@@ -873,7 +880,7 @@ function parseFinal(raw){const i=raw.search(/^### *Final trade plan/mi);if(i<0)r
 const num=x=>{const m=String(x||'').replace(/,/g,'').match(/-?\d+(\.\d+)?/);return m?+m[0]:null;};
 // ---- history + journal
 const HS={get:()=>{try{return JSON.parse(localStorage.getItem('ca_hist')||'[]')}catch(e){return[]}},set:a=>{const now=Date.now(),pack=(n,k)=>JSON.stringify(a.slice(0,n).map((e,i)=>(i<k||(e.ord==='WEEKLY OUTLOOK'&&now-e.id<20*86400000))?e:{...e,text:''}));try{localStorage.setItem('ca_hist',pack(400,40));}catch(e){try{localStorage.setItem('ca_hist',pack(150,12));}catch(e2){}}}};
-const APP_VER='edgeview-v33';
+const APP_VER='edgeview-v34';
 function META(){return {model:$('model').value.trim()||'claude-sonnet-5-5',deep:$('depth').value,ver:APP_VER};}
 
 function addOdds(card,text,sym){
@@ -892,7 +899,7 @@ function addOdds(card,text,sym){
     card.appendChild(d);
   }catch(e){}
 }
-function saveHistory(text,sym){const g=parseFinal(text),a=HS.get(),tps=ladderFromPlan(g);a.unshift({id:Date.now(),...(tps?{tps,hit:null}:{}),sym:(sym||'').toUpperCase(),dec:g.decision||'?',ord:g.order||'',entry:g.entry||'',sl:g['stop loss']||'',tp1:g.tp1||'',prob:num(g.probability),valid:g['valid until']||'',st:/no trade/i.test(g.decision||'')?'skip':'open',...(BOTC.get().on&&/BUY|SELL/i.test(g.decision||'')&&!/no trade/i.test(g.decision||'')?{bot:1}:{}),text});HS.set(a);setTimeout(()=>{renderBot();renderChartSide();},0);}
+function saveHistory(text,sym,extra){const g=parseFinal(text),a=HS.get(),tps=ladderFromPlan(g);a.unshift({id:Date.now(),...(tps?{tps,hit:null}:{}),sym:(sym||'').toUpperCase(),dec:g.decision||'?',ord:g.order||'',entry:g.entry||'',sl:g['stop loss']||'',tp1:g.tp1||'',prob:num(g.probability),valid:g['valid until']||'',st:/no trade/i.test(g.decision||'')?'skip':'open',...(extra&&extra.f?{f:extra.f}:{}),...(extra&&extra.lp!=null?{lp:extra.lp}:{}),...(BOTC.get().on&&/BUY|SELL/i.test(g.decision||'')&&!/no trade/i.test(g.decision||'')?{bot:1}:{}),text});HS.set(a);setTimeout(()=>{renderBot();renderChartSide();},0);}
 
 async function copyResult(btn,id){const e=HS.get().find(x=>x.id==id);if(!e)return;const ok=await copyText(resultPost(e));const old=btn.textContent;btn.textContent=ok?'Copied ✓':'Copy failed';setTimeout(()=>btn.textContent=old,1800);}
 async function copyRecap(btn,days){const ok=await copyText(recapText(HS.get(),Date.now(),days));const old=btn.textContent;btn.textContent=ok?'Copied ✓ Paste it in Telegram':'Copy failed';setTimeout(()=>btn.textContent=old,2200);}
@@ -1094,6 +1101,42 @@ const sigText=s=>`${s.tf} ${s.side} score ${s.score}: ${s.patterns.join(' + ')};
 // ---- the scanner (v33)
 const SG={get:()=>{try{return JSON.parse(store.get('ca_sig')||'[]');}catch(e){return [];}},set:a=>store.set('ca_sig',JSON.stringify(a.slice(0,60)))};
 let scanning=false;
+// ---- post-trade reviews and lessons (v34)
+const LS={get:()=>{try{return JSON.parse(store.get('ev_lessons')||'[]');}catch(e){return [];}},set:a=>{try{store.set('ev_lessons',JSON.stringify(a.slice(0,150)));}catch(e){}}};
+const PM_SYS='You review one closed paper trade for a trader\'s journal so the next analysis can learn from it. You get the final plan, a fingerprint of the setup computed in code, the outcome, how far price went for (MFE) and against (MAE) the entry in R, and the candles from before the entry to the exit. Judge honestly. A loss on a sound plan is normal variance: say so. A win on a poor plan is luck: say so. Write ONE specific, actionable lesson for future plans of this kind, naming the condition it applies to (setup, volatility, session, level or news). No generic advice such as "use risk management". Return only JSON: {"verdict":"variance|entry|stop|target|timing|news|structure|luck|good","lesson":"max 220 characters","applies":"short condition, max 60 characters"}';
+const PMQ={q:[],busy:false,
+  add(e,bars,ms){try{const id=e&&e.id;if(!e||!e.f||!e.x||!e.x.filled||LS.get().some(l=>l.id==id)||this.q.some(x=>x.id==id))return;
+    const st=(e.x.fillMin!=null?e.id+e.x.fillMin*6e4:e.id)-6*36e5,en=(e.run&&e.run.exitT)||Date.now(),step=Math.max(ms||36e5,36e5);const agg=[];
+    for(const b of bars){if(b.t<st||b.t>en+ms)continue;const k=Math.floor(b.t/step)*step,l=agg[agg.length-1];if(l&&l.t===k){l.h=Math.max(l.h,b.h);l.l=Math.min(l.l,b.l);l.c=b.c;}else agg.push({t:k,o:b.o,h:b.h,l:b.l,c:b.c});}
+    this.q.push({id,bars:agg.slice(-60)});}catch(err){}},
+  async run(){if(this.busy||!this.q.length||!$('kAnthropic').value.trim()||store.get('ev_pmOff')==='1')return;this.busy=true;
+    try{for(let i=0;i<3&&this.q.length;i++){const j=this.q.shift();const e=HS.get().find(x=>x.id==j.id);if(!e)continue;await reviewTrade(e,j.bars);}}finally{this.busy=false;}
+    if(this.q.length)setTimeout(()=>this.run(),60000);}};
+async function reviewTrade(e,bars){
+  const i=e.text?e.text.search(/^### *Final trade plan/mi):-1,plan=i>=0?e.text.slice(i,i+1600):`${e.dec} ${e.ord} entry ${e.entry}, stop ${e.sl}, TP1 ${e.tp1}, valid until ${e.valid}`;
+  const out=e.st==='win'?(isLad(e)?`WIN: TP${e.hit} reached (${fR(rOf(e))})`:`WIN: TP1 hit (${fR(rOf(e))})`):'LOSS: stopped out (-1R)';
+  const tb=(bars||[]).map(b=>`${new Date(b.t).toISOString().slice(5,16).replace('T',' ')} ${f2(b.o)} ${f2(b.h)} ${f2(b.l)} ${f2(b.c)}`).join('\n');
+  const u=`SYMBOL ${e.sym}\nPLAN (made ${new Date(e.id).toISOString().slice(0,16)} UTC):\n${plan}\n\nFINGERPRINT: ${JSON.stringify(e.f)}\n\nOUTCOME: ${out}. ${e.autoNote||''} MFE ${e.x.mfe}R, MAE ${e.x.mae}R, filled ${e.x.fillMin} min after the plan, held ${e.x.holdMin} min.\n\nHOURLY CANDLES UTC (time open high low close), from 6 hours before the fill to the exit:\n${tb||'not available'}`;
+  try{const j=await haiku(PM_SYS,u);if(!j||!j.lesson)return;const a=LS.get();if(a.some(l=>l.id==e.id))return;
+    a.unshift({id:e.id,t:Date.now(),sym:e.sym,side:e.f.side,setup:e.f.setup,reg:e.f.reg,res:e.st,verdict:String(j.verdict||'').toLowerCase().slice(0,12),applies:String(j.applies||'').slice(0,60),text:String(j.lesson).slice(0,240)});LS.set(a);renderLearn();}
+  catch(err){}
+}
+function reviewBacklog(){const have=new Set(LS.get().map(l=>l.id));const todo=HS.get().filter(e=>e.f&&e.x&&e.x.filled&&(e.st==='win'||e.st==='loss')&&!have.has(e.id)).slice(0,6);
+  if(!todo.length){$('learnStat').textContent='Every closed trade with a fingerprint has been reviewed.';return;}
+  $('learnStat').textContent=`Reviewing ${todo.length} closed trade${todo.length>1?'s':''} (needs candles: Twelve Data key, or crypto)…`;
+  (async()=>{for(const e of todo){try{const fill=e.x.fillMin!=null?e.id+e.x.fillMin*6e4:e.id;const b=await hourlyBars(e.sym,fill-7*36e5);if(b)PMQ.q.push({id:e.id,bars:b.filter(x=>x.t<=((e.run&&e.run.exitT)||Date.now())+36e5).slice(-60)});}catch(err){}}
+    await PMQ.run();$('learnStat').textContent='Reviews done. New lessons are listed below.';})();}
+function renderLearn(){const box=$('learnBox');if(!box)return;const a=HS.get(),pool=learnPool(a),ls=LS.get(),b=behaviour(a);
+  let h='';
+  if(pool.length<5)h+=`<div class="hint">${pool.length} resolved trade${pool.length===1?'':'s'} with a recorded setup so far. From v34 every plan is saved with a fingerprint (setup type, timeframe agreement, volatility, session, stop size, zone, news) and every result with how far price went for and against it. The tables appear after 5 resolved trades; adjustments only count from about 20.</div>`;
+  else{const win=pool.filter(t=>t.win).length,exp=pool.reduce((s,t)=>s+t.base/100,0);
+    h+=`<div class="hint" style="font-size:14px;color:var(--text)">${pool.length} resolved trades · ${Math.round(win/pool.length*100)}% won vs ${Math.round(exp/pool.length*100)}% no-edge baseline · edge <b>${fP((win-exp)/pool.length*100)}</b> points</div>`;
+    const g=groupStats(pool).filter(x=>x.n>=3);
+    if(g.length)h+=`<table class="ct" style="margin-top:8px"><tr><th>Condition</th><th>Won</th><th>Edge</th></tr>${g.slice(0,14).map(x=>`<tr><td>${esc(x.dim)}: <b>${esc(String(x.val))}</b></td><td>${x.w}/${x.n}</td><td style="color:${x.shrunk>=0?'var(--bull)':'var(--bear)'}">${fP(x.shrunk)}${x.n<20?'<small> *</small>':''}</td></tr>`).join('')}</table><div class="hint">Edge = win rate minus the no-edge rate for each trade's R:R, shrunk toward 0 for small samples. * under 20 trades: weak evidence.</div>`;}
+  if(b.lines.length)h+=`<div style="margin-top:10px"><b style="font-size:13px">How trades behaved</b>${b.lines.map(x=>`<div class="hint" style="color:var(--text)">• ${esc(x)}</div>`).join('')}</div>`;
+  h+=`<div style="margin-top:10px"><b style="font-size:13px">Lessons from post-trade reviews (${ls.length})</b>`+(ls.length?ls.slice(0,12).map(l=>`<div class="hint" style="color:var(--text);margin:4px 0">• <b>${esc(l.sym)} ${l.side>0?'BUY':'SELL'} ${esc(l.setup||'')}</b> ${l.res==='win'?'✅':'❌'} <i>${esc(l.verdict||'')}</i>: ${esc(l.text)} <button class="sec" style="padding:2px 8px;font-size:11px" onclick="delLesson(${l.id})">✕</button></div>`).join(''):'<div class="hint">None yet. After each closed robot trade, Claude Haiku compares the plan with what price did and writes one lesson. The most relevant lessons are sent with every new analysis.</div>')+'</div>';
+  box.innerHTML=h;}
+function delLesson(id){LS.set(LS.get().filter(l=>l.id!=id));renderLearn();}
 async function scanPair(sym,mode){
   const m15=await robotBars(sym,'15M',300),h1=await robotBars(sym,'1H',300),h4=EVDetect.to4h(h1);
   const sig=[...EVDetect.detect(m15,h1,{tf:'15M'}),...EVDetect.detect(h1,h4,{tf:'1H'})].sort((a,b)=>b.score-a.score);
@@ -1197,17 +1240,17 @@ async function botCheck(force){
       const bars=fine?await barsSince(sym,from,'5M'):await hourlyBars(sym,from);if(!bars||!bars.length)continue;
       const ms=fine?3e5:36e5;
       HS.set(HS.get().map(e=>{if(!(e.bot&&e.st==='open'&&e.sym===sym))return e;const r=resolveOutcome(e,bars,now,ms);if(!r)return e;
-        if(r.pending){const was=e.run||{};const run={filled:r.filled,hit:r.hit,lastP:r.lastP,fillT:r.fillT,at:now};
+        if(r.pending){const was=e.run||{};const run={filled:r.filled,hit:r.hit,lastP:r.lastP,fillT:r.fillT,at:now,x:r.x};
           if(r.filled&&!was.filled)changes.push({e,msg:`filled at ${e.entry.split('|')[0].trim()}`});
           if(r.hit>(was.hit||0))changes.push({e,msg:`TP${r.hit} reached, stop to break-even`});
           return {...e,run};}
-        const o={...e,st:r.st,auto:'robot',autoNote:r.note,run:{...(e.run||{}),filled:r.st!=='skip',fillT:r.fillT,exitT:r.exitT,exitP:r.exitP,at:now}};
+        const o={...e,st:r.st,auto:'robot',autoNote:r.note,x:r.x,run:{...(e.run||{}),filled:r.st!=='skip',fillT:r.fillT,exitT:r.exitT,exitP:r.exitP,at:now}};if(r.st!=='skip')PMQ.add(o,bars,ms);
         if(isLad(e))o.hit=r.st==='loss'?0:r.st==='win'?r.hit:null;
         changes.push({e:o,msg:r.st==='win'?`closed in profit (${fR(rOf(o))})`:r.st==='loss'?'stopped out (−1R)':'expired before the entry was reached'});
         return o;}));
     }catch(err){$('botStat').textContent='Could not check '+sym+': '+(err.message||err);}
   }
-  botBusy=false;
+  botBusy=false;PMQ.run();
   for(const c of changes){const side=sideOf(c.e)>0?'BUY':'SELL';pushAlert({kind:'trade',sym:c.e.sym,side,title:`Robot: ${c.e.sym} ${side} ${c.msg}`,body:`Entry ${c.e.entry.split('|')[0].trim()}, stop ${c.e.sl.split('|')[0].trim()}, TP1 ${String(c.e.tp1).split('|')[0].trim()}.`});}
   if(changes.length)renderHist();
   $('botStat').textContent=`Robot checked ${new Date().toISOString().slice(11,16)} UTC. Twelve Data credits used today: ${tdUse()} of 800.`;
@@ -1273,6 +1316,7 @@ function addCheck(card,text,p){
     const nb=c.items.filter(x=>x.lvl==='bad').length,nw=c.items.filter(x=>x.lvl==='warn').length;
     d.innerHTML=`<b>Plan check</b> <span class="hint">(numbers recomputed in code${px!=null?', live price '+f2(px):''})</span><div style="margin:4px 0 6px">${nb?`<b style="color:var(--red)">${nb} problem${nb>1?'s':''}: fix before placing this order.</b>`:nw?`${nw} thing${nw>1?'s':''} to look at.`:'No problems found.'}</div>`+
       [...c.items].sort((x,y)=>({bad:0,warn:1,ok:2}[x.lvl])-({bad:0,warn:1,ok:2}[y.lvl])).map(x=>`<div style="margin:3px 0">${ic[x.lvl]} ${esc(x.msg)}</div>`).join('')+
+      (p.lp?`<div style="margin-top:6px">🧠 Learned from ${p.lp.n} similar resolved trades: <b>${p.lp.p}%</b> TP1 before stop (${p.lp.w} of ${p.lp.n} won; no-edge baseline ${p.lp.base}%)${c.prob!=null?`, Claude said ${c.prob}%`:''}.${p.lp.n>=20&&c.prob!=null&&Math.abs(p.lp.p-c.prob)>=10?` <b style="color:var(--red)">${Math.abs(p.lp.p-c.prob)} points apart: trust the lower number until the gap closes.</b>`:p.lp.n<20?' Small sample: treat as a hint.':''}</div>`:(p.f&&p.f.side?'<div style="margin-top:6px" class="hint">🧠 Not enough similar resolved trades yet for a learned probability (needs 5).</div>':''))+
       (a?`<div style="margin-top:6px">📏 Adjusted for your record (${a.n} closed trades): <b>${a.p}%</b> instead of ${c.prob}% (${a.off>=0?'+':''}${a.off.toFixed(0)} points).</div>`:'');
     card.appendChild(d);
   }catch(e){}
@@ -1310,20 +1354,20 @@ async function autoResolve(force){
       for(const e of bySym[sym]){const r=resolveOutcome(e,bars,now);if(!r)continue;upd[e.id]=r;}
       HS.set(HS.get().map(e=>{const r=upd[e.id];if(!r||e.st!=='open')return e;
         if(r.pending) return {...e,run:{filled:r.filled,hit:r.hit,note:r.note,at:now}};
-        const st=r.st,o={...e,st,auto:'candles',autoNote:r.note,run:null};
+        const st=r.st,o={...e,st,auto:'candles',autoNote:r.note,x:r.x,run:null};if(st!=='skip')PMQ.add(o,bars,36e5);
         if(isLad(e)) o.hit=st==='loss'?0:st==='win'?r.hit:null;
         if(st!=='skip')done++; return o;}));
     }catch(err){fails.push(sym+' ('+(err.message||err)+')');}
     await sleep(1500);
   }
-  resolving=false; renderHist();
+  resolving=false; renderHist(); PMQ.run();
   if(el) el.textContent=`Last checked ${new Date().toISOString().slice(11,16)} UTC: ${done} plan${done===1?'':'s'} settled from the candles.`+(fails.length?` Could not check: ${fails.join(', ')}.`:'');
 }
 function renderHist(){const a=HS.get(),cl=a.filter(e=>e.st=='win'||e.st=='loss'),w=cl.filter(e=>e.st=='win').length,pr=cl.filter(e=>e.prob!=null);
 $('stats').textContent=cl.length?`Closed ${cl.length}: ${w} wins, ${cl.length-w} losses, win rate ${(w/cl.length*100).toFixed(0)}%`+(pr.length?` | Edgeview's stated average probability ${(pr.reduce((t,e)=>t+e.prob,0)/pr.length).toFixed(0)}%`:''):'No closed trades yet. Open plans are checked against the candles automatically; you can also mark Win or Loss yourself.';
 $('hist').innerHTML=a.map(e=>`<div class="hi"><b>${esc(e.sym)} ${esc(e.dec)}</b> ${esc(e.ord)}${e.ord==='WEEKLY OUTLOOK'?'':' @ '+esc(e.entry)}<br><small>${new Date(e.id).toISOString().slice(0,16).replace('T',' ')}Z${e.ord==='WEEKLY OUTLOOK'?'':' | SL '+esc(e.sl)+' | TP1 '+esc(e.tp1)}${e.prob!=null?' | '+e.prob+'%':''} | <b>${e.st.toUpperCase()}</b>${isLad(e)&&e.hit!=null?' | '+(e.hit?'TP'+e.hit+' of '+e.tps.length+' hit':'stopped')+' | '+fR(rOf(e)):''}${tagOf(e)}${e.auto==='candles'?' | <i>auto: '+esc(e.autoNote||'from candles')+'</i>':''}${e.st==='open'&&e.run?' | <i>'+esc(String(e.run.note||(e.run.filled?'Filled, still running.':'Not filled yet.')))+'</i>':''}</small><div class="row" style="margin-top:6px;flex-wrap:wrap"><button class="sec" onclick="viewH(${e.id})">View</button>${hitBtns(e)}<button class="sec" onclick="setSt(${e.id},'skip')">Skipped</button>${e.ord!=='WEEKLY OUTLOOK'&&e.st!=='open'?`<button class="sec" onclick="copyResult(this,${e.id})">Post result</button>`:''}<button class="sec" onclick="delH(${e.id})">Delete</button></div></div>`).join('')||'<small>Nothing saved yet. Every analysis is saved here automatically.</small>';
-$('calib').innerHTML=calibHTML(a);}
-$('resolveNow').onclick=()=>autoResolve(true);setTimeout(()=>autoResolve(false),4000);
+$('calib').innerHTML=calibHTML(a);renderLearn();}
+$('resolveNow').onclick=()=>autoResolve(true);$('learnRev').onclick=reviewBacklog;$('pmOn').checked=store.get('ev_pmOff')!=='1';$('pmOn').onchange=()=>store.set('ev_pmOff',$('pmOn').checked?'0':'1');setTimeout(()=>autoResolve(false),4000);
 $('recapW').onclick=function(){copyRecap(this,7);};$('recapM').onclick=function(){copyRecap(this,30);};
 renderHist();
 // ---- position size
@@ -1681,8 +1725,8 @@ function calibHTML(entries){
   return h;
 }
 const csvCell=v=>{v=String(v==null?'':v);if(/^[=+@]|^-[^0-9.]/.test(v))v="'"+v;return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
-function journalCsv(entries){const cols=['date_utc','symbol','decision','order','entry','stop_loss','tp1','probability_pct','valid_until','status','targets_hit','result_R','model','depth','app_version'];
-  return [cols,...entries.map(e=>[new Date(e.id).toISOString(),e.sym,e.dec,e.ord,e.entry,e.sl,e.tp1,e.prob,e.valid,e.st,(e.hit==null?'':e.hit),(typeof rOf==='function'&&rOf(e)!=null?rOf(e).toFixed(2):''),e.model||'',e.deep||'',e.ver||''])].map(r=>r.map(csvCell).join(',')).join('\n');}
+function journalCsv(entries){const cols=['date_utc','symbol','decision','order','entry','stop_loss','tp1','probability_pct','valid_until','status','targets_hit','result_R','model','depth','app_version','setup','tf_agree','volatility','session','stop_atr','zone_strength','news_in_window','learned_prob_pct','mfe_R','mae_R','minutes_to_fill','minutes_held'];
+  return [cols,...entries.map(e=>[new Date(e.id).toISOString(),e.sym,e.dec,e.ord,e.entry,e.sl,e.tp1,e.prob,e.valid,e.st,(e.hit==null?'':e.hit),(typeof rOf==='function'&&rOf(e)!=null?rOf(e).toFixed(2):''),e.model||'',e.deep||'',e.ver||'',...(()=>{const f=e.f||{},x=e.x||{};return [f.setup||'',f.align==null?'':f.align,f.reg||'',f.sess||'',f.stopA==null?'':f.stopA,f.zone==null?'':f.zone,f.news==null?'':f.news,e.lp==null?'':e.lp,x.mfe==null?'':x.mfe,x.mae==null?'':x.mae,x.fillMin==null?'':x.fillMin,x.holdMin==null?'':x.holdMin];})()])].map(r=>r.map(csvCell).join(',')).join('\n');}
 function mergeEntries(cur,inc){const ids=new Set(cur.map(e=>e.id));const add=(inc||[]).filter(e=>e&&typeof e.id==='number'&&!ids.has(e.id)&&typeof e.sym==='string');return {merged:[...cur,...add].sort((a,b)=>b.id-a.id),added:add.length};}
 // ==== ANALYTICS PURE END
 
@@ -1967,26 +2011,123 @@ function resolveOutcome(e,bars,now,barMs){
   const validT=vm?Date.parse(vm[1]+'T'+vm[2].padStart(2,'0')+':'+vm[3]+':00Z'):e.id+24*36e5;
   const lad=e.tps&&e.tps.length>=3?e.tps.map(x=>x.px):[tp1];
   const bm=barMs||36e5,start=Math.ceil(e.id/bm)*bm; // first full bar after the plan was made
+  const risk=Math.abs(en-sl);let mfe=0,mae=0,near=null; // excursions in price, measured from the entry
   let filled=market,fillT=market?e.id:null,k=0,last=null,lastP=null;
+  const X=(endT)=>({filled:!!filled,mfe:+(mfe/risk).toFixed(2),mae:+Math.min(1,mae/risk).toFixed(2),near:filled?0:near==null?null:+(near/risk).toFixed(2),fillMin:filled&&fillT!=null?Math.round((fillT-e.id)/6e4):null,holdMin:filled&&fillT!=null&&endT!=null?Math.round((endT-fillT)/6e4):null});
   for(const b of bars){
     if(b.t<start) continue; last=b.t; lastP=b.c;
     const H=T(b.h),L=T(b.l),hi=side>0?H:T(b.l),lo=side>0?L:T(b.h); // favourable extreme, adverse extreme
     let fresh=false;
-    if(!filled){ if(b.t>=validT) return {st:'skip',note:'Expired before the entry was reached.',exitT:b.t}; if(lo<=T(en)){filled=true;fillT=b.t;fresh=true;} else continue; }
+    if(!filled){ if(b.t>=validT) return {st:'skip',note:'Expired before the entry was reached.',exitT:b.t,x:X(b.t)}; const gap=lo-T(en); near=near==null?gap:Math.min(near,gap); if(lo<=T(en)){filled=true;fillT=b.t;fresh=true;} else continue; }
+    mae=Math.max(mae,T(en)-lo); if(!fresh) mfe=Math.max(mfe,hi-T(en));
     const stopLv=k>0?T(en):T(sl);
     if(lo<=stopLv){
-      if(k===0) return {st:'loss',note:'Stop loss hit'+(fresh?' in the candle the order filled':'')+'.',fillT,exitT:b.t,exitP:sl};
-      return {st:'win',hit:k,note:`TP${k} reached, then the rest closed at break-even.`,fillT,exitT:b.t,exitP:en};
+      if(k===0) return {st:'loss',note:'Stop loss hit'+(fresh?' in the candle the order filled':'')+'.',fillT,exitT:b.t,exitP:sl,x:X(b.t)};
+      return {st:'win',hit:k,note:`TP${k} reached, then the rest closed at break-even.`,fillT,exitT:b.t,exitP:en,x:X(b.t)};
     }
     if(!fresh) while(k<lad.length&&hi>=T(lad[k])) k++;
-    if(lad.length===1&&k>=1) return {st:'win',hit:1,note:'TP1 hit before the stop.',fillT,exitT:b.t,exitP:tp1};
-    if(k>=lad.length) return {st:'win',hit:k,note:'Every target reached.',fillT,exitT:b.t,exitP:lad[lad.length-1]};
+    if(lad.length===1&&k>=1) return {st:'win',hit:1,note:'TP1 hit before the stop.',fillT,exitT:b.t,exitP:tp1,x:X(b.t)};
+    if(k>=lad.length) return {st:'win',hit:k,note:'Every target reached.',fillT,exitT:b.t,exitP:lad[lad.length-1],x:X(b.t)};
   }
-  if(!filled&&last!=null&&last>=validT) return {st:'skip',note:'Expired before the entry was reached.',exitT:last};
+  if(!filled&&last!=null&&last>=validT) return {st:'skip',note:'Expired before the entry was reached.',exitT:last,x:X(last)};
   if(!filled&&now>validT+2*36e5&&last==null) return null;
-  return {pending:true,filled,hit:k,fillT,lastP,lastT:last,note:filled?(k?`Filled; TP${k} reached so far, still running.`:'Filled and still running.'):'Not filled yet.'};
+  return {pending:true,filled,hit:k,fillT,lastP,lastT:last,x:X(last),note:filled?(k?`Filled; TP${k} reached so far, still running.`:'Filled and still running.'):'Not filled yet.'};
 }
 // ==== RESOLVE PURE END
+// ==== LEARN PURE START
+// v34 learning loop. Every plan is saved with a fingerprint of the setup (worked out in code), every resolved trade with
+// how far price went for and against it. These functions turn that history into evidence for the next analysis.
+function SETUPS(){return ['TREND PULLBACK','BREAKOUT RETEST','RANGE FADE','LIQUIDITY SWEEP REVERSAL','MOMENTUM CONTINUATION','NEWS REACTION','OTHER'];}
+function setupOf(s){const t=String(s||'').toUpperCase();if(!t.trim())return null;for(const k of SETUPS())if(t.includes(k))return k;
+  if(/SWEEP|STOP ?HUNT|LIQUIDITY/.test(t))return 'LIQUIDITY SWEEP REVERSAL';if(/PULL ?BACK|RETRACE/.test(t))return 'TREND PULLBACK';if(/BREAK/.test(t))return 'BREAKOUT RETEST';
+  if(/RANGE|MEAN REV|FADE/.test(t))return 'RANGE FADE';if(/MOMENTUM|CONTINUATION/.test(t))return 'MOMENTUM CONTINUATION';if(/NEWS|RELEASE|DATA/.test(t))return 'NEWS REACTION';return 'OTHER';}
+// +1 higher highs and higher lows, -1 lower highs and lower lows, 0 mixed. vals: newest-first closed candles.
+function trendDir(vals){const b=toBars(vals).slice(-300);if(b.length<30)return 0;const P=pivots(b,3),H=P.filter(x=>x.k==='H').slice(-2),L=P.filter(x=>x.k==='L').slice(-2);
+  if(H.length<2||L.length<2)return 0;return H[1].p>H[0].p&&L[1].p>L[0].p?1:H[1].p<H[0].p&&L[1].p<L[0].p?-1:0;}
+function emaStack(vals,px){const c=toBars(vals).map(b=>b.c);if(c.length<220)return 0;const e50=emaSeries(c,50).pop(),e200=emaSeries(c,200).pop(),p=px!=null?px:c[c.length-1];
+  return p>e50&&e50>e200?1:p<e50&&e50<e200?-1:0;}
+function atrPct(d1){const d=toBars(d1).slice(-300);if(d.length<40)return null;const tr=[];for(let i=1;i<d.length;i++)tr.push(Math.max(d[i].h-d[i].l,Math.abs(d[i].h-d[i-1].c),Math.abs(d[i].l-d[i-1].c)));
+  const sm=[];for(let i=13;i<tr.length;i++)sm.push(tr.slice(i-13,i+1).reduce((a,b)=>a+b,0)/14);const cur=sm[sm.length-1],w=sm.slice(-250);return Math.round(w.filter(x=>x<=cur).length/w.length*100);}
+// The state of the market, independent of any trade direction.
+function marketState(cd,px,now){cd=cd||{};now=now||Date.now();
+  const h4=cd.h4?closedOnly(cd.h4,240,now).vals:null,h1=cd.h1?closedOnly(cd.h1,60,now).vals:null,d1=cd.d1?cd.d1.slice(1):null;
+  const r=h1?rsiCalc(toBars(h1).map(b=>b.c)):null,ap=d1?atrPct(d1):null;
+  return {trD:d1?trendDir(d1):0,tr4:h4?trendDir(h4):0,tr1:h1?trendDir(h1):0,ema4:h4?emaStack(h4,px):0,rsi:r==null?null:Math.round(r),atrP:ap,reg:ap==null?null:ap>=80?'high':ap<=20?'low':'normal',sess:sessOf(now),dow:new Date(now).getUTCDay()};}
+// The same state seen from one trade direction (side +1 buy, -1 sell).
+function sideView(ms,side){const tr=[ms.trD,ms.tr4,ms.tr1];return {side,align:tr.filter(x=>x===side).length,counter:ms.trD===-side?1:0,ema4:ms.ema4*side,
+  rsiZ:ms.rsi==null?null:side*(ms.rsi-50)>20?'stretched':side*(ms.rsi-50)<-20?'pullback':'middle',reg:ms.reg,sess:ms.sess};}
+// Fingerprint of a plan. ctx: {ms (marketState), L (LIVE entry: px, atr1h, zones, tol), cal, now}
+function featuresOf(g,ctx){ctx=ctx||{};const dec=String(g.decision||'').toUpperCase(),side=/NO\s*TRADE/.test(dec)?0:dec.includes('BUY')?1:dec.includes('SELL')?-1:0;
+  const ms=ctx.ms||{},L=ctx.L||{},now=ctx.now||Date.now(),px=L.px,atr=L.atr1h||null;
+  const f={v:1,side,setup:setupOf(g['setup type']),mkt:/MARKET/i.test(g.order||'')?1:0,trD:ms.trD,tr4:ms.tr4,tr1:ms.tr1,rsi:ms.rsi,atrP:ms.atrP,reg:ms.reg,sess:ms.sess||sessOf(now),dow:ms.dow};
+  if(side)Object.assign(f,sideView(ms,side),{side});
+  const en=_num(g.entry),sl=_num(g['stop loss']),tp1=_num(g.tp1),risk=en!=null&&sl!=null?Math.abs(en-sl):0;
+  if(en!=null&&tp1!=null&&risk>0){f.rr=+(Math.abs(tp1-en)/risk).toFixed(2);if(atr){f.stopA=+(risk/atr).toFixed(2);if(px!=null)f.distA=+(Math.abs(en-px)/atr).toFixed(2);}}
+  if(en!=null&&L.zones&&L.tol){let best=0;for(const z of L.zones)if(en>=z.lo-L.tol&&en<=z.hi+L.tol)best=Math.max(best,z.score||1);f.zone=best;}
+  const vm=String(g['valid until']||'').match(/(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})/),until=vm?Date.parse(vm[1]+'T'+vm[2].padStart(2,'0')+':'+vm[3]+':00Z'):null;
+  if(until){f.validH=+((until-now)/36e5).toFixed(1);if(ctx.cal)f.news=calClash(ctx.cal,now,until).length?1:0;}
+  if(g['edge factors'])f.fac=String(g['edge factors']).slice(0,240);
+  return f;}
+function baseOf(rr){return 100/(1+(rr>0?rr:1.5));}
+// Resolved trades that carry a fingerprint.
+function learnPool(entries){return (entries||[]).filter(e=>e&&e.f&&e.f.side&&(e.st==='win'||e.st==='loss')&&e.ord!=='WEEKLY OUTLOOK')
+  .map(e=>({...e.f,sym:e.sym,id:e.id,win:e.st==='win',r:rOf(e),x:e.x||null,base:baseOf(e.f.rr)}));}
+function simDist(a,b){let d=a.side!==b.side?3:0;
+  if(a.setup&&b.setup&&a.setup!==b.setup)d+=2;
+  if(a.align!=null&&b.align!=null)d+=Math.abs(a.align-b.align)*0.8;
+  if((a.counter||0)!==(b.counter||0))d+=1;
+  if(a.reg&&b.reg&&a.reg!==b.reg)d+=1;
+  if(a.sess&&b.sess&&a.sess!==b.sess)d+=0.5;
+  if(a.sym&&b.sym&&normSym(a.sym)!==normSym(b.sym))d+=0.7;
+  if(a.rr!=null&&b.rr!=null)d+=Math.min(1.5,Math.abs(a.rr-b.rr)*0.6);
+  if(a.stopA!=null&&b.stopA!=null)d+=Math.min(1,Math.abs(Math.log((a.stopA+0.05)/(b.stopA+0.05))));
+  if(a.rsiZ&&b.rsiZ&&a.rsiZ!==b.rsiZ)d+=0.5;
+  if(a.zone!=null&&b.zone!=null&&(a.zone>=3)!==(b.zone>=3))d+=0.5;
+  if(a.news!=null&&b.news!=null&&a.news!==b.news)d+=0.5;
+  return d;}
+function neighbours(probe,pool,k,maxD){return pool.map(t=>({t,d:simDist(probe,t)})).filter(x=>x.d<=(maxD||3.5)).sort((a,b)=>a.d-b.d).slice(0,k||12).map(x=>x.t);}
+// Probability that TP1 comes before the stop, from the most similar past trades, shrunk toward the no-edge baseline (prior weight 10 trades).
+function learnedProb(probe,pool){const nb=neighbours(probe,pool,15,3.5);if(nb.length<5)return null;const w=nb.filter(t=>t.win).length,base=baseOf(probe.rr),K=10;
+  return {p:Math.round((w+K*base/100)/(nb.length+K)*100),n:nb.length,w,base:Math.round(base)};}
+function LDIMS(){return [['Setup',t=>t.setup],['Volatility regime',t=>t.reg],['Session',t=>t.sess],['Timeframes agreeing with the trade (1D/4H/1H)',t=>t.align==null?null:t.align+' of 3'],
+  ['Against the daily trend',t=>t.counter?'yes':'no'],['RSI 1H relative to the trade',t=>t.rsiZ],['Entry at a zone of strength 3+',t=>t.zone==null?null:t.zone>=3?'yes':'no'],
+  ['High-impact news inside the order window',t=>t.news==null?null:t.news?'yes':'no'],['Stop size (x 1H ATR)',t=>t.stopA==null?null:t.stopA<0.5?'under 0.5':t.stopA<1?'0.5-1':t.stopA<2?'1-2':'2 and over'],
+  ['Order',t=>t.mkt?'market':'limit'],['Direction',t=>t.side>0?'buy':'sell'],['Setup in this volatility',t=>t.setup&&t.reg?t.setup+' / '+t.reg:null]];}
+// Win rate of each condition against what its R:R would win with no edge. Edge is shrunk toward zero (prior of 10 trades).
+function groupStats(pool){const out=[];for(const [dim,f] of LDIMS()){const m={};for(const t of pool){const k=f(t);if(k==null)continue;(m[k]=m[k]||[]).push(t);}
+  const ent=Object.entries(m);if(ent.length<2)continue;for(const [k,g] of ent){if(g.length<3)continue;const n=g.length,w=g.filter(t=>t.win).length,exp=g.reduce((s,t)=>s+t.base/100,0),rs=g.map(t=>t.r).filter(x=>x!=null);
+    out.push({dim,val:k,n,w,wr:w/n*100,base:exp/n*100,edge:(w-exp)/n*100,shrunk:(w-exp)/(n+10)*100,avgR:rs.length?rs.reduce((a,b)=>a+b,0)/rs.length:null});}}
+  return out.sort((a,b)=>Math.abs(b.shrunk)-Math.abs(a.shrunk));}
+function median(a){const s=[...a].sort((x,y)=>x-y),n=s.length;return n?(n%2?s[(n-1)/2]:(s[n/2-1]+s[n/2])/2):null;}
+// How trades behaved after the entry: losers that were in profit first, how deep winners went against you, limits that never filled.
+function behaviour(entries){const all=(entries||[]).filter(e=>e&&e.x&&e.ord!=='WEEKLY OUTLOOK'),L=all.filter(e=>e.st==='loss'),W=all.filter(e=>e.st==='win'),U=all.filter(e=>e.st==='skip'&&e.x.near!=null&&!e.x.filled);
+  const filled=all.filter(e=>e.x.filled),o={nL:L.length,nW:W.length,nU:U.length,nF:filled.length,lines:[]};
+  if(L.length>=5){const a=L.filter(e=>e.x.mfe>=1).length,b=L.filter(e=>e.x.mfe>=0.5).length;o.lossRan1=a/L.length;
+    o.lines.push(`${a} of ${L.length} losing trades (${Math.round(a/L.length*100)}%) were at least +1R in profit before reversing to the stop, ${b} (${Math.round(b/L.length*100)}%) at least +0.5R.`);}
+  if(W.length>=5){const m=median(W.map(e=>e.x.mae));o.winMae=m;o.lines.push(`Winning trades went a median ${m.toFixed(2)}R against the entry before working (worst ${Math.max(...W.map(e=>e.x.mae)).toFixed(2)}R).`);}
+  if(U.length+filled.length>=8){const r=U.length/(U.length+filled.length),nm=median(U.map(e=>e.x.near));o.unfilled=r;
+    o.lines.push(`${U.length} of ${U.length+filled.length} orders (${Math.round(r*100)}%) expired without filling; the median unfilled order came within ${nm.toFixed(2)}R of its entry.`);}
+  const hold=filled.filter(e=>e.x.holdMin!=null&&(e.st==='win'||e.st==='loss'));
+  if(hold.length>=5){const h=a=>{const m=median(a.map(e=>e.x.holdMin));return m==null?'n/a':(m/60).toFixed(1)+' h';};o.lines.push(`Median time in a trade ${h(hold)} (winners ${h(hold.filter(e=>e.st==='win'))}, losers ${h(hold.filter(e=>e.st==='loss'))}).`);}
+  return o;}
+function relevantLessons(ls,probe,n){return (ls||[]).map(l=>({l,s:(probe.sym&&normSym(l.sym)===normSym(probe.sym)?2:0)+(probe.setup&&l.setup===probe.setup?2:0)+(probe.reg&&l.reg===probe.reg?1:0)+(probe.side&&l.side===probe.side?0.5:0)+(l.verdict&&l.verdict!=='variance'?1:0)+Math.max(0,1-(Date.now()-l.t)/(60*864e5))}))
+  .sort((a,b)=>b.s-a.s).slice(0,n||5).map(x=>x.l);}
+function fP(x){return (x>=0?'+':'')+Math.round(x);}
+// The LEARNING block sent to Claude before an analysis.
+function learnText(entries,lessons,sym,ms){const pool=learnPool(entries);const head='LEARNING FROM THIS TRADER\'S RESOLVED PAPER TRADES (computed in code from the journal; "edge" = win rate minus the no-edge baseline for each trade\'s R:R, "shrunk" pulls small samples toward zero):';
+  if(pool.length<5){const b=behaviour(entries);return pool.length||b.lines.length?head+`\nOnly ${pool.length} resolved trade${pool.length===1?'':'s'} with a recorded setup so far: too few to adjust anything. Mention this in one line.`+(b.lines.length?'\n'+b.lines.join('\n'):''):'';}
+  const g=groupStats(pool).filter(x=>x.n>=5).slice(0,10),win=pool.filter(t=>t.win).length,exp=pool.reduce((s,t)=>s+t.base/100,0);
+  let t=head+`\nOverall: ${pool.length} trades, ${win} won (${Math.round(win/pool.length*100)}%) vs ${Math.round(exp/pool.length*100)}% no-edge baseline: edge ${fP((win-exp)/pool.length*100)} points.`;
+  if(g.length)t+='\nBy condition (strongest effects first):\n'+g.map(x=>`- ${x.dim}: ${x.val}: ${x.n} trades, ${x.w} won (${Math.round(x.wr)}% vs baseline ${Math.round(x.base)}%), edge ${fP(x.edge)}, shrunk ${fP(x.shrunk)}${x.avgR!=null?', average '+fR(x.avgR):''}${x.n>=20?'':' (weak evidence, under 20 trades)'}`).join('\n');
+  const b=behaviour(entries);if(b.lines.length)t+='\nTrade behaviour:\n'+b.lines.map(x=>'- '+x).join('\n');
+  if(ms){const parts=[];for(const s of [1,-1]){const pr={...sideView(ms,s),sym};const nb=neighbours(pr,pool,15,3);if(nb.length<3)continue;const w=nb.filter(x=>x.win).length,bs=nb.reduce((a,x)=>a+x.base,0)/nb.length;
+      parts.push(`${s>0?'BUYS':'SELLS'}: ${nb.length} similar past trades, ${w} won (${Math.round(w/nb.length*100)}% vs baseline ${Math.round(bs)}%)`);}
+    const tw=x=>x>0?'up':x<0?'down':'mixed';
+    t+=`\nIn conditions like now (1D ${tw(ms.trD)}, 4H ${tw(ms.tr4)}, 1H ${tw(ms.tr1)}, ${ms.reg||'unknown'} volatility, ${ms.sess}): `+(parts.join('; ')||'no similar past trades yet')+'.';}
+  const rl=relevantLessons(lessons,{sym,reg:ms&&ms.reg},6);if(rl.length)t+='\nLESSONS from post-trade reviews (most relevant first):\n'+rl.map(l=>`- [${new Date(l.t).toISOString().slice(0,10)} ${l.sym} ${l.side>0?'BUY':'SELL'} ${l.setup||''} ${l.res}${l.reg?', '+l.reg+' volatility':''}] ${l.text}`).join('\n');
+  return t;}
+// ==== LEARN PURE END
+
 
 
 // ==== EXPO PURE START
