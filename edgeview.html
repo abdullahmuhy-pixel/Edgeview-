@@ -241,12 +241,19 @@
     <div class="hint" style="margin-top:0">Every analysis that ends in a BUY or SELL becomes a paper trade. The robot follows it on 5-minute candles: it waits for the entry, then records the stop, each target, or expiry. Results go into your journal automatically. No real orders are sent.</div>
     <label class="switch"><span>Auto-trade every analysis<small>Paper trading from the live candles</small></span><input type="checkbox" class="tgl" id="botOn"></label>
     <div class="row"><div><label>Paper balance ($)</label><input id="botBal" inputmode="decimal"></div><div><label>Risk per trade (%)</label><input id="botRisk" inputmode="decimal"></div></div>
+    <div class="row"><div><label>Daily loss limit (R)</label><input id="botDayR" inputmode="decimal"></div><div><label>Half size after losses in a row</label><input id="botStreak" inputmode="numeric"></div><div><label>Max open trades</label><input id="botMaxOpen" inputmode="numeric"></div></div>
+    <div class="hint" id="botRiskStat"></div>
     <div class="stats" id="botStats"></div>
     <canvas id="botEq" style="width:100%;height:120px;display:block;margin-top:8px"></canvas>
     <div class="hint" id="botStat"></div>
   </div>
   <div class="card"><div class="ttl">Robot trades</div><div id="botList" class="list"></div></div>
   <div class="card"><div class="ttl">Early-move signals: did they follow through?</div><div id="sigStats"></div></div>
+  <div class="card"><div class="ttl">Backtest the signals on history</div>
+    <div class="hint" style="margin-top:0">Replays the robot's early-move detector over past candles, one closed candle at a time (no look-ahead), and checks each signal: did price go 1 ATR its way before 1 ATR against, and how would a simple trade have done (entry at the close, stop at the signal's stop idea, target 2R, at most 48 candles)? Results feed the signal record, so alerts can rely on hundreds of past signals instead of waiting months. Uses 2 Twelve Data credits (crypto: free).</div>
+    <div class="row"><div><label>Market</label><input id="btSym" placeholder="the chart's market"></div><div><label>Timeframe</label><select id="btTf"><option value="1H">1H (about 7 months)</option><option value="15M">15M (about 2 months)</option></select></div></div>
+    <div class="row" style="margin-top:8px"><button class="sec" id="btRun" style="flex:0 0 auto">Run backtest</button><button class="sec" id="btClear" style="flex:0 0 auto">Clear results</button></div>
+    <div class="hint" id="btStat"></div><div id="btOut"></div></div>
 
   <div class="card">
     <div class="ttl">Watchlist scanner</div>
@@ -302,6 +309,7 @@
     </div>
     <label>Your note (optional: events, bias, account size)</label>
     <textarea id="note" placeholder="e.g. CPI today 13:30 GMT. Account $5,000."></textarea>
+    <label style="display:flex;gap:8px;align-items:center;font-size:13px;color:var(--text);margin-top:12px"><input type="checkbox" id="fxOn" style="width:auto" checked> Currency strength and intermarket (gold, silver, oil, S&amp;P 500). Refreshed hourly in the background: about 11 Twelve Data credits an hour, only while you use the app</label>
     <label style="display:flex;gap:8px;align-items:center;font-size:13px;color:var(--text);margin-top:12px"><input type="checkbox" id="autoImg" style="width:auto" checked> Also send Claude the charts the app draws from live candles (better pattern reading, slightly higher cost)</label>
     <div style="margin-top:12px"><button id="go">Analyze</button></div>
     <div class="hint" id="runSummary"></div>
@@ -367,6 +375,7 @@
 </main>
 
 <script src="detect.js"></script>
+<script src="ta.js"></script>
 <script>
 const SYSTEM = `You are a multi-timeframe trading analyst for forex, metals and crypto. You receive exact candle tables and a market-structure summary for 1W, 1D, 4H, 1H, 15M and 5M computed from live candles, charts drawn by the app from those same candles, live market data, the live economic calendar and recent headlines fetched from data providers, plus an optional note. Analyze only what is visible or provided. Never invent price levels you cannot read from the charts.
 
@@ -434,6 +443,9 @@ RULES
 - LIVE CALENDAR: if a live calendar block is given, use it for event times and forecasts (it is in UTC and more reliable than reading times from screenshots), and use screenshots or headlines for actual results. End every order's validity before a high-impact event for its currencies, or say clearly that the order spans the release and lower the probability by 10 points.
 - OPEN EXPOSURE: if an open positions block is given, treat it as the trader's existing risk. If the new plan adds to a currency the trader is already 2 or more units long or short, say so in the Risk line and halve the suggested risk; at 3 or more units in the same direction, prefer NO TRADE or a plan that reduces the exposure. A plan in the opposite direction to an open position on the same symbol must be flagged as a conflict.
 - LEARNING FROM PAPER TRADES: if a learning block is given, it comes from this trader's own resolved paper trades and was computed in code. Treat it as evidence about what has and has not worked, not as a rule. (a) A condition or setup matching this plan with 20 or more trades and a shrunk edge of -8 points or worse: lower the probability by about that amount, or prefer NO TRADE or a different setup. A shrunk edge of +8 or better with 20 or more trades may add up to 5 points. (b) Conditions with fewer than 20 trades are weak evidence: never move the probability more than 3 points for them. (c) Use the trade-behaviour lines: if many losers were +1R in profit first, set Management to take partial profit or move the stop to break-even earlier; if most limit orders never filled, place entries nearer the price or use a trigger instead; if winners rarely went far against the entry, the stop may be wider than needed. (d) If a listed lesson applies to this plan, follow it and add a line under Built from: "Lesson applied: ...". Put every learning adjustment in Edge factors. Never let the learning block override clear structure or news: it adjusts, it does not decide.
+- TOOLKIT: if a trader's toolkit block is given, its levels are exact; use them instead of estimating. (a) Liquidity: put stops beyond the Asia range, opening ranges, previous day/week extremes and untouched equal highs/lows, never on them; those levels are natural targets and sweep zones. A sweep of one of them that closes back inside is a LIQUIDITY SWEEP REVERSAL. (b) Dealing range: prefer buys in discount and sells in premium, and say which in Built from. (c) Trend strength: TRENDING (ADX 25+) favours pullbacks and continuation and argues against range fades (-5 to -10 for a fade); RANGING favours fades at the range edges and argues against breakouts without a squeeze; TRANSITION: -5. (d) Unmitigated order blocks and fair value gaps are entry zones; regular divergence at a level supports a reversal, hidden divergence supports continuation; count each in Edge factors. (e) Use Fibonacci extensions (1.272, 1.618) and liquidity levels for TP2 and the gold ladder. (f) Intraday buys above the session VWAP or TWAP and sells below it are with the flow. (g) Volume profile (crypto): the point of control and the value-area edges are reaction levels. (h) Order book (crypto): large resting bid or ask walls near an entry or target are reaction levels, but they can be pulled; never rely on them alone.
+- CURRENCY STRENGTH AND INTERMARKET: if given, prefer trades that pair a strong currency against a weak one on the 1D and 5D columns. If the trade goes against the 1D strength gap of its two currencies, lower the probability by 5 and say so. Falling equities (SPY) mean risk-off: supportive for JPY, CHF and gold. Rising oil supports CAD. For gold, mention the dollar's strength and the gold/silver ratio when they matter.
+- RISK STATE: if a risk state block is given, follow it in the Risk line: half the usual risk after the losing-streak rule fires, and say that the robot will not take new trades while the daily loss limit or the open-trade limit is reached.
 - USER TRACK RECORD: if a track record block is given, use it only as context. With 15 or more closed trades on that instrument you may move the probability by up to 5 points toward the real hit rate and say so in one line; with fewer, say the sample is too small to adjust. Never let it override the chart or the news.
 - WEEKEND AND TIME RULE: the data states the weekday and any weekend/Friday warning. Forex and gold close about 21:00 UTC Friday and reopen about 22:00 UTC Sunday. On Friday after 12:00 UTC, intraday plans must expire before 20:00 UTC Friday, swing plans must be flagged as carrying weekend gap risk (lower the probability by 5 to 10 points or advise waiting for the Sunday/Monday open), and no new scalps in the last hour before the close. When the market is closed, say so, give plans for the reopen only, and make validity start at the reopen. Avoid the 21:00-23:00 UTC rollover spread widening.
 - VALIDITY: every pending order and the final plan must have a "Valid until" in UTC, worked out from the current UTC time given in the data. Scalp: 1 to 3 hours (max 4). Intraday: until the end of the session that suits the setup, within the same trading day (max about 12 hours). Swing: 2 to 5 days. End the validity BEFORE a high-impact news event or session close that would change the picture. Setups go stale: if price has not reached the entry by then, the order is cancelled and the analysis must be re-run. Also give a Time stop for filled trades.
@@ -767,6 +779,46 @@ async function liveCalendar(){
   try{const ev=await getJSON('https://nfs.faireconomy.media/ff_calendar_thisweek.json');if(!Array.isArray(ev))throw 0;calMem={t:now,ev};try{localStorage.setItem('ca_cal',JSON.stringify(calMem));}catch(e){}return ev;}
   catch(e){srcFail('Live economic calendar (ForexFactory feed)');try{const c=JSON.parse(localStorage.getItem('ca_cal')||'null');if(c&&Array.isArray(c.ev))return c.ev;}catch(_){}return null;}
 }
+
+// ---- trader's toolkit, currency strength, intermarket and order book (v35)
+const TAX={};
+function taBlock(sym,cd,px){if(!cd||!window.EVTA||px==null)return '';const A=EVTA,now=Date.now();
+  const m15=A.closed(A.fromVals(cd.m15),9e5,now),h1=A.closed(A.fromVals(cd.h1),36e5,now),h4=A.closed(A.fromVals(cd.h4),144e5,now),d1=A.fromVals(cd.d1);
+  const lv=A.sessionLevels(m15,d1,h1,now,px),L=[];if(lv.lines.length)L.push('SESSION AND LIQUIDITY LEVELS:\n'+lv.lines.join('\n'));
+  for(const [lab,b,k] of [['4H',h4,3],['1H',h1,3],['15M',m15,2]]){const t=A.tfTools(lab,b,px,k);if(t)L.push(t);}
+  const vw=A.vwapBlock(m15,h1,now,px);if(vw)L.push(vw);
+  const vp=A.volumeProfile(h1.slice(-168));if(vp)L.push(`VOLUME PROFILE (last 7 days of 1H candles, real volume): point of control ${A.fx(vp.poc)}, value area ${A.fx(vp.val)}-${A.fx(vp.vah)}; price ${px>vp.vah?'above':px<vp.val?'below':'inside'} the value area`);
+  TAX[String(sym).toUpperCase()]={levels:lv.levels,h1,h4,at:now};
+  return L.length?"TRADER'S TOOLKIT (computed in code from closed candles; exact levels):\n"+L.join('\n'):'';}
+// add the toolkit numbers to a setup fingerprint
+function augF(f,sym,entry,L){try{if(!f||!f.side||!window.EVTA)return f;const tx=TAX[String(sym).toUpperCase()];if(!tx)return f;Object.assign(f,EVTA.fingerprint(tx.h1,tx.h4,L&&L.px,f.side));
+  const en=_num(entry),a=L&&L.atr1h;if(en!=null&&a&&tx.levels.length)f.liq=tx.levels.some(l=>Math.abs(l.p-en)<=0.5*a)?1:0;}catch(e){}return f;}
+const FXM=['EUR/USD','GBP/USD','AUD/USD','NZD/USD','USD/JPY','USD/CAD','USD/CHF'],IMK=['XAU/USD','XAG/USD','WTI/USD','SPY'];
+async function tdBatch(syms,tk){const j=await getJSON(`https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(syms.join(','))}&interval=1h&outputsize=130&timezone=UTC&apikey=${tk}`);
+  for(let i=1;i<syms.length;i++)tdCount();if(j&&j.status==='error')throw new Error(j.message||'error');const out={};for(const sy of syms){const v=j&&j[sy];if(v&&v.status!=='error'&&v.values)out[sy]=EVTA.fromVals(v.values).map(b=>b.c);}
+  if(!Object.keys(out).length)throw new Error('no data');return out;}
+const fxGet=k=>{try{return JSON.parse(store.get(k)||'null');}catch(e){return null;}};
+let fxBusy=false;
+// Refreshes the strength and intermarket data in the background, spaced so the free plan's 8 credits a minute are not exceeded.
+async function fxRefresh(){if(fxBusy||!$('fxOn').checked)return;const tk=$('kTwelve').value.trim();if(!tk)return;fxBusy=true;
+  try{const now=Date.now(),paid=$('tdplan').value!=='free',fx=fxGet('ev_fx'),im=fxGet('ev_im');
+    if((!fx||now-fx.t>55*6e4)&&tdUse()<700){if(!paid)await sleep(65000);try{store.set('ev_fx',JSON.stringify({t:Date.now(),s:await tdBatch(FXM,tk)}));}catch(e){}}
+    if((!im||now-im.t>55*6e4)&&tdUse()<700){if(!paid)await sleep(65000);try{store.set('ev_im',JSON.stringify({t:Date.now(),s:await tdBatch(IMK,tk)}));}catch(e){}}}
+  finally{fxBusy=false;}}
+function fxBlock(sym){if(!$('fxOn').checked||!window.EVTA)return '';const fx=fxGet('ev_fx'),im=fxGet('ev_im'),now=Date.now(),out=[];
+  if(fx&&now-fx.t<6*36e5){const cols=[4,24,120].map(k=>EVTA.strength(fx.s,k)),by=c=>cols.map(a=>{const x=a.find(y=>y.ccy===c);return x?(x.v>=0?'+':'')+x.v.toFixed(2):'n/a';}).join(' / ');
+    const ccys=cols[1].map(x=>x.ccy);out.push(`CURRENCY STRENGTH (average % move of each currency against the other majors, from hourly closes at ${new Date(fx.t).toISOString().slice(11,16)} UTC; 4H / 1D / 5D): `+ccys.map(c=>`${c} ${by(c)}`).join('; ')+`. Strongest on 1D: ${ccys[0]}, weakest: ${ccys[ccys.length-1]}.`);
+    const L=legsOf(sym);if(L){const v=c=>{const x=cols[1].find(y=>y.ccy===c);return x?x.v:null;};const a=v(L[0]),b=v(L[1]);if(a!=null&&b!=null)out.push(`For ${String(sym).toUpperCase()}: ${L[0]} ${a>=0?'+':''}${a.toFixed(2)} vs ${L[1]} ${b>=0?'+':''}${b.toFixed(2)} on 1D: the strength gap favours ${a>b?'BUY':'SELL'}.`);else if(b!=null)out.push(`For ${String(sym).toUpperCase()}: ${L[1]} is ${b>=0?'+':''}${b.toFixed(2)} on 1D.`);}}
+  else if(fx)out.push('CURRENCY STRENGTH: data is older than 6 hours; refreshing in the background.');
+  if(im&&now-im.t<6*36e5){const ch=(c,k)=>c&&c.length>k?(c[c.length-1]/c[c.length-1-k]-1)*100:null,f=x=>x==null?'n/a':(x>=0?'+':'')+x.toFixed(2)+'%',N={'XAU/USD':'gold','XAG/USD':'silver','WTI/USD':'WTI oil','SPY':'S&P 500 (SPY)'};
+    const parts=IMK.filter(k=>im.s[k]).map(k=>`${N[k]} ${f(ch(im.s[k],24))} / ${f(ch(im.s[k],120))}`);const g=im.s['XAU/USD'],sv=im.s['XAG/USD'];
+    if(parts.length)out.push(`INTERMARKET (1D / 5D % change from hourly closes): ${parts.join('; ')}${g&&sv?`; gold/silver ratio ${(g[g.length-1]/sv[sv.length-1]).toFixed(1)}`:''}.`);}
+  return out.join('\n');}
+async function depthBlock(sym){if(!isCrypto(sym))return '';try{const j=await getJSON(`https://data-api.binance.vision/api/v3/depth?symbol=${binPair(String(sym).toUpperCase())}&limit=1000`);
+  const bids=(j.bids||[]).map(x=>[+x[0],+x[1]]),asks=(j.asks||[]).map(x=>[+x[0],+x[1]]);if(!bids.length||!asks.length)return '';const mid=(bids[0][0]+asks[0][0])/2,w=mid*0.001;
+  const walls=(a,dir)=>{const m={};for(const [p,q] of a){if(Math.abs(p-mid)>mid*0.02)continue;const k=Math.round(p/w);m[k]=(m[k]||0)+p*q;}return Object.entries(m).map(([k,v])=>({p:+k*w,v})).sort((x,y)=>y.v-x.v).slice(0,3);};
+  const nb=bids.filter(x=>x[0]>=mid*0.99).reduce((s,x)=>s+x[0]*x[1],0),na=asks.filter(x=>x[0]<=mid*1.01).reduce((s,x)=>s+x[0]*x[1],0),fm=v=>v>=1e6?(v/1e6).toFixed(1)+'M':(v/1e3).toFixed(0)+'k';
+  return `ORDER BOOK (Binance spot, within 2% of ${f2(mid)}): biggest bid walls ${walls(bids).map(x=>f2(x.p)+' ($'+fm(x.v)+')').join(', ')}; biggest ask walls ${walls(asks).map(x=>f2(x.p)+' ($'+fm(x.v)+')').join(', ')}; within 1%: bids $${fm(nb)} vs asks $${fm(na)} (${nb>na?'more resting buyers':'more resting sellers'}). Walls can be pulled at any time.`;}catch(e){srcFail('Binance order book');return '';}}
 async function liveFor(p,tk,fk){
   let live='',news='',errs=[];
   if(tk){try{live=await twelve(p.sym,tk);}catch(e){errs.push('Twelve Data: '+e.message);}}
@@ -776,6 +828,8 @@ async function liveFor(p,tk,fk){
   try{const mc=await fredMacro($('kFred').value.trim());if(mc)live=(live?live+'\n':'')+mc;}catch(e){}
   let cal=null;try{const ev=await liveCalendar();if(ev){cal=calendarFor(ev,p.sym,Date.now());const ct=calText(cal,Date.now());live=(live?live+'\n':'')+(ct||'LIVE ECONOMIC CALENDAR: no medium or high impact events for '+calCcys(p.sym).join('/')+' in the next 7 days in the feed.');}}catch(e){}
   try{const xt=expoText(HS.get(),Date.now(),p.sym);if(xt)live=(live?live+'\n':'')+xt;}catch(e){}
+  try{const db=await depthBlock(p.sym);if(db)live=(live?live+'\n':'')+db;}catch(e){}
+  try{const fb=fxBlock(p.sym);if(fb)live=(live?live+'\n':'')+fb;}catch(e){}
   errs.push(...srcLog.splice(0));
   return {live,news,errs,cal,at:new Date().toISOString()};
 }
@@ -812,23 +866,25 @@ $('go').onclick=async()=>{
       if(cd){
         if(!shots.length&&$('autoImg').checked){const im=autoCharts(p.sym,cd);if(im.length)content.push({type:'text',text:`CHARTS DRAWN BY THE APP from live candles for ${p.sym} (not user screenshots): ${im.map(x=>x.tf).join(', ')}. Each shows the last closed candles with EMA 20 (yellow), 50 (blue) and 200 (purple), key zones (shaded) and the live price (dotted). Prices on the right axis are exact.`},...im.map(x=>imgBlock({b64:x.b64})));}
         content.push({type:'text',text:'EXACT CANDLE DATA AND MARKET STRUCTURE (computed from closed candles; prefer these numbers over anything read from images):\n'+structureBlock(cd)});
+        try{const tb=taBlock(p.sym,cd,(LIVE[String(p.sym).toUpperCase()]||{}).px??cd.px);if(tb)content.push({type:'text',text:tb});}catch(e){}
       }
       if(!content.length) throw new Error('No live candles for '+p.sym+'. Check the symbol, or add a Twelve Data key in Settings.');
       if(digest) content.push({type:'text',text:"ECONOMIC CALENDAR / NEWS (transcribed from the user's screenshots):\n"+digest});
       else if(lists.news.length) content.push({type:'text',text:'NEWS / ECONOMIC CALENDAR SCREENSHOTS (read every event and headline in them):'},...lists.news.map(imgBlock));
       const others=pairs.filter(x=>x!==p).map(x=>x.sym).join(', ');
-      const LV=LIVE[String(p.sym).toUpperCase()]||{},MS=cd?marketState(cd,LV.px,Date.now()):null;let learn='';try{learn=learnText(allLearn(),LS.get(),p.sym,MS);}catch(e){}
+      const LV=LIVE[String(p.sym).toUpperCase()]||{},MS=cd?marketState(cd,LV.px,Date.now()):null;let learn='';try{learn=learnText(allLearn(),LS.get(),p.sym,MS);}catch(e){}try{const rs=riskText(riskState(HS.get(),Date.now(),BOTC.get()));learn=(learn?learn+'\n\n':'')+rs;}catch(e){}
       content.push({type:'text',text:`Instrument: ${p.sym}.${lists[p.key].length>6?` There are ${lists[p.key].length} charts: read them all but keep every section brief so the answer finishes through the Final trade plan.`:''}${pairBrief(p.sym,true)}${learn?learn+'\n\n':''}${others?` Also being analyzed in this session: ${others}. In the Risk line of the Final trade plan, mention correlated exposure with them if relevant (for example both are USD-driven, so they are not independent bets).`:''}\n\nLIVE DATA (${L.at}; active sessions: ${sessions()}):\n${L.live||('none. '+(p.px?('User-provided current price: '+p.px+'. Treat it as approximate.'):'No live price; read price from the charts and say levels are approximate.'))}\n\n${p.sp&&+p.sp>0?`BROKER SPREAD: about ${p.sp} in price. Buys fill at the ask and sells at the bid: keep stops and targets clear of it, and check that every R:R still meets 1:1.5 after the spread.\n\n`:''}RECENT HEADLINES:\n${L.news||'none'}\n\nUSER NOTE: ${$('note').value.trim()||'none'}`});
       const card=cards[i];
       const co=await claudeStream(ak,SYSTEM,content,t=>{ q(i).innerHTML=md(t); card.dataset.raw=t; if(!scrolled&&t){scrolled=true;card.scrollIntoView({behavior:'smooth'});} btn.textContent=tag(i)+'analyzing… ('+t.length+' chars)'; },deep);
       const text=co.text,stop=co.stop;
       if(stop==='max_tokens') q(i).innerHTML+='<p class="err">The answer was cut off. Run this pair again.</p>';
       if(!text.trim()) throw new Error(emptyMsg(co));
-      const G=parseFinal(text);PLAN[String(p.sym).toUpperCase()]=G;let F=null,LP=null;try{F=featuresOf(G,{ms:MS||{},L:LIVE[String(p.sym).toUpperCase()]||{},cal:L.cal,now:Date.now()});if(F.side)LP=learnedProb({...F,sym:p.sym},learnPool(allLearn()));}catch(e){} saveHistory(text,p.sym,{f:F,...(LP?{lp:LP.p}:{})});try{const id=HS.get()[0].id,LVx=LIVE[String(p.sym).toUpperCase()]||{},sh=shadowEntries(text,p.sym,G,id,LVx.tol?LVx.tol/2:null).map(o=>({...o,f:{...featuresOf({decision:o.dec,order:o.ord,entry:o.entry,'stop loss':o.sl,tp1:o.tp1,'valid until':o.valid,'setup type':F&&F.side===(o.dec==='BUY'?1:-1)?G['setup type']:''},{ms:MS||{},L:LVx,cal:L.cal,now:Date.now()}),style:o.style}}));if(sh.length)SH.set(sh.concat(SH.get()));}catch(e){} addOdds(card,text,p.sym); addCheck(card,text,{...p,cal:L.cal,f:F,lp:LP}); if(N===1) fillCalc(text,p.sym); renderHist();
+      const G=parseFinal(text);PLAN[String(p.sym).toUpperCase()]=G;let F=null,LP=null;try{F=augF(featuresOf(G,{ms:MS||{},L:LIVE[String(p.sym).toUpperCase()]||{},cal:L.cal,now:Date.now()}),p.sym,G.entry,LIVE[String(p.sym).toUpperCase()]);if(F.side)LP=learnedProb({...F,sym:p.sym},learnPool(allLearn()));}catch(e){} saveHistory(text,p.sym,{f:F,...(LP?{lp:LP.p}:{})});try{const id=HS.get()[0].id,LVx=LIVE[String(p.sym).toUpperCase()]||{},sh=shadowEntries(text,p.sym,G,id,LVx.tol?LVx.tol/2:null).map(o=>({...o,f:{...augF(featuresOf({decision:o.dec,order:o.ord,entry:o.entry,'stop loss':o.sl,tp1:o.tp1,'valid until':o.valid,'setup type':F&&F.side===(o.dec==='BUY'?1:-1)?G['setup type']:''},{ms:MS||{},L:LVx,cal:L.cal,now:Date.now()}),p.sym,o.entry,LVx),style:o.style}}));if(sh.length)SH.set(sh.concat(SH.get()));}catch(e){} addOdds(card,text,p.sym); addCheck(card,text,{...p,cal:L.cal,f:F,lp:LP}); if(N===1) fillCalc(text,p.sym); renderHist();
       return text;
     }
   });
   btn.disabled=false; btn.textContent='Analyze';
+  fxRefresh();
 };
 updSummary();
 
@@ -886,7 +942,7 @@ function parseFinal(raw){const i=raw.search(/^### *Final trade plan/mi);if(i<0)r
 const num=x=>{const m=String(x||'').replace(/,/g,'').match(/-?\d+(\.\d+)?/);return m?+m[0]:null;};
 // ---- history + journal
 const HS={get:()=>{try{return JSON.parse(localStorage.getItem('ca_hist')||'[]')}catch(e){return[]}},set:a=>{const now=Date.now(),pack=(n,k)=>JSON.stringify(a.slice(0,n).map((e,i)=>(i<k||(e.ord==='WEEKLY OUTLOOK'&&now-e.id<20*86400000))?e:{...e,text:''}));try{localStorage.setItem('ca_hist',pack(400,40));}catch(e){try{localStorage.setItem('ca_hist',pack(150,12));}catch(e2){}}}};
-const APP_VER='edgeview-v34.1';
+const APP_VER='edgeview-v35';
 function META(){return {model:$('model').value.trim()||'claude-sonnet-5-5',deep:$('depth').value,ver:APP_VER};}
 
 function addOdds(card,text,sym){
@@ -905,7 +961,7 @@ function addOdds(card,text,sym){
     card.appendChild(d);
   }catch(e){}
 }
-function saveHistory(text,sym,extra){const g=parseFinal(text),a=HS.get(),tps=ladderFromPlan(g);a.unshift({id:Date.now(),...(tps?{tps,hit:null}:{}),sym:(sym||'').toUpperCase(),dec:g.decision||'?',ord:g.order||'',entry:g.entry||'',sl:g['stop loss']||'',tp1:g.tp1||'',prob:num(g.probability),valid:g['valid until']||'',st:/no trade/i.test(g.decision||'')?'skip':'open',...(extra&&extra.f?{f:extra.f}:{}),...(extra&&extra.lp!=null?{lp:extra.lp}:{}),...(BOTC.get().on&&/BUY|SELL/i.test(g.decision||'')&&!/no trade/i.test(g.decision||'')?{bot:1}:{}),text});HS.set(a);setTimeout(()=>{renderBot();renderChartSide();},0);}
+function saveHistory(text,sym,extra){const g=parseFinal(text),a=HS.get(),tps=ladderFromPlan(g);a.unshift({id:Date.now(),...(tps?{tps,hit:null}:{}),sym:(sym||'').toUpperCase(),dec:g.decision||'?',ord:g.order||'',entry:g.entry||'',sl:g['stop loss']||'',tp1:g.tp1||'',prob:num(g.probability),valid:g['valid until']||'',st:/no trade/i.test(g.decision||'')?'skip':'open',...(extra&&extra.f?{f:extra.f}:{}),...(extra&&extra.lp!=null?{lp:extra.lp}:{}),...(BOTC.get().on&&/BUY|SELL/i.test(g.decision||'')&&!/no trade/i.test(g.decision||'')?(()=>{const rs=riskState(a,Date.now(),BOTC.get());if(rs.halt||rs.full){setTimeout(()=>pushAlert({kind:'info',sym:(sym||'').toUpperCase(),title:'Robot did not take this plan',body:rs.why.join('; ')+'. The plan is saved in the journal as usual.'}),0);return {botSkip:rs.why.join('; ')};}return rs.mult<1?{bot:1,rm:rs.mult}:{bot:1};})():{}),text});HS.set(a);setTimeout(()=>{renderBot();renderChartSide();},0);}
 
 async function copyResult(btn,id){const e=HS.get().find(x=>x.id==id);if(!e)return;const ok=await copyText(resultPost(e));const old=btn.textContent;btn.textContent=ok?'Copied ✓':'Copy failed';setTimeout(()=>btn.textContent=old,1800);}
 async function copyRecap(btn,days){const ok=await copyText(recapText(HS.get(),Date.now(),days));const old=btn.textContent;btn.textContent=ok?'Copied ✓ Paste it in Telegram':'Copy failed';setTimeout(()=>btn.textContent=old,2200);}
@@ -999,6 +1055,7 @@ function lcStarTxt(){const on=WL.get().includes(LC.sym);$('lcStar').textContent=
   $('symbol').addEventListener('change',()=>{const v=aliasSym($('symbol').value);if(v&&v!==$('symbol').value){$('symbol').value=v;store.set('ca_symbol',v);}});
   try{$('autoImg').checked=store.get('ca_autoImg')!=='0';}catch(e){}
   $('autoImg').onchange=()=>store.set('ca_autoImg',$('autoImg').checked?'1':'0');
+  try{$('fxOn').checked=store.get('ev_fxOn')!=='0';}catch(e){}$('fxOn').onchange=()=>{store.set('ev_fxOn',$('fxOn').checked?'1':'0');if($('fxOn').checked)fxRefresh();};setTimeout(fxRefresh,75000);
 })();
 
 // ---- market search (v33)
@@ -1107,6 +1164,28 @@ const sigText=s=>`${s.tf} ${s.side} score ${s.score}: ${s.patterns.join(' + ')};
 // ---- the scanner (v33)
 const SG={get:()=>{try{return JSON.parse(store.get('ca_sig')||'[]');}catch(e){return [];}},set:a=>{try{store.set('ca_sig',JSON.stringify(a.slice(0,300)));}catch(e){store.set('ca_sig',JSON.stringify(a.slice(0,120)));}}};
 let scanning=false;
+
+// ---- backtest (v35)
+const BT={get:()=>{try{return JSON.parse(store.get('ev_bt')||'{}');}catch(e){return {};}},set:o=>{try{store.set('ev_bt',JSON.stringify(o));}catch(e){const k=Object.keys(o).sort((a,b)=>o[a].at-o[b].at);if(k.length>1){delete o[k[0]];BT.set(o);}}}};
+const btAll=()=>Object.entries(BT.get()).flatMap(([k,v])=>(v.sigs||[]).map(x=>({...x,sym:k.split('|')[0]})));
+const sigList=()=>SG.get().concat(btAll());
+async function btBars(sym,tf){const S=String(sym).toUpperCase(),tk=$('kTwelve').value.trim(),iv={'15M':['15min','15m',9e5],'1H':['1h','1h',36e5],'4H':['4h','4h',144e5]}[tf];
+  if(!tk&&isCrypto(S)){let out=[],end=Date.now();for(let k=0;k<5;k++){const r=await getJSON(`https://data-api.binance.vision/api/v3/klines?symbol=${binPair(S)}&interval=${iv[1]}&endTime=${end}&limit=1000`);const b=r.map(x=>({t:x[0],o:+x[1],h:+x[2],l:+x[3],c:+x[4]}));out=b.concat(out);if(b.length<1000)break;end=b[0].t-1;}return out.filter(b=>b.t+iv[2]<=Date.now());}
+  if(!tk)throw new Error('needs a Twelve Data key (crypto works without one)');await tdSlot();
+  const j=await getJSON(`https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(S)}&interval=${iv[0]}&outputsize=5000&timezone=UTC&apikey=${tk}`);if(!j||j.status==='error'||!j.values)throw new Error(j&&j.message||'no data');
+  return toBars(j.values).filter(b=>b.t+iv[2]<=Date.now());}
+let btBusy=false;
+async function btRun(){if(btBusy)return;const sym=aliasSym($('btSym').value.trim()||LC.sym||'XAU/USD').toUpperCase(),tf=$('btTf').value,st=$('btStat');btBusy=true;$('btRun').disabled=true;
+  try{st.textContent='Downloading candles…';const b=await btBars(sym,tf),htf=await btBars(sym,tf==='15M'?'1H':'4H');if(b.length<400)throw new Error('not enough candles ('+b.length+')');
+    let out=[];const step=150;for(let i=300;i<b.length-1;i+=step){out=out.concat(btReplay(b,htf,tf,EVDetect,EVTA,i,i+step));st.textContent=`Replaying ${sym} ${tf}: ${Math.min(100,Math.round((i-300)/(b.length-300)*100))}%`;await sleep(0);}
+    out.sort((x,y)=>x.at-y.at);const ms=tf==='15M'?9e5:36e5,ded=[];for(const x of out){if(!ded.some(o=>o.side===x.side&&x.at-o.at>=0&&x.at-o.at<=3*ms&&o.at>=x.at-3*ms))ded.push(x);}
+    const all=BT.get();all[sym+'|'+tf]={at:Date.now(),from:b[0].t,to:b[b.length-1].t,n:b.length,sigs:ded.slice(-1500).map(x=>({...x,why:x.why.slice(0,1)}))};BT.set(all);
+    st.textContent=`${sym} ${tf}: ${b.length} candles from ${new Date(b[0].t).toISOString().slice(0,10)} to ${new Date(b[b.length-1].t).toISOString().slice(0,10)}, ${ded.length} signals.`;renderBT();renderSigStats();}
+  catch(e){st.textContent='Backtest failed: '+(e.message||e);}finally{btBusy=false;$('btRun').disabled=false;}}
+function renderBT(){const box=$('btOut');if(!box)return;const all=BT.get(),keys=Object.keys(all);if(!keys.length){box.innerHTML='';return;}
+  box.innerHTML=keys.map(k=>{const v=all[k],rows=btSummary(v.sigs||[]).filter(r=>r.n>=5);return `<div style="margin-top:10px"><b style="font-size:13px">${esc(k.replace('|',' '))}</b> <span class="hint">${new Date(v.from).toISOString().slice(0,10)} to ${new Date(v.to).toISOString().slice(0,10)}</span>`+
+    (rows.length?`<table class="ct"><tr><th>Signals</th><th>Followed through</th><th>2R trade</th></tr>${rows.slice(0,12).map(r=>`<tr><td>${esc(r.k)}</td><td>${r.hit}/${r.hit+r.miss} (${Math.round(r.rate*100)}%)</td><td style="color:${(r.avgR||0)>=0?'var(--bull)':'var(--bear)'}">${r.avgR==null?'n/a':(r.avgR>=0?'+':'')+r.avgR.toFixed(2)+'R'}</td></tr>`).join('')}</table>`:'<div class="hint">Too few signals.</div>')+'</div>';}).join('')+'<div class="hint">2R trade = average result per signal in R (stop at the signal\'s stop idea, target 2R, closed after 48 candles if neither is hit; no spread). Past results on one market do not guarantee future ones.</div>';}
+$('btRun').onclick=btRun;$('btClear').onclick=()=>{BT.set({});renderBT();renderSigStats();$('btStat').textContent='Cleared.';};setTimeout(renderBT,500);
 const SH={get:()=>{try{return JSON.parse(store.get('ev_shadow')||'[]');}catch(e){return [];}},set:a=>{const k=a.slice(0,600).map(e=>{const{text,...r}=e;return r;});try{store.set('ev_shadow',JSON.stringify(k));}catch(e){try{store.set('ev_shadow',JSON.stringify(k.slice(0,250)));}catch(e2){}}}};
 const allLearn=()=>HS.get().concat(SH.get());
 function resolveShadows(sym,bars,barMs,now){if(!bars||!bars.length)return 0;const S=String(sym).toUpperCase(),first=bars[0].t;let n=0;
@@ -1118,8 +1197,8 @@ async function shadowCheck(){if(shBusy)return;const now=Date.now(),open=SH.get()
   try{for(const sym of syms){SHDUE[sym]=now;const crypto=isCrypto(sym)&&!$('kTwelve').value.trim();if(!crypto&&(!$('kTwelve').value.trim()||tdUse()>700))continue;
     try{const from=Math.min(...open.filter(e=>e.sym===sym).map(e=>e.id))-36e5,bars=await hourlyBars(sym,from);if(bars)resolveShadows(sym,bars,36e5,now);}catch(e){}}}finally{shBusy=false;}
   renderLearn();}
-function renderSigStats(){const box=$('sigStats');if(!box)return;const G=EVDetect.sigStats(SG.get()),rows=Object.values(G).filter(g=>g.hit+g.miss>=3).sort((a,b)=>a.k==='all'?-1:b.k==='all'?1:(b.hit+b.miss)-(a.hit+a.miss));
-  box.innerHTML=rows.length?`<table class="ct"><tr><th>Signal</th><th>Followed through</th><th>Rate</th></tr>${rows.slice(0,14).map(g=>`<tr><td>${esc(g.k)}</td><td>${g.hit}/${g.hit+g.miss}${g.flat?` <small>(+${g.flat} flat)</small>`:''}</td><td style="color:${g.shrunk>=0.5?'var(--bull)':'var(--bear)'}">${Math.round(g.rate*100)}%${g.hit+g.miss<20?'<small> *</small>':''}</td></tr>`).join('')}</table><div class="hint">Followed through = price went 1 ATR with the signal before 1 ATR against it, within 16 bars (15M) or 12 bars (1H). Signal types under 40% after 20 tries need a higher score before they alert you. * under 20: weak evidence.</div>`:'<div class="hint">Each early-move signal is scored once its window has passed. The table appears after a few resolved signals.</div>';}
+function renderSigStats(){const box=$('sigStats');if(!box)return;const nb=btAll().length,G=EVDetect.sigStats(sigList()),rows=Object.values(G).filter(g=>g.hit+g.miss>=3).sort((a,b)=>a.k==='all'?-1:b.k==='all'?1:(b.hit+b.miss)-(a.hit+a.miss));
+  box.innerHTML=rows.length?`<table class="ct"><tr><th>Signal</th><th>Followed through</th><th>Rate</th></tr>${rows.slice(0,14).map(g=>`<tr><td>${esc(g.k)}</td><td>${g.hit}/${g.hit+g.miss}${g.flat?` <small>(+${g.flat} flat)</small>`:''}</td><td style="color:${g.shrunk>=0.5?'var(--bull)':'var(--bear)'}">${Math.round(g.rate*100)}%${g.hit+g.miss<20?'<small> *</small>':''}</td></tr>`).join('')}</table><div class="hint">Followed through = price went 1 ATR with the signal before 1 ATR against it, within 16 bars (15M) or 12 bars (1H). Signal types under 40% after 20 tries need a higher score before they alert you. * under 20: weak evidence.${nb?` Includes ${nb} signals from backtests.`:''}</div>`:'<div class="hint">Each early-move signal is scored once its window has passed. The table appears after a few resolved signals.</div>';}
 // ---- post-trade reviews and lessons (v34)
 const LS={get:()=>{try{return JSON.parse(store.get('ev_lessons')||'[]');}catch(e){return [];}},set:a=>{try{store.set('ev_lessons',JSON.stringify(a.slice(0,150)));}catch(e){}}};
 const PM_SYS='You review one closed paper trade for a trader\'s journal so the next analysis can learn from it. You get the final plan, a fingerprint of the setup computed in code, the outcome, how far price went for (MFE) and against (MAE) the entry in R, and the candles from before the entry to the exit. Judge honestly. A loss on a sound plan is normal variance: say so. A win on a poor plan is luck: say so. Write ONE specific, actionable lesson for future plans of this kind, naming the condition it applies to (setup, volatility, session, level or news). No generic advice such as "use risk management". Return only JSON: {"verdict":"variance|entry|stop|target|timing|news|structure|luck|good","lesson":"max 220 characters","applies":"short condition, max 60 characters"}';
@@ -1154,6 +1233,7 @@ function renderLearn(){const box=$('learnBox');if(!box)return;const a=allLearn()
     if(g.length)h+=`<table class="ct" style="margin-top:8px"><tr><th>Condition</th><th>Won</th><th>Edge</th></tr>${g.slice(0,14).map(x=>`<tr><td>${esc(x.dim)}: <b>${esc(String(x.val))}</b></td><td>${x.w}/${x.n}</td><td style="color:${x.shrunk>=0?'var(--bull)':'var(--bear)'}">${fP(x.shrunk)}${x.n<20?'<small> *</small>':''}</td></tr>`).join('')}</table><div class="hint">Edge = win rate minus the no-edge rate for each trade's R:R, shrunk toward 0 for small samples. * under 20 trades: weak evidence.</div>`;}
   if(b.lines.length)h+=`<div style="margin-top:10px"><b style="font-size:13px">How trades behaved</b>${b.lines.map(x=>`<div class="hint" style="color:var(--text)">• ${esc(x)}</div>`).join('')}</div>`;
   h+=`<div style="margin-top:10px"><b style="font-size:13px">Lessons from post-trade reviews (${ls.length})</b>`+(ls.length?ls.slice(0,12).map(l=>`<div class="hint" style="color:var(--text);margin:4px 0">• <b>${esc(l.sym)} ${l.side>0?'BUY':'SELL'} ${esc(l.setup||'')}</b> ${l.res==='win'?'✅':'❌'} <i>${esc(l.verdict||'')}</i>: ${esc(l.text)} <button class="sec" style="padding:2px 8px;font-size:11px" onclick="delLesson(${l.id})">✕</button></div>`).join(''):'<div class="hint">None yet. After each closed robot trade, Claude Haiku compares the plan with what price did and writes one lesson. The most relevant lessons are sent with every new analysis.</div>')+'</div>';
+  try{const mw=mgmtWhatIf(a);if(mw)h+=`<div style="margin-top:10px"><b style="font-size:13px">Trade management test (${mw.n} closed trades)</b><table class="ct"><tr><th>Rule</th><th>Average per trade</th></tr>${mw.rows.map(r=>`<tr><td>${esc(r.name)}</td><td style="color:${r.exp>=0?'var(--bull)':'var(--bear)'}">${r.exp>=0?'+':''}${r.exp.toFixed(2)}R</td></tr>`).join('')}</table><div class="hint">Estimated from how far each trade went for and against you. The order of moves inside a candle is unknown, so treat break-even results as best cases.</div></div>`;}catch(e){}
   const sh=SH.get(),so=sh.filter(e=>e.st==='open').length,sr=sh.filter(e=>e.st==='win'||e.st==='loss').length;
   h+=`<div class="hint" style="margin-top:8px">Includes ${sr} resolved shadow trade${sr===1?'':'s'} (the Scalp, Intraday and Swing limit orders of each analysis, followed on paper without touching the robot's balance); ${so} still open.</div>`;
   box.innerHTML=h;}
@@ -1167,14 +1247,14 @@ async function scanPair(sym,mode){
   for(const s of sig){if(!prev.some(p=>p.sym===sym&&p.tf===s.tf&&p.at===s.at&&p.side===s.side))prev.unshift({sym,...s,seen:now});}
   SG.set(prev);renderSigStats();
   const best=sig[0],recent=a=>AL.get().some(x=>x.sym===sym&&x.side===a&&now-x.t<4*36e5);
-  const tr=[...new Set(sig.map(x=>EVDetect.sigVerdict(x,SG.get()).line).filter(Boolean))];
+  const tr=[...new Set(sig.map(x=>EVDetect.sigVerdict(x,sigList()).line).filter(Boolean))];
   const data=EVDetect.brief(sym,m15,h1,h4)+'\nEARLY-MOVE SIGNALS:\n'+(sig.length?sig.map(sigText).join('\n'):'none')+(tr.length?'\nPAST FOLLOW-THROUGH OF THESE SIGNAL TYPES on this trader\'s watchlist (1 ATR with the signal before 1 ATR against): '+tr.join(' '):'');
   if(mode==='session'){
     let v=null;try{v=await haiku(SCREEN_SYS,`Session open screen. Current UTC time ${new Date().toISOString()}.\n${data}`);}catch(e){return {sym,err:e.message};}
     if(v&&v.opportunity==='yes'&&(+v.quality||0)>=3&&!recent(v.direction))pushAlert({kind:'session',sym,side:v.direction,title:`${sym}: possible ${v.direction} (${v.quality}/5)`,body:`${v.setup||''}. ${v.why||''} Trigger: ${v.trigger||'n/a'}. Wrong below/above ${v.invalidation!=null?f2(+v.invalidation):'n/a'}.`});
     return {sym,v,sig};
   }
-  const sv=best?EVDetect.sigVerdict(best,SG.get()):null;
+  const sv=best?EVDetect.sigVerdict(best,sigList()):null;
   if(best&&best.score>=min&&!recent(best.side)&&sv&&sv.weak&&best.score<min+15){$('wlStat').textContent=`${sym}: skipped a ${best.tf} ${best.side} signal (score ${best.score}). ${sv.line} Signals of this kind need a score of ${min+15}+ to alert.`;return {sym,sig};}
   if(best&&best.score>=min&&!recent(best.side)){
     let v=null;try{v=$('kAnthropic').value.trim()?await haiku(SCREEN_SYS,`An early-move signal just fired on a closed candle. Confirm or reject it. Current UTC time ${new Date().toISOString()}.\n${data}`):null;}catch(e){v=null;}
@@ -1286,29 +1366,30 @@ async function botCheck(force){
 function renderBot(){
   const c=BOTC.get(),risk=c.bal*c.risk/100,a=HS.get().filter(e=>e.bot);
   const closed=a.filter(e=>e.st==='win'||e.st==='loss').sort((x,y)=>((x.run&&x.run.exitT)||x.id)-((y.run&&y.run.exitT)||y.id));
-  const R=closed.reduce((t,e)=>t+(rOf(e)||0),0),w=closed.filter(e=>e.st==='win').length,live=a.filter(e=>e.st==='open');
+  const R=closed.reduce((t,e)=>t+(rOf(e)||0)*(e.rm||1),0),w=closed.filter(e=>e.st==='win').length,live=a.filter(e=>e.st==='open');
   const unreal=live.reduce((t,e)=>t+(openR(e)||0),0),eq=c.bal+R*risk;
   $('botStats').innerHTML=`<div><small>Equity</small><b>$${eq.toLocaleString(undefined,{maximumFractionDigits:0})}</b></div><div><small>Net result</small><b style="color:${R>=0?'var(--bull)':'var(--bear)'}">${fR(R)}</b></div><div><small>Win rate</small><b>${closed.length?Math.round(w/closed.length*100)+'%':'–'}</b></div><div><small>Open</small><b>${live.length}${unreal?` <span style="font-size:12px;color:${unreal>=0?'var(--bull)':'var(--bear)'}">${fR(unreal)}</span>`:''}</b></div>`;
   // equity curve
   const cv=$('botEq');if(cv&&cv.offsetParent){const r=cv.getBoundingClientRect(),d=Math.min(2,devicePixelRatio||1);cv.width=r.width*d;cv.height=r.height*d;const x=cv.getContext('2d');x.scale(d,d);x.clearRect(0,0,r.width,r.height);
-    const pts=[c.bal];closed.forEach(e=>pts.push(pts[pts.length-1]+(rOf(e)||0)*risk));
+    const pts=[c.bal];closed.forEach(e=>pts.push(pts[pts.length-1]+(rOf(e)||0)*(e.rm||1)*risk));
     if(pts.length<2){x.fillStyle='#5f6b76';x.font='13px Manrope,system-ui';x.fillText('The equity curve appears after the first closed trade.',4,r.height/2);}
     else{const lo=Math.min(...pts),hi=Math.max(...pts),pad=(hi-lo)*0.1||1,Y=v=>r.height-6-(v-lo+pad)/(hi-lo+2*pad)*(r.height-12),X=i=>4+i*(r.width-8)/(pts.length-1);
       x.strokeStyle='#2c3844';x.setLineDash([3,4]);x.beginPath();x.moveTo(0,Y(c.bal));x.lineTo(r.width,Y(c.bal));x.stroke();x.setLineDash([]);
       x.strokeStyle=pts[pts.length-1]>=c.bal?'#3cc08e':'#ea6259';x.lineWidth=2;x.beginPath();pts.forEach((v,i)=>i?x.lineTo(X(i),Y(v)):x.moveTo(X(i),Y(v)));x.stroke();}}
+  try{const rs=riskState(HS.get(),Date.now(),c);$('botRiskStat').textContent=`Today ${rs.dayR>=0?'+':''}${rs.dayR.toFixed(2)}R · ${rs.streak} loss${rs.streak===1?'':'es'} in a row · ${rs.open} open. `+(rs.why.length?'Active: '+rs.why.join('; ')+'.':'No risk rule active.');}catch(e){}
   const box=$('botList');if(!box)return;
   box.innerHTML=a.length?a.slice(0,40).map(e=>tradeRow(e,risk)).join(''):'<div class="empty">No robot trades yet. Run an analysis: every BUY or SELL plan is followed here.</div>';
   wireTradeRows(box);
 }
 function tradeRow(e,risk){const s=botStatus(e),r=e.st==='open'?openR(e):rOf(e),sd=sideOf(e)>0?'BUY':'SELL';
   return `<div class="trade"><span class="pill ${sd==='BUY'?'bull':'bear'}">${sd}</span><span class="sym">${esc(e.sym)} <span class="hint" style="font-weight:500">${new Date(e.id).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span></span><span class="pill ${s.c}">${esc(s.t)}</span>
-  <div class="lv num">Entry ${esc(String(e.entry).split('|')[0].trim())} · Stop ${esc(String(e.sl).split('|')[0].trim())} · TP1 ${esc(String(e.tp1).split('|')[0].trim())}${r!=null&&e.st!=='skip'?` · ${fR(r)} ≈ $${Math.round(r*risk).toLocaleString()}`:''}</div>
+  <div class="lv num">Entry ${esc(String(e.entry).split('|')[0].trim())} · Stop ${esc(String(e.sl).split('|')[0].trim())} · TP1 ${esc(String(e.tp1).split('|')[0].trim())}${r!=null&&e.st!=='skip'?` · ${fR(r)}${e.rm&&e.rm<1?' (half size)':''} ≈ $${Math.round(r*risk*(e.rm||1)).toLocaleString()}`:''}</div>
   <div class="acts"><button class="sec" data-ch="${esc(e.sym)}">Chart</button>${e.text?`<button class="sec" data-vw="${e.id}">Plan</button>`:''}${e.st==='open'?`<button class="sec" data-cx="${e.id}">Cancel</button>`:''}</div></div>`;}
 function wireTradeRows(box){box.querySelectorAll('[data-ch]').forEach(b=>b.onclick=()=>showOnChart(b.dataset.ch));box.querySelectorAll('[data-vw]').forEach(b=>b.onclick=()=>viewH(+b.dataset.vw));
   box.querySelectorAll('[data-cx]').forEach(b=>b.onclick=()=>{HS.set(HS.get().map(e=>e.id==b.dataset.cx?{...e,st:'skip',auto:'manual',autoNote:'Cancelled by you'}:e));renderBot();renderChartSide();renderHist();});}
-(function(){const c=BOTC.get();$('botOn').checked=c.on;$('botBal').value=c.bal;$('botRisk').value=c.risk;
-  const save=()=>{BOTC.set({on:$('botOn').checked,bal:Math.max(1,+$('botBal').value||10000),risk:Math.min(10,Math.max(0.1,+$('botRisk').value||1))});renderBot();};
-  ['botOn','botBal','botRisk'].forEach(id=>$(id).onchange=save);})();
+(function(){const c=BOTC.get(),rc=riskCfg(c);$('botOn').checked=c.on;$('botBal').value=c.bal;$('botRisk').value=c.risk;$('botDayR').value=rc.dayR;$('botStreak').value=rc.streak;$('botMaxOpen').value=rc.maxOpen;
+  const save=()=>{BOTC.set({on:$('botOn').checked,bal:Math.max(1,+$('botBal').value||10000),risk:Math.min(10,Math.max(0.1,+$('botRisk').value||1)),...riskCfg({dayR:$('botDayR').value,streak:$('botStreak').value,maxOpen:$('botMaxOpen').value})});renderBot();};
+  ['botOn','botBal','botRisk','botDayR','botStreak','botMaxOpen'].forEach(id=>$(id).onchange=save);})();
 // robot trades and signals on the chart
 function chartLines(sym){const S=String(sym).toUpperCase(),own=planLines(S);if(own.length)return own;
   const e=HS.get().find(x=>x.bot&&x.sym===S&&x.st==='open');if(!e)return [];const L=[],add=(v,c,lab,dash)=>{const x=_num(String(v||'').split('|')[0]);if(x!=null)L.push({p:x,c,label:lab,dash});};
@@ -1344,6 +1425,7 @@ function addCheck(card,text,p){
     d.innerHTML=`<b>Plan check</b> <span class="hint">(numbers recomputed in code${px!=null?', live price '+f2(px):''})</span><div style="margin:4px 0 6px">${nb?`<b style="color:var(--red)">${nb} problem${nb>1?'s':''}: fix before placing this order.</b>`:nw?`${nw} thing${nw>1?'s':''} to look at.`:'No problems found.'}</div>`+
       [...c.items].sort((x,y)=>({bad:0,warn:1,ok:2}[x.lvl])-({bad:0,warn:1,ok:2}[y.lvl])).map(x=>`<div style="margin:3px 0">${ic[x.lvl]} ${esc(x.msg)}</div>`).join('')+
       (p.lp?`<div style="margin-top:6px">🧠 Learned from ${p.lp.n} similar resolved trades: <b>${p.lp.p}%</b> TP1 before stop (${p.lp.w} of ${p.lp.n} won; no-edge baseline ${p.lp.base}%)${c.prob!=null?`, Claude said ${c.prob}%`:''}.${p.lp.n>=20&&c.prob!=null&&Math.abs(p.lp.p-c.prob)>=10?` <b style="color:var(--red)">${Math.abs(p.lp.p-c.prob)} points apart: trust the lower number until the gap closes.</b>`:p.lp.n<20?' Small sample: treat as a hint.':''}</div>`:(p.f&&p.f.side?'<div style="margin-top:6px" class="hint">🧠 Not enough similar resolved trades yet for a learned probability (needs 5).</div>':''))+
+      (()=>{const pp=p.lp&&p.lp.n>=20?p.lp.p:null,er=edgeRisk(pp,c.rrNet||c.rr);return er?`<div style="margin-top:6px">⚖️ Size from your measured edge (${pp}% at 1:${(c.rrNet||c.rr).toFixed(2)}): ${er.risk>0?`about <b>${er.risk.toFixed(2)}%</b> of the account (a quarter of the Kelly fraction ${(er.kelly*100).toFixed(1)}%, capped at 1%)`:'<b>no measured edge</b> on similar trades: skip it or use the smallest size'}.</div>`:'';})()+
       (a?`<div style="margin-top:6px">📏 Adjusted for your record (${a.n} closed trades): <b>${a.p}%</b> instead of ${c.prob}% (${a.off>=0?'+':''}${a.off.toFixed(0)} points).</div>`:'');
     card.appendChild(d);
   }catch(e){}
@@ -2169,7 +2251,7 @@ function learnedProb(probe,pool){const nb=neighbours(probe,pool,15,3.5);if(nb.le
 function LDIMS(){return [['Setup',t=>t.setup],['Volatility regime',t=>t.reg],['Session',t=>t.sess],['Timeframes agreeing with the trade (1D/4H/1H)',t=>t.align==null?null:t.align+' of 3'],
   ['Against the daily trend',t=>t.counter?'yes':'no'],['RSI 1H relative to the trade',t=>t.rsiZ],['Entry at a zone of strength 3+',t=>t.zone==null?null:t.zone>=3?'yes':'no'],
   ['High-impact news inside the order window',t=>t.news==null?null:t.news?'yes':'no'],['Stop size (x 1H ATR)',t=>t.stopA==null?null:t.stopA<0.5?'under 0.5':t.stopA<1?'0.5-1':t.stopA<2?'1-2':'2 and over'],
-  ['Plan',t=>t.style||'final plan'],['Order',t=>t.mkt?'market':'limit'],['Direction',t=>t.side>0?'buy':'sell'],['Setup in this volatility',t=>t.setup&&t.reg?t.setup+' / '+t.reg:null]];}
+  ['Plan',t=>t.style||'final plan'],['Order',t=>t.mkt?'market':'limit'],['Direction',t=>t.side>0?'buy':'sell'],['Setup in this volatility',t=>t.setup&&t.reg?t.setup+' / '+t.reg:null],['1H trend strength (ADX)',t=>t.trd],['Price in the dealing range for the trade',t=>t.pd],['RSI divergence',t=>t.div],['Entry at a session or liquidity level',t=>t.liq==null?null:t.liq?'yes':'no']];}
 // Win rate of each condition against what its R:R would win with no edge. Edge is shrunk toward zero (prior of 10 trades).
 function groupStats(pool){const out=[];for(const [dim,f] of LDIMS()){const m={};for(const t of pool){const k=f(t);if(k==null)continue;(m[k]=m[k]||[]).push(t);}
   const ent=Object.entries(m);if(ent.length<2)continue;for(const [k,g] of ent){if(g.length<3)continue;const n=g.length,w=g.filter(t=>t.win).length,exp=g.reduce((s,t)=>s+t.base/100,0),rs=g.map(t=>t.r).filter(x=>x!=null);
@@ -2197,6 +2279,7 @@ function learnText(entries,lessons,sym,ms){const pool=learnPool(entries);const h
   let t=head+`\nOverall: ${pool.length} trades, ${win} won (${Math.round(win/pool.length*100)}%) vs ${Math.round(exp/pool.length*100)}% no-edge baseline: edge ${fP((win-exp)/pool.length*100)} points.`;
   if(g.length)t+='\nBy condition (strongest effects first):\n'+g.map(x=>`- ${x.dim}: ${x.val}: ${x.n} trades, ${x.w} won (${Math.round(x.wr)}% vs baseline ${Math.round(x.base)}%), edge ${fP(x.edge)}, shrunk ${fP(x.shrunk)}${x.avgR!=null?', average '+fR(x.avgR):''}${x.n>=20?'':' (weak evidence, under 20 trades)'}`).join('\n');
   const b=behaviour(entries);if(b.lines.length)t+='\nTrade behaviour:\n'+b.lines.map(x=>'- '+x).join('\n');
+  try{const mt=mgmtText(mgmtWhatIf(entries));if(mt)t+='\n'+mt;}catch(e){}
   if(ms){const parts=[];for(const s of [1,-1]){const pr={...sideView(ms,s),sym};const nb=neighbours(pr,pool,15,3);if(nb.length<3)continue;const w=nb.filter(x=>x.win).length,bs=nb.reduce((a,x)=>a+x.base,0)/nb.length;
       parts.push(`${s>0?'BUYS':'SELLS'}: ${nb.length} similar past trades, ${w} won (${Math.round(w/nb.length*100)}% vs baseline ${Math.round(bs)}%)`);}
     const tw=x=>x>0?'up':x<0?'down':'mixed';
@@ -2221,6 +2304,49 @@ function styleOrders(text){const out=[];let style=null;
 function shadowEntries(text,sym,g,id,tol){const fe=_num(g.entry),fd=/SELL/i.test(g.decision||'')?'SELL':/BUY/i.test(g.decision||'')&&!/NO\s*TRADE/i.test(g.decision||'')?'BUY':null;
   return styleOrders(text).filter(o=>!(fd===o.dec&&fe!=null&&Math.abs(_num(o.entry)-fe)<=(tol||Math.abs(fe)*2e-4))).map((o,i)=>({id:id+i+1,src:id,sym:String(sym).toUpperCase(),...o,st:'open',shadow:1}));}
 // ==== LEARN PURE END
+// ==== RISK PURE START
+// Risk rules for the paper robot (v35): a daily loss limit in R, smaller size after a losing streak, a cap on open trades.
+function riskCfg(c){c=c||{};return {dayR:+c.dayR>0?+c.dayR:3,streak:+c.streak>0?Math.round(+c.streak):3,maxOpen:+c.maxOpen>0?Math.round(+c.maxOpen):4};}
+function riskState(entries,now,cfg){cfg=riskCfg(cfg);const bot=(entries||[]).filter(e=>e&&e.bot&&e.ord!=='WEEKLY OUTLOOK'),day0=Math.floor(now/864e5)*864e5;
+  const closed=bot.filter(e=>e.st==='win'||e.st==='loss').map(e=>({e,t:(e.run&&e.run.exitT)||e.id})).sort((a,b)=>b.t-a.t);
+  const dayR=closed.filter(x=>x.t>=day0).reduce((s,x)=>s+(rOf(x.e)||0)*(x.e.rm||1),0);
+  let streak=0;for(const x of closed){if(x.e.st==='loss')streak++;else break;}
+  const open=bot.filter(e=>e.st==='open').length,halt=dayR<=-cfg.dayR,full=open>=cfg.maxOpen,mult=streak>=cfg.streak?0.5:1;
+  const why=[];if(halt)why.push(`daily loss limit reached (${dayR.toFixed(2)}R today, limit -${cfg.dayR}R)`);if(full)why.push(`${open} robot trades already open (limit ${cfg.maxOpen})`);if(mult<1)why.push(`${streak} losses in a row: half size until a win`);
+  return {dayR,streak,open,halt,full,mult,cfg,why};}
+function riskText(rs){return `RISK STATE OF THE PAPER ROBOT: ${rs.dayR>=0?'+':''}${rs.dayR.toFixed(2)}R today (daily limit -${rs.cfg.dayR}R), ${rs.streak} loss${rs.streak===1?'':'es'} in a row, ${rs.open} open trade${rs.open===1?'':'s'} (limit ${rs.cfg.maxOpen}).`+(rs.why.length?' Active rules: '+rs.why.join('; ')+'. Say this in the Risk line'+(rs.halt?' and prefer NO TRADE today unless the setup is exceptional':'')+'.':' No risk rule is active.');}
+// Size from the measured edge: a quarter of the Kelly fraction, capped at 1% and never below 0.
+function edgeRisk(p,rr){if(p==null||!(rr>0))return null;const q=p/100,k=q-(1-q)/rr;return {kelly:k,risk:Math.max(0,Math.min(1,k/4*100))};}
+// What-if for trade management, from how far each closed trade went for (MFE) and against (MAE) you, in R.
+// The order of moves inside a candle is unknown, so these are estimates; "break-even" ones are upper bounds for winners.
+function mgmtWhatIf(entries){const T=(entries||[]).filter(e=>e&&e.x&&e.x.filled&&(e.st==='win'||e.st==='loss')&&!isLad(e)).map(e=>({win:e.st==='win',R:rOf(e),mfe:+e.x.mfe||0,mae:+e.x.mae||0})).filter(t=>t.R!=null);
+  if(T.length<10)return null;const avg=f=>T.reduce((s,t)=>s+f(t),0)/T.length;
+  const rules=[['As planned',t=>t.R],
+    ['Stop to break-even at +1R',t=>t.win?t.R:t.mfe>=1?0:-1],
+    ['Half off at +1R, rest to break-even',t=>t.win?(t.R>=1?0.5+0.5*t.R:t.R):t.mfe>=1?0.5:-1],
+    ['Stop 30% tighter',t=>t.win?(t.mae<0.7?t.R/0.7:-1):-1],
+    ['Take profit at +1R',t=>t.mfe>=1||(t.win&&t.R>=1)?1:t.win?t.R:-1]];
+  return {n:T.length,rows:rules.map(([name,f])=>({name,exp:avg(f)})).sort((a,b)=>b.exp-a.exp)};}
+function mgmtText(m){if(!m)return '';const base=m.rows.find(r=>r.name==='As planned');return `Management test on ${m.n} closed trades (average R per trade; estimates from MFE/MAE): `+m.rows.map(r=>`${r.name} ${r.exp>=0?'+':''}${r.exp.toFixed(2)}R`).join(', ')+`. Best: ${m.rows[0].name}${m.rows[0].name!=='As planned'&&m.rows[0].exp-base.exp>=0.1?` (+${(m.rows[0].exp-base.exp).toFixed(2)}R per trade better than as planned; consider it in Management)`:''}.`;}
+// ---- backtest of the early-move signals on history (no look-ahead: each step only sees closed bars up to that point)
+// b: bars of the signal timeframe, htf: bars of the next timeframe up, both oldest first. D = EVDetect, A = EVTA.
+function btReplay(b,htf,tf,D,A,from,to){const ms=tf==='15M'?9e5:36e5,hms=tf==='15M'?36e5:144e5,out=[],H=tf==='15M'?16:12;let hj=0;while(hj<htf.length&&htf[hj].t+hms<=b[Math.max(300,from||0)].t+ms-hms*301)hj++;
+  for(let i=Math.max(300,from||0);i<Math.min(b.length-1,to||b.length);i++){const t=b[i].t;while(hj<htf.length&&htf[hj].t+hms<=t+ms)hj++;
+    const sub=b.slice(i-299,i+1),hs=htf.slice(Math.max(0,hj-300),hj);const sig=D.detect(sub,hs,{tf});if(!sig.length)continue;
+    for(const s of sig){if(out.some(o=>o.side===s.side&&t-o.at<=3*ms))continue;
+      const fut=b.slice(i+1,i+1+Math.max(H,48)),sc=D.scoreSignal(s,fut);if(!sc)continue;
+      // a simple trade: enter at the close, stop at the signal's stop idea, target 2R, at most 48 bars
+      const side=s.side==='BUY'?1:-1,en=s.price,sl=s.stopIdea,risk=Math.abs(en-sl);let tr=null;
+      if(risk>0&&side*(en-sl)>0){const tp=en+side*2*risk;for(const x of fut){const adv=side>0?x.l<=sl:x.h>=sl,fav=side>0?x.h>=tp:x.l<=tp;if(adv){tr=-1;break;}if(fav){tr=2;break;}}if(tr==null){const last=fut[fut.length-1];tr=last?Math.max(-1,Math.min(2,side*(last.c-en)/risk)):null;}}
+      const rg=A.regimeOf(sub.slice(-120));
+      out.push({tf,side:s.side,score:s.score,patterns:s.patterns,why:s.why.filter(w=>/trend/.test(w)),at:s.at,price:s.price,atr:s.atr,res:sc.res,mfe:sc.mfe,mae:sc.mae,tr,reg:rg?rg.kind:null,h:new Date(t).getUTCHours(),bt:1});}}
+  return out;}
+function btSummary(list){const done=list.filter(s=>s.res==='hit'||s.res==='miss'),g={};const add=(k,s)=>{const x=g[k]||(g[k]={k,n:0,hit:0,miss:0,R:0,rn:0});x.n++;x[s.res]++;if(s.tr!=null){x.R+=s.tr;x.rn++;}};
+  const sess=h=>h>=22||h<7?'Asia':h<12?'London':h<16?'London/NY':'NY late';
+  for(const s of done){add('all',s);add('type: '+s.tf+' '+[...s.patterns].sort().join('+'),s);add('score: '+(s.score>=70?'70+':s.score>=50?'50-69':'under 50'),s);if(s.reg)add('regime: '+s.reg,s);add('session: '+sess(s.h),s);add('trend: '+((s.why||[]).some(w=>/with the higher/.test(w))?'with trend':(s.why||[]).some(w=>/against/.test(w))?'counter-trend':'no clear trend'),s);}
+  return Object.values(g).map(x=>({...x,rate:x.hit/(x.hit+x.miss),avgR:x.rn?x.R/x.rn:null})).sort((a,b)=>a.k==='all'?-1:b.k==='all'?1:b.n-a.n);}
+// ==== RISK PURE END
+
 
 
 
