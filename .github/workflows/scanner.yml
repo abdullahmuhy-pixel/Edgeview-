@@ -1,0 +1,39 @@
+# Edgeview background scanner: screens the watchlist at each session open and looks for early moves every hour,
+# then sends alerts to Telegram. Needs repository secrets: ANTHROPIC_API_KEY, TWELVE_DATA_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID.
+# Free on public repositories. GitHub may start scheduled runs a few minutes late.
+name: Watchlist scanner
+on:
+  schedule:
+    - cron: '5 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: watchlist-scanner
+  cancel-in-progress: false
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: actions/cache/restore@v4
+        with:
+          path: .scanner-state.json
+          key: scanner-state-${{ github.run_id }}
+          restore-keys: scanner-state-
+      - name: Scan the watchlist
+        run: node scanner/scan.mjs
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TWELVE_DATA_KEY: ${{ secrets.TWELVE_DATA_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: .scanner-state.json
+          key: scanner-state-${{ github.run_id }}

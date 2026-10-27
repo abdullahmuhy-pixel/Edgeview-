@@ -1,6 +1,6 @@
 # Edgeview
 
-Upload multi-timeframe chart screenshots and get a scalp, intraday and swing setup from Claude, using live price/indicators (Twelve Data) and headlines (Finnhub).
+Live charts for any market, a watchlist robot that spots the start of a move, and multi-timeframe trade plans from Claude built from live candles (Twelve Data or Binance), the live economic calendar and headlines (Finnhub).
 
 A single static page (`edgeview.html`). No server, no build step.
 
@@ -119,3 +119,12 @@ Gold plans with a take-profit ladder are saved with their targets and the share 
 - **App-drawn charts.** When a pair has no screenshots, the app also draws 1D, 4H, 1H and 15M charts (candles, EMA 20/50/200, key zones, live price) and sends them to Claude, so it can see the shape of the market as well. You can switch this off on the Analyze page to save cost.
 - **Live chart.** Open "📈 Live chart" on the Analyze page for a chart drawn inside the app (5M to 1W, zoom, drag back in time). It shows the key zones and, after an analysis, the entry, stop and targets. Each result card has a **Chart** button. It refreshes every 90 seconds while open.
 - With a Twelve Data key each analysis now uses 6 calls (5-minute candles were added). Pairs 2 and 3 are still spaced a minute apart for the free plan. Gold and forex need the key; crypto works without one.
+
+## Robot, watchlist and a new design (v33)
+- **No screenshots.** The upload boxes are gone. Every analysis is built from live candles, the market structure worked out in code, the charts the app draws, the live calendar and headlines.
+- **Chart for any market.** The app opens on the Chart. Tap the market name (🔍) to search: type gold, GBPJPY, bitcoin or any symbol Twelve Data lists. Your watchlist runs along the top as a ticker; tap a pair to open its chart. "Analyze this market" runs a full analysis of what you are looking at.
+- **Auto-trader (paper).** Every analysis that ends in BUY or SELL becomes a paper trade. The robot follows it on 5-minute candles: it waits for the entry, then records the stop, each target or expiry, alerts you when it fills or closes, and writes the result into the journal. Fills, exits and early-move signals are marked on the chart. The Robot page shows equity, net R, win rate and an equity curve from a paper balance and risk you choose. No real orders are sent.
+- **Watchlist scanner.** Add up to 12 pairs. At each session open (Sydney, Tokyo, London and New York, adjusted for daylight saving) Claude Haiku screens every pair and alerts you when it sees a possible trade, with the trigger and invalidation. Between opens, each closed 15-minute and 1-hour candle is checked in code (`detect.js`) for the start of a move: a stop sweep that reverses, a change of character, a volatility squeeze breaking out, or a momentum candle. Signals are scored with the higher-timeframe trend, nearby key levels and how far price has already gone; strong ones are confirmed by Haiku before you are alerted. Alerts appear under the bell and, if you allow it, as phone notifications.
+- **Alerts when the app is closed.** `.github/workflows/scanner.yml` runs `scanner/scan.mjs` every hour on GitHub Actions (free on public repositories) and sends the same alerts to Telegram. Add the repository secrets `ANTHROPIC_API_KEY`, `TWELVE_DATA_KEY`, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`, then send your watchlist from the Robot page (it needs a fine-grained GitHub token with Contents read and write on this repository, saved in Settings). The watchlist lives in `watchlist.json`. GitHub may start scheduled runs a few minutes late, and pauses schedules on repositories with no activity for 60 days.
+- **Twelve Data credits.** The app counts credits used today and the robot slows down before the free limit (800 a day, 8 a minute). Each watchlist scan uses one credit per pair every 15 minutes plus one per pair each hour; crypto uses Binance and costs nothing.
+- **Design.** A new graphite and brass interface: bottom tabs on phones (Chart, Analyze, Robot, Journal, More), a side rail on wide screens, a price header with today's change, and a search sheet.

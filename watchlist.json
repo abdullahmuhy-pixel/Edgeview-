@@ -1,0 +1,8 @@
+{
+  "pairs": ["XAU/USD", "EUR/USD", "GBP/USD"],
+  "minScore": 60,
+  "sessionScreen": true,
+  "earlyDetection": true,
+  "model": "claude-haiku-5-5",
+  "updated": "2026-10-27T00:00:00Z"
+}

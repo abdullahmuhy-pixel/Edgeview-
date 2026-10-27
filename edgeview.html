@@ -5,63 +5,177 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Edgeview</title>
 <link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#0e1117">
+<meta name="theme-color" content="#0b0f13">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Edgeview">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27%3E%3Ctext y=%27.9em%27 font-size=%2790%27%3E%F0%9F%93%88%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 <style>
-  :root{--bg:#0e1117;--card:#161b24;--line:#262d3a;--text:#e6e9ef;--mute:#8b94a5;--acc:#2dd4a7;--red:#f4616b}
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-  .wrap{max-width:760px;margin:0 auto;padding:16px}
-  h1{font-size:20px;margin:4px 0 14px}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
-  label{display:block;font-size:12px;color:var(--mute);margin:10px 0 4px}
-  input,select,textarea{width:100%;background:#0b0e14;border:1px solid var(--line);color:var(--text);border-radius:8px;padding:10px;font:inherit}
-  textarea{min-height:70px;resize:vertical}
-  .row{display:flex;gap:10px}.row>*{flex:1}
-  button{background:var(--acc);color:#04251c;border:0;border-radius:10px;padding:12px 16px;font-weight:600;font-size:15px;cursor:pointer;width:100%}
-  button.sec{background:#222a38;color:var(--text);width:auto;padding:8px 12px;font-weight:500;font-size:13px}
+  /* Edgeview v33: a graphite trading desk with a brass accent. Bull teal, bear coral. Prices in a tabular mono face. */
+  :root{
+    --bg:#0b0f13;--panel:#11171d;--panel2:#161e26;--raise:#1c2630;--line:#222c36;--line2:#2c3844;
+    --text:#ebe6dc;--mute:#8a96a1;--dim:#5f6b76;
+    --brass:#d9a441;--brass2:#f0c06a;--brassbg:rgba(217,164,65,.12);
+    --bull:#3cc08e;--bullbg:rgba(60,192,142,.12);--bear:#ea6259;--bearbg:rgba(234,98,89,.12);--info:#6aa9ff;
+    --acc:var(--brass);--red:var(--bear);--card:var(--panel);
+    --r:14px;--r2:10px;--ui:'Manrope',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;--num:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,monospace;
+    --tabh:64px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html{background:var(--bg)}
+  body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 var(--ui);-webkit-font-smoothing:antialiased;
+    padding:env(safe-area-inset-top,0px) 0 calc(var(--tabh) + env(safe-area-inset-bottom,0px))}
+  .num,.px{font-family:var(--num);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  h1,h2,h3{font-weight:800;letter-spacing:-.02em;text-wrap:balance}
+  a{color:var(--brass2)}
+  /* ---------- shell ---------- */
+  .appbar{position:sticky;top:0;z-index:20;background:linear-gradient(var(--bg) 70%,rgba(11,15,19,.92));backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  .appbar .in{max-width:1180px;margin:0 auto;display:flex;align-items:center;gap:12px;padding:10px 16px}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:800;font-size:17px;letter-spacing:-.02em;color:var(--text);white-space:nowrap}
+  .brand svg{flex:none}
+  .railbrand{display:none}
+  #viewTitle{font-size:13px;font-weight:600;color:var(--mute);margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .grow{flex:1;min-width:0}
+  #sess{font-size:12px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0}
+  .iconbtn{position:relative;width:40px;height:40px;flex:none;display:grid;place-items:center;border-radius:12px;background:var(--panel2);border:1px solid var(--line);color:var(--text);cursor:pointer;padding:0}
+  .iconbtn .dot{position:absolute;top:6px;right:6px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--bear);color:#fff;font:700 10px/16px var(--ui);text-align:center}
+  #ticker{max-width:1180px;margin:0 auto;display:flex;gap:6px;overflow-x:auto;padding:0 16px 10px;scrollbar-width:none}
+  #ticker::-webkit-scrollbar{display:none}
+  .tk{flex:none;width:auto;display:flex;align-items:baseline;gap:8px;padding:6px 10px;border-radius:999px;background:var(--panel);border:1px solid var(--line);cursor:pointer;font-size:12px;color:var(--mute);white-space:nowrap}
+  .tk b{color:var(--text);font-weight:700}.tk .up{color:var(--bull)}.tk .dn{color:var(--bear)}.tk.on{border-color:var(--brass)}
+  .tk.add{color:var(--brass2);border-style:dashed}
+  main.wrap{max-width:1180px;margin:0 auto;padding:16px}
+  nav#tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;height:calc(var(--tabh) + env(safe-area-inset-bottom,0px));padding-bottom:env(safe-area-inset-bottom,0px);display:flex;background:rgba(14,19,24,.96);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-top:1px solid var(--line)}
+  nav#tabs button{flex:1;background:none;border:0;color:var(--dim);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font:600 11px var(--ui);padding:6px 0;border-radius:0;width:auto;cursor:pointer;position:relative}
+  nav#tabs button svg{width:22px;height:22px}
+  nav#tabs button.on{color:var(--brass2)}
+  nav#tabs button.on::before{content:"";position:absolute;top:0;left:30%;right:30%;height:2px;background:var(--brass);border-radius:0 0 2px 2px}
+  nav#tabs .badge{position:absolute;top:6px;left:calc(50% + 6px);min-width:15px;height:15px;border-radius:8px;background:var(--bear);color:#fff;font:700 9px/15px var(--ui);padding:0 3px}
+  .sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40}
+  .sheet{position:fixed;left:0;right:0;bottom:0;z-index:41;max-height:86vh;overflow:auto;background:var(--panel);border-top:1px solid var(--line2);border-radius:20px 20px 0 0;padding:8px 16px calc(18px + env(safe-area-inset-bottom,0px));box-shadow:0 -20px 50px rgba(0,0,0,.4)}
+  .sheet .grab{width:40px;height:4px;border-radius:2px;background:var(--line2);margin:6px auto 12px}
+  .sheet h3{margin:0 0 10px;font-size:18px}
+  .menu-list button{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--panel2);border:1px solid var(--line);color:var(--text);padding:14px;margin:0 0 8px;border-radius:12px;font-weight:600}
+  .menu-list small{display:block;color:var(--mute);font-weight:500}
+  @media (min-width:960px){
+    body{padding-bottom:0;padding-left:228px}
+    nav#tabs{top:0;bottom:0;right:auto;width:228px;height:auto;flex-direction:column;justify-content:flex-start;padding:76px 12px 12px;border-top:0;border-right:1px solid var(--line);gap:2px}
+    nav#tabs button{flex:none;flex-direction:row;justify-content:flex-start;gap:12px;padding:11px 12px;border-radius:10px;font-size:14px}
+    nav#tabs button.on{background:var(--brassbg)}nav#tabs button.on::before{display:none}
+    nav#tabs .badge{position:static;margin-left:auto}
+    .appbar .brand{display:none}
+    .railbrand{display:flex!important;margin:-56px 0 22px 10px}
+    .chartgrid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;align-items:start}
+  }
+  /* ---------- components ---------- */
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin-bottom:14px}
+  .card>b:first-child,.card>.ttl{display:block;font-size:15px;font-weight:800;margin-bottom:6px;letter-spacing:-.01em}
+  .eyebrowless{color:var(--mute)}
+  label{display:block;font-size:12.5px;font-weight:600;color:var(--mute);margin:12px 0 5px}
+  input,select,textarea{width:100%;background:var(--bg);border:1px solid var(--line2);color:var(--text);border-radius:var(--r2);padding:11px 12px;font:inherit;outline:none;transition:border-color .15s}
+  input:focus,select:focus,textarea:focus{border-color:var(--brass)}
+  input[type=checkbox]{width:18px;height:18px;accent-color:var(--brass)}
+  textarea{min-height:76px;resize:vertical}
+  .row{display:flex;gap:10px;flex-wrap:wrap}.row>*{flex:1 1 140px;min-width:0}
+  button{background:var(--brass);color:#1d1404;border:0;border-radius:12px;padding:13px 18px;font:800 15px var(--ui);cursor:pointer;width:100%;letter-spacing:-.01em;transition:transform .08s,filter .15s}
+  button:active{transform:scale(.98)}
+  button:hover{filter:brightness(1.06)}
+  button.sec{background:var(--panel2);color:var(--text);border:1px solid var(--line2);width:auto;padding:8px 12px;font-weight:600;font-size:13px;border-radius:10px}
+  button.ghost{background:none;border:1px solid var(--line2);color:var(--text);width:auto;padding:8px 12px;font-weight:600;font-size:13px}
+  button.buy{background:var(--bull);color:#04241a}button.sell{background:var(--bear);color:#2a0705}
   button:disabled{opacity:.5;cursor:wait}
-  details summary{cursor:pointer;font-weight:600}
-  .drop{border:2px dashed var(--line);border-radius:10px;padding:18px;text-align:center;color:var(--mute);cursor:pointer}
-  .drop.over{border-color:var(--acc);color:var(--acc)}
+  :focus-visible{outline:2px solid var(--brass2);outline-offset:2px}
+  details summary{cursor:pointer;font-weight:700}
+  .hint{font-size:12.5px;color:var(--mute);margin-top:8px}
+  .err{color:var(--bear)}
+  .pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font:700 11.5px var(--ui);background:var(--raise);color:var(--mute);white-space:nowrap}
+  .pill.bull{background:var(--bullbg);color:var(--bull)}.pill.bear{background:var(--bearbg);color:var(--bear)}.pill.brass{background:var(--brassbg);color:var(--brass2)}.pill.info{background:rgba(106,169,255,.13);color:var(--info)}
+  .seg{display:inline-flex;background:var(--bg);border:1px solid var(--line2);border-radius:11px;padding:3px;gap:2px;flex-wrap:wrap}
+  .seg button{background:none;color:var(--mute);width:auto;padding:6px 10px;font:700 12.5px var(--ui);border-radius:8px}
+  .seg button.on{background:var(--raise);color:var(--text)}
+  .switch{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
+  .switch:first-of-type{border-top:0}
+  .switch span{font-weight:600}.switch small{display:block;color:var(--mute);font-weight:500;font-size:12.5px}
+  .tgl{appearance:none;-webkit-appearance:none;width:44px!important;height:26px!important;border-radius:13px;background:var(--line2);position:relative;cursor:pointer;flex:none;border:0;padding:0;transition:background .15s}
+  .tgl::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#e9e5dc;transition:transform .15s}
+  .tgl:checked{background:var(--brass)}.tgl:checked::after{transform:translateX(18px)}
+  .stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:8px 0 4px}
+  .stats div{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+  .stats small{display:block;color:var(--mute);font-size:11.5px;font-weight:600}
+  .stats b{font:700 17px var(--num);font-variant-numeric:tabular-nums}
+  @media (max-width:520px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  .list>*{border-top:1px solid var(--line);padding:12px 0}.list>*:first-child{border-top:0}
+  .trade{display:grid;grid-template-columns:auto 1fr auto;gap:4px 12px;align-items:center}
+  .trade .sym{font-weight:800}.trade .lv{grid-column:1/-1;font-size:12.5px;color:var(--mute)}
+  .trade .acts{grid-column:1/-1;display:flex;gap:6px;flex-wrap:wrap}
+  .alert{border-left:3px solid var(--brass);padding-left:12px!important}
+  .alert.bull{border-color:var(--bull)}.alert.bear{border-color:var(--bear)}
+  /* chart */
+  .qhead{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+  .symbtn{display:flex;align-items:center;gap:10px;background:none;border:0;color:var(--text);padding:0;width:auto;font:800 24px var(--ui);letter-spacing:-.02em;cursor:pointer}
+  .symbtn svg{color:var(--mute)}
+  .qpx{text-align:left}@media (min-width:600px){.qpx{text-align:right}}
+  .bigpx{font:700 30px var(--num);letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1}
+  .chg{font:700 13px var(--num)}.chg.up{color:var(--bull)}.chg.dn{color:var(--bear)}
+  .ctools{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+  .ctools .seg{flex:1 1 260px;justify-content:space-between}.ctools .seg button{flex:1;padding:6px 4px}
+  .zgrp{display:flex;gap:6px;margin-left:auto}.zgrp .sec{min-width:40px;padding:7px 10px}
+  #lcCv{width:100%;height:min(58vh,520px);border-radius:12px;touch-action:none;display:block;background:#0d1217;border:1px solid var(--line)}
+  .search-in{position:relative}.search-in input{padding-left:40px;font-size:16px}
+  .search-in svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--mute)}
+  .sres button{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;background:none;border:0;border-top:1px solid var(--line);color:var(--text);padding:12px 4px;border-radius:0;font:600 15px var(--ui);text-align:left}
+  .sres button small{color:var(--mute);font-weight:500;font-size:12px}
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{background:var(--panel2);border:1px solid var(--line2);color:var(--text);width:auto;padding:7px 11px;border-radius:999px;font:700 12.5px var(--ui)}
+  /* results (kept class names from earlier versions) */
+  .drop{border:2px dashed var(--line2);border-radius:12px;padding:18px;text-align:center;color:var(--mute);cursor:pointer}
   .thumbs{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
-  .th{position:relative;width:92px;height:62px;border-radius:6px;overflow:hidden;border:1px solid var(--line)}
-  .th img{width:100%;height:100%;object-fit:cover}
-  .th b{position:absolute;top:0;right:0;background:#000a;color:#fff;padding:0 6px;cursor:pointer}
-  #live{font-size:13px;color:var(--mute);white-space:pre-wrap}
-  #out,.rc-out{white-space:pre-wrap;word-wrap:break-word}
-  .rc-out h3{margin:14px 0 4px;color:var(--acc);font-size:16px}
-  #out h3{margin:14px 0 4px;color:var(--acc);font-size:16px}
-  .err{color:var(--red)}
-  .bar{height:8px;background:#0b0e14;border-radius:4px;position:relative;margin:4px 0 8px}.bar i{display:block;height:100%;background:var(--acc);border-radius:4px}.bar u{position:absolute;top:-3px;width:2px;height:14px;background:#fff}
-  .ct{width:100%;border-collapse:collapse;font-size:13px}.ct td,.ct th{padding:4px 6px;text-align:left;border-bottom:1px solid var(--line)}
-  .top{display:flex;align-items:center;gap:12px;margin-bottom:10px}.top h1{margin:0;font-size:18px}
-  #menuBtn{width:44px;height:44px;padding:0;font-size:22px;background:#222a38;color:var(--text);border-radius:10px;flex:none}
-  #drawerBg{position:fixed;inset:0;background:#0009;z-index:9}
-  #drawer{position:fixed;top:0;bottom:0;left:0;width:260px;max-width:80vw;background:var(--card);border-right:1px solid var(--line);z-index:10;transform:translateX(-100%);transition:transform .2s;padding-top:calc(env(safe-area-inset-top,0px) + 16px)}
-  #drawer.open{transform:none}
-  #drawer .dh{font-weight:700;padding:8px 20px 16px;color:var(--acc);font-size:18px}
-  #drawer a{display:block;padding:14px 20px;cursor:pointer}#drawer a.on{background:#0f1f1c;color:var(--acc)}
-  .hi{border-top:1px solid var(--line);padding:8px 0;font-size:14px}
-  .finalbox{border:1px solid var(--acc);background:#0f1f1c;border-radius:10px;padding:12px;margin-top:14px}
+  .th{position:relative;width:92px;height:62px;border-radius:6px;overflow:hidden;border:1px solid var(--line)}.th img{width:100%;height:100%;object-fit:cover}.th b{position:absolute;top:0;right:0;background:#000a;color:#fff;padding:0 6px;cursor:pointer}
+  #out,.rc-out{white-space:pre-wrap;word-wrap:break-word;line-height:1.6}
+  .rc-out h3,#out h3{margin:18px 0 6px;color:var(--brass2);font-size:16px}
+  .bar{height:8px;background:var(--bg);border-radius:4px;position:relative;margin:4px 0 8px}.bar i{display:block;height:100%;background:var(--brass);border-radius:4px}.bar u{position:absolute;top:-3px;width:2px;height:14px;background:#fff}
+  .ct{width:100%;border-collapse:collapse;font-size:13px}.ct td,.ct th{padding:6px;text-align:left;border-bottom:1px solid var(--line)}
+  .hi{border-top:1px solid var(--line);padding:10px 0;font-size:14px}
+  .finalbox{border:1px solid var(--brass);background:linear-gradient(180deg,var(--brassbg),transparent);border-radius:12px;padding:14px;margin-top:16px}
   .finalbox h3{margin-top:0}
-  .hint{font-size:12px;color:var(--mute);margin-top:6px}
+  #live{font-size:13px;color:var(--mute);white-space:pre-wrap}
+  .empty{color:var(--mute);text-align:center;padding:22px 8px;font-size:14px}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="top"><button id="menuBtn" aria-label="Menu">☰</button><h1 id="viewTitle">📈 Edgeview</h1></div>
-  <div id="drawerBg" hidden></div>
-  <nav id="drawer"><div class="dh">📈 Edgeview</div><a data-v="analyze">📊 Analyze</a><a data-v="weekend">🗓 Weekend engine</a><a data-v="size">🧮 Position size</a><a data-v="journal">📒 History &amp; journal</a><a data-v="settings">🔑 API keys</a></nav>
+<header class="appbar"><div class="in">
+  <div class="brand"><svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#161e26"/><path d="M7 21l5-6 4 3 7-9" stroke="#d9a441" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/><circle cx="23" cy="9" r="2.2" fill="#f0c06a"/></svg>Edgeview</div>
+  <div class="grow"><h1 id="viewTitle">Chart</h1><p id="sess"></p></div>
+  <button class="iconbtn" id="bellBtn" aria-label="Alerts"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg><span class="dot" id="bellDot" hidden>0</span></button>
+</div><div id="ticker" aria-label="Watchlist"></div></header>
+<nav id="tabs" aria-label="Sections">
+  <div class="brand railbrand"><svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#161e26"/><path d="M7 21l5-6 4 3 7-9" stroke="#d9a441" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/><circle cx="23" cy="9" r="2.2" fill="#f0c06a"/></svg>Edgeview</div>
+  <button data-v="chart"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15v-4M8 11h0"/><rect x="7" y="9" width="2" height="5"/><rect x="11.5" y="6" width="2" height="7"/><rect x="16" y="10" width="2" height="5"/></svg>Chart</button>
+  <button data-v="analyze"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.4 5.2L20 9l-4 4 1 6-5-2.8L7 19l1-6-4-4 5.6-.8z"/></svg>Analyze</button>
+  <button data-v="robot"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01M9.5 16.5h5"/></svg>Robot<span class="badge" id="robotBadge" hidden></span></button>
+  <button data-v="journal"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4h10a2 2 0 0 1 2 2v14H8a2 2 0 0 1-2-2z"/><path d="M6 18a2 2 0 0 1 2-2h10"/><path d="M10 8h5M10 11h4"/></svg>Journal</button>
+  <button data-v="more"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>More</button>
+</nav>
+<div class="sheet-bg" id="sheetBg" hidden></div>
+<div class="sheet" id="moreSheet" hidden><div class="grab"></div><h3>More</h3><div class="menu-list">
+  <button data-v="weekend">🗓<span>Weekend engine<small>Review the week and plan the next one</small></span></button>
+  <button data-v="size">🧮<span>Position size<small>Lots from your balance, risk and stop</small></span></button>
+  <button data-v="settings">🔑<span>Settings &amp; API keys<small>Keys, model, background alerts</small></span></button>
+</div></div>
+<div class="sheet" id="searchSheet" hidden><div class="grab"></div><h3>Find a market</h3>
+  <div class="search-in"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/></svg><input id="symQ" placeholder="Gold, EUR/USD, GBPJPY, bitcoin…" autocomplete="off" autocapitalize="characters" enterkeyhint="search"></div>
+  <div class="hint" id="symHint">Type a name or symbol. Tap a result to open its chart.</div>
+  <div class="sres" id="symRes"></div>
+</div>
+<main class="wrap">
   <div id="installBar" class="card" hidden style="display:none;align-items:center;justify-content:space-between;gap:10px">
     <span id="installText">Install Edgeview as an app on this device</span>
     <button class="sec" id="installBtn" style="white-space:nowrap">Install</button>
   </div>
 
-  <div id="sess" class="hint" style="margin:-6px 0 10px"></div>
   <section class="view" id="v-settings" hidden>
   <div class="card" id="keys">
     <b>API keys</b>
@@ -79,6 +193,12 @@
     <select id="tdplan"><option value="free">Free (skips dollar index and US10Y, saves 2 calls)</option><option value="paid">Paid (also fetches dollar index and US10Y)</option></select>
     <label>Model</label>
     <input id="model" value="claude-sonnet-5-5">
+    <label>Screening model (watchlist robot)</label>
+    <input id="mHaiku" value="claude-haiku-5-5">
+    <label>GitHub token (only to send your watchlist to the background scanner)</label>
+    <input id="kGh" type="password" autocomplete="off" placeholder="github_pat_...">
+    <label>GitHub repository (owner/name)</label>
+    <input id="ghRepo" placeholder="worked out from the page address">
     <div class="row" style="margin-top:12px">
       <button class="sec" id="saveKeys">Save now</button>
       <button class="sec" id="clearKeys">Forget keys</button>
@@ -90,7 +210,62 @@
   </div>
   </section>
 
-  <section class="view" id="v-analyze">
+  <section class="view" id="v-chart">
+  <div class="chartgrid"><div>
+  <div class="card" style="padding:14px 14px 12px">
+    <div class="qhead">
+      <div><button class="symbtn" id="lcSymBtn" aria-label="Search markets"><span id="lcSymTxt">XAU/USD</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/></svg></button>
+        <div class="hint" id="lcStat" style="margin-top:2px">Loading…</div></div>
+      <div class="qpx"><div class="bigpx" id="lcPx">–</div><div class="chg" id="lcChg"></div></div>
+    </div>
+    <div class="ctools"><div class="seg" id="lcTf"></div>
+      <div class="zgrp"><button class="sec" id="lcOut" aria-label="Zoom out">−</button><button class="sec" id="lcIn" aria-label="Zoom in">+</button><button class="sec" id="lcRef" aria-label="Refresh">↻</button></div></div>
+    <canvas id="lcCv"></canvas>
+    <div class="row" style="margin-top:12px"><button id="lcAnalyze">Analyze this market</button><button class="ghost" id="lcStar" style="flex:0 0 auto">☆ Watchlist</button></div>
+    <div class="hint">Drag to go back in time. EMA 20 yellow, 50 blue, 200 purple. Bands are key zones. Entry, stop and targets of the last analysis and of the robot's trades on this market are drawn on the chart.</div>
+  </div></div>
+  <div>
+    <div class="card"><div class="ttl">Robot on this market</div><div id="lcBot" class="list"><div class="empty">No robot trades on this market.</div></div></div>
+    <div class="card"><div class="ttl">Latest signals</div><div id="lcSig" class="list"><div class="empty">Add this market to your watchlist and the robot watches it for early moves.</div></div></div>
+  </div></div>
+  </section>
+
+  <section class="view" id="v-robot" hidden>
+  <div class="card">
+    <div class="ttl">Auto-trader</div>
+    <div class="hint" style="margin-top:0">Every analysis that ends in a BUY or SELL becomes a paper trade. The robot follows it on 5-minute candles: it waits for the entry, then records the stop, each target, or expiry. Results go into your journal automatically. No real orders are sent.</div>
+    <label class="switch"><span>Auto-trade every analysis<small>Paper trading from the live candles</small></span><input type="checkbox" class="tgl" id="botOn"></label>
+    <div class="row"><div><label>Paper balance ($)</label><input id="botBal" inputmode="decimal"></div><div><label>Risk per trade (%)</label><input id="botRisk" inputmode="decimal"></div></div>
+    <div class="stats" id="botStats"></div>
+    <canvas id="botEq" style="width:100%;height:120px;display:block;margin-top:8px"></canvas>
+    <div class="hint" id="botStat"></div>
+  </div>
+  <div class="card"><div class="ttl">Robot trades</div><div id="botList" class="list"></div></div>
+
+  <div class="card">
+    <div class="ttl">Watchlist scanner</div>
+    <div class="hint" style="margin-top:0">At each session open (Sydney, Tokyo, London, New York) Claude Haiku screens every pair on your watchlist and alerts you when it sees a possible trade. Between opens, the robot checks each closed 15-minute and 1-hour candle for the start of a move: a stop sweep and reversal, a change of character, a volatility squeeze breaking out, or a momentum candle. Strong signals are confirmed by Haiku before you are alerted, so you can run a full analysis early.</div>
+    <div class="chips" id="wlChips" style="margin:10px 0"></div>
+    <div class="row"><button class="sec" id="wlAdd" style="flex:0 0 auto">+ Add pair</button><button class="sec" id="wlScan" style="flex:0 0 auto">Scan now</button><span class="hint grow" id="wlStat" style="margin:0;align-self:center"></span></div>
+    <label class="switch"><span>Screen at every session open<small>Claude Haiku, about $0.01 per pair</small></span><input type="checkbox" class="tgl" id="wlSess"></label>
+    <label class="switch"><span>Early move detection<small>Checks each closed 15M candle while the app is open</small></span><input type="checkbox" class="tgl" id="wlEarly"></label>
+    <label class="switch"><span>Phone notifications<small id="notifState">Alerts show here and as notifications</small></span><input type="checkbox" class="tgl" id="wlNotify"></label>
+    <div class="row"><div><label>Alert when the signal score is at least</label><select id="wlMin"><option value="50">50 (more alerts)</option><option value="60">60 (balanced)</option><option value="70">70 (fewer, stronger)</option></select></div></div>
+    <div class="hint" id="wlNext"></div>
+  </div>
+  <div class="card"><div class="ttl">Alerts</div><div id="alertList" class="list"></div><button class="sec" id="alertClear" style="margin-top:8px">Clear alerts</button></div>
+  <div class="card"><div class="ttl">Alerts when the app is closed</div>
+    <div class="hint" style="margin-top:0">A browser can't run while the app is closed. The background scanner runs on GitHub every hour, at no cost, and sends the same alerts to your Telegram. Set it up once:</div>
+    <ol class="hint" style="padding-left:18px;line-height:1.7">
+      <li>In Telegram, message <b>@BotFather</b>, send <b>/newbot</b> and copy the bot token. Then send any message to your new bot and open <span class="num">https://api.telegram.org/bot&lt;token&gt;/getUpdates</span> to read your chat id.</li>
+      <li>On GitHub, open this repository: Settings → Secrets and variables → Actions → New repository secret. Add <b>ANTHROPIC_API_KEY</b>, <b>TWELVE_DATA_KEY</b>, <b>TELEGRAM_BOT_TOKEN</b> and <b>TELEGRAM_CHAT_ID</b>.</li>
+      <li>Create a fine-grained GitHub token for this repository only, with <b>Contents: read and write</b>. Paste it in Settings here, then tap <b>Send watchlist to the background scanner</b>.</li>
+    </ol>
+    <button class="sec" id="wlSync">Send watchlist to the background scanner</button><div class="hint" id="wlSyncStat"></div>
+  </div>
+  </section>
+
+  <section class="view" id="v-analyze" hidden>
   <div class="card">
     <div class="row">
       <div><label>Pair 1: what to analyze</label><input id="symbol" value="XAU/USD" placeholder="gold, EUR/USD, bitcoin…" autocapitalize="characters"></div>
@@ -102,32 +277,30 @@
     <input id="manualPx" inputmode="decimal" placeholder="e.g. 4117.50">
     <label>Your broker's typical spread (optional, in price, e.g. 0.30 for gold, 0.00012 for EUR/USD)</label>
     <input id="spread" inputmode="decimal" placeholder="leave empty to ignore costs">
+    <div hidden>
     <label>Charts for this pair (optional with live data: leave empty and the app draws them from live candles)</label>
     <div class="drop" id="drop">Tap to add screenshots<br><small>Select several at once: press and hold one image, then tap the others</small></div>
     <input id="file" type="file" accept="image/*" multiple hidden>
     <input id="fileAlt" type="file" accept=".jpg,.jpeg,.png,.webp,.gif" multiple hidden>
     <button class="sec" id="altBtn" style="margin-top:8px">Pick multiple from Files</button>
     <div class="thumbs" id="thumbs"></div>
+    </div>
     <div id="morePairs"></div>
+    <div hidden>
     <label>News / economic calendar screenshots (shared by all pairs, e.g. Investing.com)</label>
     <div class="drop" id="dropN">Tap to add news screenshots<br><small>Select several at once: press and hold one image, then tap the others</small></div>
     <input id="fileN" type="file" accept="image/*" multiple hidden>
     <input id="fileNAlt" type="file" accept=".jpg,.jpeg,.png,.webp,.gif" multiple hidden>
     <button class="sec" id="altBtnN" style="margin-top:8px">Pick multiple from Files</button>
     <div class="thumbs" id="thumbsN"></div>
+    </div>
     <label>Your note (optional: events, bias, account size)</label>
     <textarea id="note" placeholder="e.g. CPI today 13:30 GMT. Account $5,000."></textarea>
-    <label style="display:flex;gap:8px;align-items:center;font-size:13px;color:var(--text);margin-top:12px"><input type="checkbox" id="autoImg" style="width:auto" checked> When a pair has no screenshots, also send Claude the charts the app draws (better pattern reading, slightly higher cost)</label>
+    <label style="display:flex;gap:8px;align-items:center;font-size:13px;color:var(--text);margin-top:12px"><input type="checkbox" id="autoImg" style="width:auto" checked> Also send Claude the charts the app draws from live candles (better pattern reading, slightly higher cost)</label>
     <div style="margin-top:12px"><button id="go">Analyze</button></div>
     <div class="hint" id="runSummary"></div>
   </div>
 
-  <details class="card" id="lcBox"><summary style="cursor:pointer;font-weight:600">📈 Live chart</summary>
-    <div class="row" style="margin-top:10px;flex-wrap:wrap;gap:6px" id="lcTf"></div>
-    <div class="row" style="margin-top:6px;gap:6px;flex-wrap:wrap;align-items:center"><button class="sec" id="lcOut">−</button><button class="sec" id="lcIn">+</button><button class="sec" id="lcRef">Refresh</button><span class="hint" id="lcStat"></span></div>
-    <canvas id="lcCv" style="width:100%;height:380px;margin-top:8px;border-radius:8px;touch-action:none;display:block"></canvas>
-    <div class="hint">Drag to scroll back in time. EMA 20 yellow, 50 blue, 200 purple. Shaded bands are key zones; the last analysis's entry, stop and targets are drawn when the symbol matches. Refreshes every 90 seconds while open (one Twelve Data credit each time).</div>
-  </details>
   <div id="results"></div>
   </section>
   <section class="view" id="v-weekend" hidden>
@@ -137,23 +310,27 @@
       <div><label>Pair 1 symbol</label><input id="wSymbol" value="XAU/USD"></div>
       <div><label>Market</label><select id="wMarket"><option value="forex">Forex / Metals</option><option value="crypto">Crypto</option></select></div>
     </div>
+    <div hidden>
     <label>Pair 1 charts: weekly, daily, 4H (plain screenshots, up to 6)</label>
     <div class="drop" id="dropW">Tap to add charts<br><small>Select several at once: press and hold one image, then tap the others</small></div>
     <input id="fileW" type="file" accept="image/*" multiple hidden>
     <input id="fileWAlt" type="file" accept=".jpg,.jpeg,.png,.webp,.gif" multiple hidden>
     <button class="sec" id="altBtnW" style="margin-top:8px">Pick multiple from Files</button>
     <div class="thumbs" id="thumbsW"></div>
+    </div>
     <div id="wMorePairs"></div>
+    <div hidden>
     <label>Next week's economic calendar / news screenshots (shared by all pairs, up to 8)</label>
     <div class="drop" id="dropWN">Tap to add calendar or news screenshots</div>
     <input id="fileWN" type="file" accept="image/*" multiple hidden>
     <input id="fileWNAlt" type="file" accept=".jpg,.jpeg,.png,.webp,.gif" multiple hidden>
     <button class="sec" id="altBtnWN" style="margin-top:8px">Pick multiple from Files</button>
     <div class="thumbs" id="thumbsWN"></div>
+    </div>
     <label>Your note (optional: weekend news, your view, account size)</label>
     <textarea id="wNote" placeholder="e.g. Fed chair speaks Wednesday. Account $5,000."></textarea>
     <div style="margin-top:12px"><button id="wGo">Run weekend analysis</button></div>
-    <div class="hint">Reads the whole week from candles (day by day, weekly stats, indicators, pivots, gaps, dollar and yields, positioning) plus your screenshots, then plans the week ahead.</div>
+    <div class="hint">Reads the whole week from candles (day by day, weekly stats, indicators, pivots, gaps, dollar and yields, positioning), the live calendar and headlines, then plans the week ahead.</div>
   </div>
   <div id="wResults"></div>
   </section>
@@ -177,11 +354,12 @@
     <div id="hist"></div>
   </div>
   </section>
-  <div class="hint">Analysis only, not financial advice. Trade small and test on a demo account first.</div>
-</div>
+  <div class="hint" style="text-align:center;margin:18px 0">Analysis only, not financial advice. Trade small and test on a demo account first.</div>
+</main>
 
+<script src="detect.js"></script>
 <script>
-const SYSTEM = `You are a multi-timeframe trading analyst for forex, metals and crypto. The user uploads chart screenshots (e.g. 1W, 1D, 4H, 1H, 30M, 15M, 5M), plus optional screenshots of news and the economic calendar (e.g. from the Investing.com app), plus live market data and recent headlines fetched from data providers, plus an optional note. Analyze only what is visible or provided. Never invent price levels you cannot read from the charts.
+const SYSTEM = `You are a multi-timeframe trading analyst for forex, metals and crypto. You receive exact candle tables and a market-structure summary for 1W, 1D, 4H, 1H, 15M and 5M computed from live candles, charts drawn by the app from those same candles, live market data, the live economic calendar and recent headlines fetched from data providers, plus an optional note. Analyze only what is visible or provided. Never invent price levels you cannot read from the charts.
 
 PROCESS
 1. Identify the instrument, the timeframes provided (read them from each chart), and the current price. If live data conflicts with the charts, trust the live quote and say so. If no screenshots were uploaded, the charts were drawn by the app from live candles and come with exact candle tables and a market-structure summary for 1W, 1D, 4H, 1H, 15M and 5M: use those for structure (higher highs and lows, breaks of structure, fair value gaps, Fibonacci of the last leg, candle patterns) and treat their prices as exact. Use the 5M data for scalp triggers.
@@ -190,14 +368,14 @@ PROCESS
  - 4H/1H: supply/demand zones, range boundaries, trendlines, patterns, Fibonacci retracement of the latest impulse, order blocks, liquidity sweeps.
  - 30M/15M/5M: entry triggers: candlestick patterns, break and retest, momentum shifts.
 3. Indicators and levels: use the exact swing support/resistance levels provided (they are calculated from candles, prefer them over levels estimated from images) and the 15M values for scalp timing. Use volume ratios, funding rate, open interest, Fear & Greed and CFTC positioning as context for crowded trades and reversal risk, not as signals on their own. Use the live values provided for 1H, 4H and 1D (RSI, EMA 20/50/200, ATR, MACD, Bollinger Bands, Stochastic, recent highs/lows, yesterday's range and daily pivots) together with any indicators visible on the charts. Look for agreement between timeframes, divergences, overbought/oversold readings only when they fit the trend, Bollinger squeezes (low bandwidth) before breakouts, and EMA alignment. Use ATR to size stops and targets sensibly. Also use the FRED macro block (real yields, breakevens, fed funds, curve, VIX), the volatility regime (ATR percentile, realized volatility), the session range profile, the weekday range profile and the rolling correlations when they are provided: in a HIGH volatility regime widen stops, lower the probability and say so; in a LOW regime warn of breakout risk; prefer entries in historically active sessions; if a usual relationship has broken (for example gold and real yields rising together), say the usual driver is not working and lower the probability by 5 points. If no live data was provided, rely on price action and any indicators visible on the charts, say levels are approximate, and lower the probability by 5 points.
-4. Fundamentals: first read any news/calendar screenshots. For each relevant item extract: event or headline, currency/asset, time (note the timezone shown), impact level (bulls/stars/colour), and actual vs forecast vs previous. Judge whether each result is bullish or bearish for the instrument (e.g. hot US CPI or strong NFP is usually USD-positive and gold-negative; weaker data the opposite). Flag high-impact events still to come and how many hours away they are, and warn against holding scalps through them; advise waiting for the post-release reaction. If a screenshot is unreadable or its timezone is unclear, say so. Then also use the API headlines and the note. Consider USD strength and yields, central bank stance, inflation/jobs data, risk sentiment, and for crypto, dominance and flows. Summarize in 2-3 lines what matters. If no headlines are relevant, say so and lower the probability by 5 points.
+4. Fundamentals: first read the live economic calendar and the headlines. For each relevant item extract: event or headline, currency/asset, time (note the timezone shown), impact level (bulls/stars/colour), and actual vs forecast vs previous. Judge whether each result is bullish or bearish for the instrument (e.g. hot US CPI or strong NFP is usually USD-positive and gold-negative; weaker data the opposite). Flag high-impact events still to come and how many hours away they are, and warn against holding scalps through them; advise waiting for the post-release reaction. If an item's time or result is missing, say so. Then also use the note. Consider USD strength and yields, central bank stance, inflation/jobs data, risk sentiment, and for crypto, dominance and flows. Summarize in 2-3 lines what matters. If no headlines are relevant, say so and lower the probability by 5 points.
 5. Confluence: bias must agree across higher timeframes. If timeframes conflict or price is mid-range with no clear level, say NO TRADE for that style.
 
 OUTPUT FORMAT (always, compact for a phone screen). Use ### headings:
 ### Market snapshot
 instrument, price, higher-timeframe bias, key levels (3 support, 3 resistance).
 ### News & calendar
-Key events read from the screenshots and headlines, each with its bullish/bearish effect on the instrument, upcoming high-impact releases, and the net fundamental bias.
+Key events from the live calendar and headlines, each with its bullish/bearish effect on the instrument, upcoming high-impact releases, and the net fundamental bias.
 ### Scalp (5M-15M)
 ### Intraday (30M-1H)
 ### Swing (4H-1D)
@@ -255,11 +433,11 @@ RULES
 const $ = id => document.getElementById(id);
 const store = { get:k=>localStorage.getItem(k)||'', set:(k,v)=>localStorage.setItem(k,v), del:k=>localStorage.removeItem(k) };
 // ---- keys
-['kAnthropic','kTwelve','kFinnhub','kFred','model','symbol','market'].forEach(id=>{ const v=store.get('ca_'+id); if(v) $(id).value=v; });
+['kAnthropic','kTwelve','kFinnhub','kFred','model','mHaiku','kGh','ghRepo','symbol','market'].forEach(id=>{ const v=store.get('ca_'+id); if(v) $(id).value=v; });
 
 $('tdplan').value=store.get('ca_tdplan')||'free';$('tdplan').onchange=()=>store.set('ca_tdplan',$('tdplan').value);
 $('depth').value=store.get('ca_depth')||'std';$('depth').onchange=()=>store.set('ca_depth',$('depth').value);
-const KEY_IDS=['kAnthropic','kTwelve','kFinnhub','kFred','model'];
+const KEY_IDS=['kAnthropic','kTwelve','kFinnhub','kFred','model','mHaiku','kGh','ghRepo'];
 function saveAll(msg){
   KEY_IDS.forEach(id=>store.set('ca_'+id,$(id).value.trim()));
   const el=$('saveStatus'); el.textContent=msg||'Saved on this device ✓';
@@ -274,8 +452,8 @@ $('testClaude').onclick=async()=>{
     out.textContent=o.text.trim()?('Connected. Model '+o.model+' replied: '+o.text.trim().slice(0,60)):emptyMsg(o);
   }catch(e){out.textContent='Failed: '+(e.message||e);}
 };
-$('saveKeys').onclick = ()=>{ saveAll(); go('analyze'); };
-$('clearKeys').onclick = ()=>{ ['kAnthropic','kTwelve','kFinnhub','kFred'].forEach(id=>{store.del('ca_'+id);$(id).value='';}); $('saveStatus').textContent='Keys removed from this device'; };
+$('saveKeys').onclick = ()=>{ saveAll(); go('chart'); };
+$('clearKeys').onclick = ()=>{ ['kAnthropic','kTwelve','kFinnhub','kFred','kGh'].forEach(id=>{store.del('ca_'+id);$(id).value='';}); $('saveStatus').textContent='Keys removed from this device'; };
 if(store.get('ca_kAnthropic')) $('saveStatus').textContent='Keys are saved on this device ✓';
 // ask the browser not to evict saved keys
 if(navigator.storage&&navigator.storage.persist){ navigator.storage.persist().catch(()=>{}); }
@@ -298,7 +476,7 @@ Object.entries(zones).forEach(([name,z])=>{
   z.drop.ondrop=e=>{e.preventDefault();z.drop.classList.remove('over');activeZone=name;addFiles(name,e.dataTransfer.files)};
 });
 // pasted images go to whichever zone you touched last
-document.addEventListener('paste',e=>{ const f=[...e.clipboardData.files].filter(x=>x.type.startsWith('image/')); if(f.length) addFiles(activeZone,f); });
+// screenshots are no longer used (v33): charts come from live candles
 
 async function addFiles(name,list){
   const files=[...list].filter(f=>f.type.startsWith('image/')||/\.(jpe?g|png|webp|gif)$/i.test(f.name));
@@ -339,7 +517,7 @@ function renderThumbs(name){
 }
 
 // ---- live data
-async function getJSON(url){ const r=await fetch(url); if(!r.ok) throw new Error(r.status); return r.json(); }
+async function getJSON(url){ if(/api\.twelvedata\.com\/(?!symbol_search)/.test(url)&&typeof tdCount==='function')tdCount(); const r=await fetch(url); if(!r.ok) throw new Error(r.status); return r.json(); }
 
 // ---- indicator maths (computed locally from candles; 1 API call per timeframe)
 // decimals by magnitude so FX keeps 5 decimals, JPY pairs 3, gold/indices/BTC 2, small coins 6-8
@@ -535,10 +713,10 @@ function attachZone(name){const z=zones[name];
     <div class="row"><div><label>Symbol</label><input id="symbol${n}" placeholder="e.g. ${n==2?'EUR/USD':'BTC/USD'}"></div><div><label>Market</label><select id="market${n}"><option value="forex">Forex / Metals</option><option value="crypto">Crypto</option></select></div></div>
     <label>Current price (optional, used only if live data is off)</label><input id="manualPx${n}" inputmode="decimal">
     <label>Typical spread (optional, in price)</label><input id="spread${n}" inputmode="decimal" placeholder="leave empty to ignore costs">
-    <label>Charts for this pair (any order, up to 10)</label>
+    <div hidden><label>Charts for this pair (any order, up to 10)</label>
     <div class="drop" id="drop${n}">Tap to add screenshots<br><small>Select several at once: press and hold one image, then tap the others</small></div>
     <input id="file${n}" type="file" accept="image/*" multiple hidden><input id="fileAlt${n}" type="file" accept=".jpg,.jpeg,.png,.webp,.gif" multiple hidden>
-    <button class="sec" id="altBtn${n}" style="margin-top:8px">Pick multiple from Files</button><div class="thumbs" id="thumbs${n}"></div>`;
+    <button class="sec" id="altBtn${n}" style="margin-top:8px">Pick multiple from Files</button><div class="thumbs" id="thumbs${n}"></div></div>`;
     box.appendChild(d);
     lists['charts'+n]=[];zones['charts'+n]={drop:$('drop'+n),file:$('file'+n),alt:$('fileAlt'+n),altBtn:$('altBtn'+n),thumbs:$('thumbs'+n),max:10};
     attachZone('charts'+n);
@@ -559,7 +737,7 @@ function activePairs(){
   return P.filter(p=>p.sym&&(lists[p.key].length||liveOK(p)));
 }
 function updSummary(){const P=activePairs(),im=P.reduce((t,p)=>t+lists[p.key].length,0),nn=lists.news.length;
-  $('runSummary').textContent=P.length?`Ready: ${P.length} pair${P.length>1?'s':''}, ${im?im+' chart'+(im!==1?'s':''):'charts drawn from live data'}`+(nn?`, ${nn} calendar image${nn>1?'s':''}${P.length>1?' (read once, shared by all pairs)':''}`:'')+` · about ${P.length} min`:'Add a symbol and at least one chart.';}
+  $('runSummary').textContent=P.length?`Ready: ${P.length} pair${P.length>1?'s':''}, ${im?im+' chart'+(im!==1?'s':''):'charts drawn from live data'}`+(nn?`, ${nn} calendar image${nn>1?'s':''}${P.length>1?' (read once, shared by all pairs)':''}`:'')+` · about ${P.length} min`:'Type an instrument, for example gold or EUR/USD.';}
 function newResult(sym){
   const d=document.createElement('div');d.className='card res';d.dataset.sym=sym;
   d.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px"><b>${esc(sym.toUpperCase())}</b><span><button class="sec rc-chart">Chart</button> <button class="sec rc-calc">Position size</button> <button class="sec rc-copy">Copy</button></span></div><details class="rc-live"><summary class="hint" style="cursor:pointer">Live data used</summary><div class="rc-livetxt" style="font-size:13px;color:var(--mute);white-space:pre-wrap"></div></details><div class="rc-out"></div>`;
@@ -599,7 +777,7 @@ $('go').onclick=async()=>{
   if(!ak){ go('settings'); return alert('Enter your Anthropic API key'); }
   for(const n of [2,3]) if(lists['charts'+n].length&&!$('symbol'+n).value.trim()) return alert('Pair '+n+' has charts but no symbol.');
   const pairs=activePairs();
-  if(!pairs.length) return alert('Type an instrument (for example gold or EUR/USD). Without a Twelve Data key, add chart screenshots, or use a crypto pair.');
+  if(!pairs.length) return alert('Type an instrument (for example gold or EUR/USD). Gold and forex need a Twelve Data key in Settings; crypto works without one.');
   saveAll('Saved ✓');
   const btn=$('go'); btn.disabled=true;
   const tk=$('kTwelve').value.trim(), fk=$('kFinnhub').value.trim(), N=pairs.length, deep=$('depth').value==='deep';
@@ -623,7 +801,7 @@ $('go').onclick=async()=>{
         if(!shots.length&&$('autoImg').checked){const im=autoCharts(p.sym,cd);if(im.length)content.push({type:'text',text:`CHARTS DRAWN BY THE APP from live candles for ${p.sym} (not user screenshots): ${im.map(x=>x.tf).join(', ')}. Each shows the last closed candles with EMA 20 (yellow), 50 (blue) and 200 (purple), key zones (shaded) and the live price (dotted). Prices on the right axis are exact.`},...im.map(x=>imgBlock({b64:x.b64})));}
         content.push({type:'text',text:'EXACT CANDLE DATA AND MARKET STRUCTURE (computed from closed candles; prefer these numbers over anything read from images):\n'+structureBlock(cd)});
       }
-      if(!content.length) throw new Error('No charts and no live candles for '+p.sym+'. Add screenshots or a Twelve Data key.');
+      if(!content.length) throw new Error('No live candles for '+p.sym+'. Check the symbol, or add a Twelve Data key in Settings.');
       if(digest) content.push({type:'text',text:"ECONOMIC CALENDAR / NEWS (transcribed from the user's screenshots):\n"+digest});
       else if(lists.news.length) content.push({type:'text',text:'NEWS / ECONOMIC CALENDAR SCREENSHOTS (read every event and headline in them):'},...lists.news.map(imgBlock));
       const others=pairs.filter(x=>x!==p).map(x=>x.sym).join(', ');
@@ -631,7 +809,7 @@ $('go').onclick=async()=>{
       const card=cards[i];
       const co=await claudeStream(ak,SYSTEM,content,t=>{ q(i).innerHTML=md(t); card.dataset.raw=t; if(!scrolled&&t){scrolled=true;card.scrollIntoView({behavior:'smooth'});} btn.textContent=tag(i)+'analyzing… ('+t.length+' chars)'; },deep);
       const text=co.text,stop=co.stop;
-      if(stop==='max_tokens') q(i).innerHTML+='<p class="err">The answer was cut off. Run this pair again or remove a few screenshots.</p>';
+      if(stop==='max_tokens') q(i).innerHTML+='<p class="err">The answer was cut off. Run this pair again.</p>';
       if(!text.trim()) throw new Error(emptyMsg(co));
       PLAN[String(p.sym).toUpperCase()]=parseFinal(text); saveHistory(text,p.sym); addOdds(card,text,p.sym); addCheck(card,text,{...p,cal:L.cal}); if(N===1) fillCalc(text,p.sym); renderHist();
       return text;
@@ -695,7 +873,7 @@ function parseFinal(raw){const i=raw.search(/^### *Final trade plan/mi);if(i<0)r
 const num=x=>{const m=String(x||'').replace(/,/g,'').match(/-?\d+(\.\d+)?/);return m?+m[0]:null;};
 // ---- history + journal
 const HS={get:()=>{try{return JSON.parse(localStorage.getItem('ca_hist')||'[]')}catch(e){return[]}},set:a=>{const now=Date.now(),pack=(n,k)=>JSON.stringify(a.slice(0,n).map((e,i)=>(i<k||(e.ord==='WEEKLY OUTLOOK'&&now-e.id<20*86400000))?e:{...e,text:''}));try{localStorage.setItem('ca_hist',pack(400,40));}catch(e){try{localStorage.setItem('ca_hist',pack(150,12));}catch(e2){}}}};
-const APP_VER='edgeview-v32';
+const APP_VER='edgeview-v33';
 function META(){return {model:$('model').value.trim()||'claude-sonnet-5-5',deep:$('depth').value,ver:APP_VER};}
 
 function addOdds(card,text,sym){
@@ -714,7 +892,7 @@ function addOdds(card,text,sym){
     card.appendChild(d);
   }catch(e){}
 }
-function saveHistory(text,sym){const g=parseFinal(text),a=HS.get(),tps=ladderFromPlan(g);a.unshift({id:Date.now(),...(tps?{tps,hit:null}:{}),sym:(sym||'').toUpperCase(),dec:g.decision||'?',ord:g.order||'',entry:g.entry||'',sl:g['stop loss']||'',tp1:g.tp1||'',prob:num(g.probability),valid:g['valid until']||'',st:/no trade/i.test(g.decision||'')?'skip':'open',text});HS.set(a);}
+function saveHistory(text,sym){const g=parseFinal(text),a=HS.get(),tps=ladderFromPlan(g);a.unshift({id:Date.now(),...(tps?{tps,hit:null}:{}),sym:(sym||'').toUpperCase(),dec:g.decision||'?',ord:g.order||'',entry:g.entry||'',sl:g['stop loss']||'',tp1:g.tp1||'',prob:num(g.probability),valid:g['valid until']||'',st:/no trade/i.test(g.decision||'')?'skip':'open',...(BOTC.get().on&&/BUY|SELL/i.test(g.decision||'')&&!/no trade/i.test(g.decision||'')?{bot:1}:{}),text});HS.set(a);setTimeout(()=>{renderBot();renderChartSide();},0);}
 
 async function copyResult(btn,id){const e=HS.get().find(x=>x.id==id);if(!e)return;const ok=await copyText(resultPost(e));const old=btn.textContent;btn.textContent=ok?'Copied ✓':'Copy failed';setTimeout(()=>btn.textContent=old,1800);}
 async function copyRecap(btn,days){const ok=await copyText(recapText(HS.get(),Date.now(),days));const old=btn.textContent;btn.textContent=ok?'Copied ✓ Paste it in Telegram':'Copy failed';setTimeout(()=>btn.textContent=old,2200);}
@@ -750,50 +928,331 @@ function autoCharts(sym,cd){
 // plan lines from the latest analysis of this symbol, drawn on charts
 const PLAN={};
 function planLines(sym){const g=PLAN[String(sym).toUpperCase()];if(!g)return [];const L=[],add=(v,c,lab,dash)=>{const x=_num(String(v||'').split('|')[0]);if(x!=null&&!/^\s*none/i.test(String(v)))L.push({p:x,c,label:lab,dash});};
-  add(g.entry,'#4aa3ff','Entry');add(g['entry 2'],'#4aa3ff','Entry 2',[6,4]);add(g['stop loss'],'#f4616b','Stop');for(let k=1;k<=6;k++)add(g['tp'+k],'#2dd4a7','TP'+k);return L;}
+  add(g.entry,'#6aa9ff','Entry');add(g['entry 2'],'#6aa9ff','Entry 2',[6,4]);add(g['stop loss'],'#ea6259','Stop');for(let k=1;k<=6;k++)add(g['tp'+k],'#3cc08e','TP'+k);return L;}
 
-// ---- live chart panel (v32)
-const LC={tf:'1H',count:120,off:0,bars:[],sym:'',timer:null};
+// ---- live chart (v33): its own market, a search sheet, a quote header and the robot's trades drawn on it
+const LC={tf:store.get('ca_lcTf')||'1H',count:120,off:0,bars:[],sym:(store.get('ca_lcSym')||'XAU/USD'),timer:null,at:0};
 const TFI={'5M':['5min','5m',5],'15M':['15min','15m',15],'1H':['1h','1h',60],'4H':['4h','4h',240],'1D':['1day','1d',1440],'1W':['1week','1w',10080]};
+const binPair=S=>S.replace('/','').replace(/USD$/,'USDT');
 async function fetchTF(sym,tf,force){
   const S=String(sym).toUpperCase(),cd=CND[S],key={'5M':'m5','15M':'m15','1H':'h1','4H':'h4','1D':'d1'}[tf];
   if(!force&&cd&&Date.now()-cd.at<120000){if(key&&cd[key])return toBars(cd[key]);if(tf==='1W'&&cd.d1)return toBars(weeklyFromDaily(cd.d1));}
   const tk=$('kTwelve').value.trim(),[tdI,bnI]=TFI[tf];
-  if(!tk&&isCrypto(S)){const pair=S.replace('/','').replace(/USD$/,'USDT');const r=await getJSON(`https://data-api.binance.vision/api/v3/klines?symbol=${pair}&interval=${bnI}&limit=500`);return r.map(k=>({t:k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4]}));}
-  if(!tk) throw new Error('Live charts need a Twelve Data key (or a crypto pair).');
+  if(!tk&&isCrypto(S)){const r=await getJSON(`https://data-api.binance.vision/api/v3/klines?symbol=${binPair(S)}&interval=${bnI}&limit=500`);return r.map(k=>({t:k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4]}));}
+  if(!tk) throw new Error('Charts for gold and forex need a Twelve Data key (Settings). Crypto works without one.');
   const j=await getJSON(`https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(S)}&interval=${tdI}&outputsize=500&timezone=UTC&apikey=${tk}`);
   if(!j||j.status==='error'||!j.values) throw new Error(j&&j.message||'no data');
   return toBars(j.values);
 }
 function lcDraw(){
-  const cv=$('lcCv'),r=cv.getBoundingClientRect(),dpr=Math.min(2,window.devicePixelRatio||1),w=Math.max(300,Math.round(r.width||360));
-  cv.width=Math.round(w*dpr);cv.height=Math.round(380*dpr);
-  const off=document.createElement('canvas');off.width=w;off.height=380;
-  drawCandles(off,LC.bars,{title:`${LC.sym} ${LC.tf}`,emas:EMAS,count:LC.count,end:LC.bars.length-LC.off,lines:planLines(LC.sym),zones:zonesFor(LC.sym)});
+  const cv=$('lcCv');if(!cv||!cv.offsetParent)return;
+  const r=cv.getBoundingClientRect(),dpr=Math.min(2,window.devicePixelRatio||1),w=Math.max(300,Math.round(r.width||360)),h=Math.max(260,Math.round(r.height||380));
+  cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr);
+  const off=document.createElement('canvas');off.width=w;off.height=h;
+  drawCandles(off,LC.bars,{title:`${LC.sym} ${LC.tf}`,emas:EMAS,count:LC.count,end:LC.bars.length-LC.off,lines:chartLines(LC.sym),zones:zonesFor(LC.sym),marks:botMarks(LC.sym)});
   const ctx=cv.getContext('2d');ctx.drawImage(off,0,0,cv.width,cv.height);
 }
+function dayChange(bars){if(!bars.length)return null;const last=bars[bars.length-1],d0=Math.floor(last.t/864e5)*864e5;
+  const first=LC.tf==='1D'||LC.tf==='1W'?bars[bars.length-2]:bars.find(b=>b.t>=d0);const base=first?(LC.tf==='1D'||LC.tf==='1W'?first.c:first.o):null;
+  return base?{px:last.c,abs:last.c-base,pct:(last.c-base)/base*100}:null;}
 async function lcLoad(force){
-  const sym=aliasSym($('symbol').value);if(!sym)return;LC.sym=sym.toUpperCase();
-  $('lcStat').textContent='Loading '+LC.sym+' '+LC.tf+'…';
-  try{LC.bars=await fetchTF(LC.sym,LC.tf,force);LC.off=Math.min(LC.off,Math.max(0,LC.bars.length-20));lcDraw();const b=LC.bars[LC.bars.length-1];$('lcStat').textContent=b?`Last ${f2(b.c)} · ${new Date().toISOString().slice(11,16)} UTC`:'No data';}
-  catch(e){$('lcStat').textContent=String(e.message||e);}
+  const sym=LC.sym;$('lcSymTxt').textContent=sym;lcStarTxt();
+  $('lcStat').textContent='Loading '+sym+' '+LC.tf+'…';
+  try{const bars=await fetchTF(sym,LC.tf,force);if(sym!==LC.sym)return;LC.bars=bars;LC.at=Date.now();LC.off=Math.min(LC.off,Math.max(0,LC.bars.length-20));lcDraw();
+    const ch=dayChange(LC.bars);
+    if(ch){$('lcPx').textContent=f2(ch.px);$('lcChg').textContent=(ch.abs>=0?'+':'−')+Math.abs(ch.abs).toFixed(pxDec(ch.px))+' ('+(ch.pct>=0?'+':'−')+Math.abs(ch.pct).toFixed(2)+'%) today';$('lcChg').className='chg '+(ch.abs>=0?'up':'dn');tickSet(sym,ch.px,ch.pct);}
+    $('lcStat').textContent=`${LC.tf} · updated ${new Date().toISOString().slice(11,16)} UTC`;}
+  catch(e){if(sym===LC.sym){LC.bars=[];lcDraw();$('lcPx').textContent='–';$('lcChg').textContent='';$('lcStat').textContent=String(e.message||e);}}
+  renderChartSide();
 }
+function setChartSym(sym){const S=aliasSym(sym).toUpperCase();if(!S)return;LC.sym=S;store.set('ca_lcSym',S);LC.off=0;$('lcPx').textContent='–';$('lcChg').textContent='';lcLoad(false);renderTicker();}
+function showOnChart(sym){setChartSym(sym);go('chart');}
+function lcStarTxt(){const on=WL.get().includes(LC.sym);$('lcStar').textContent=on?'★ On watchlist':'☆ Watchlist';$('lcStar').style.color=on?'var(--brass2)':'';}
 (function(){
-  const box=$('lcTf');Object.keys(TFI).forEach(tf=>{const b=document.createElement('button');b.className='sec';b.textContent=tf;b.onclick=()=>{LC.tf=tf;LC.off=0;[...box.children].forEach(x=>x.style.outline=x===b?'2px solid var(--acc)':'');lcLoad(false);};box.appendChild(b);if(tf===LC.tf)b.style.outline='2px solid var(--acc)';});
+  const box=$('lcTf');Object.keys(TFI).forEach(tf=>{const b=document.createElement('button');b.textContent=tf;b.className=tf===LC.tf?'on':'';b.onclick=()=>{LC.tf=tf;store.set('ca_lcTf',tf);LC.off=0;[...box.children].forEach(x=>x.className=x===b?'on':'');lcLoad(false);};box.appendChild(b);});
   $('lcIn').onclick=()=>{LC.count=Math.max(30,Math.round(LC.count/1.4));lcDraw();};
   $('lcOut').onclick=()=>{LC.count=Math.min(400,Math.round(LC.count*1.4));lcDraw();};
   $('lcRef').onclick=()=>lcLoad(true);
-  $('lcBox').addEventListener('toggle',()=>{clearInterval(LC.timer);if($('lcBox').open){lcLoad(false);LC.timer=setInterval(()=>{if(!document.hidden&&$('lcBox').open)lcLoad(true);},90000);}});
+  $('lcSymBtn').onclick=()=>openSearch(s=>setChartSym(s));
+  $('lcStar').onclick=()=>{const a=WL.get(),i=a.indexOf(LC.sym);if(i>=0)a.splice(i,1);else{if(a.length>=12)return alert('The watchlist holds up to 12 pairs.');a.push(LC.sym);}WL.set(a);lcStarTxt();};
+  $('lcAnalyze').onclick=()=>{$('symbol').value=LC.sym;store.set('ca_symbol',LC.sym);$('market').value=isCrypto(LC.sym)?'crypto':'forex';store.set('ca_market',$('market').value);updSummary();go('analyze');$('go').click();};
+  LC.timer=setInterval(()=>{if(!document.hidden&&!$('v-chart').hidden)lcLoad(true);},90000);
   let drag=null;const cv=$('lcCv');
   cv.addEventListener('pointerdown',e=>{drag={x:e.clientX,off:LC.off};try{cv.setPointerCapture(e.pointerId);}catch(_){}});
   cv.addEventListener('pointermove',e=>{if(!drag)return;const w=cv.getBoundingClientRect().width/LC.count;LC.off=Math.max(0,Math.min(Math.max(0,LC.bars.length-20),drag.off+Math.round((e.clientX-drag.x)/w)));lcDraw();});
   cv.addEventListener('pointerup',()=>drag=null);cv.addEventListener('pointercancel',()=>drag=null);
-  window.addEventListener('resize',()=>{if($('lcBox').open&&LC.bars.length)lcDraw();});
-  $('symbol').addEventListener('change',()=>{const v=aliasSym($('symbol').value);if(v&&v!==$('symbol').value){$('symbol').value=v;store.set('ca_symbol',v);}if($('lcBox').open){LC.off=0;lcLoad(false);}});
+  cv.addEventListener('wheel',e=>{e.preventDefault();LC.count=Math.max(30,Math.min(400,Math.round(LC.count*(e.deltaY>0?1.15:1/1.15))));lcDraw();},{passive:false});
+  window.addEventListener('resize',()=>{if(LC.bars.length)lcDraw();});
+  $('symbol').addEventListener('change',()=>{const v=aliasSym($('symbol').value);if(v&&v!==$('symbol').value){$('symbol').value=v;store.set('ca_symbol',v);}});
   try{$('autoImg').checked=store.get('ca_autoImg')!=='0';}catch(e){}
   $('autoImg').onchange=()=>store.set('ca_autoImg',$('autoImg').checked?'1':'0');
 })();
-function showOnChart(sym){$('symbol').value=sym;$('lcBox').open=true;LC.off=0;lcLoad(false);$('lcBox').scrollIntoView({behavior:'smooth'});}
+
+// ---- market search (v33)
+const POPULAR=[['XAU/USD','Gold'],['XAG/USD','Silver'],['EUR/USD','Euro / US dollar'],['GBP/USD','British pound / US dollar'],['USD/JPY','US dollar / Japanese yen'],['GBP/JPY','British pound / Japanese yen'],['EUR/JPY','Euro / Japanese yen'],['AUD/USD','Australian dollar / US dollar'],['NZD/USD','New Zealand dollar / US dollar'],['USD/CAD','US dollar / Canadian dollar'],['USD/CHF','US dollar / Swiss franc'],['EUR/GBP','Euro / British pound'],['USD/ZAR','US dollar / South African rand'],['BTC/USD','Bitcoin'],['ETH/USD','Ethereum'],['SOL/USD','Solana'],['XRP/USD','XRP']];
+let searchPick=null,searchT=null,searchN=0;
+function recentSyms(){const out=[];for(const e of HS.get()){const s=e.sym;if(s&&!out.includes(s))out.push(s);if(out.length>=6)break;}return out;}
+function srow(sym,name){return `<button data-s="${esc(sym)}"><span>${esc(sym)}<br><small>${esc(name||'')}</small></span><small>${WL.get().includes(sym)?'★':''}</small></button>`;}
+function nameOf(sym){const p=POPULAR.find(x=>x[0]===sym);return p?p[1]:'';}
+function renderSearch(remote){
+  const q=$('symQ').value.trim(),box=$('symRes');let h='';
+  if(!q){
+    const wl=WL.get(),rc=recentSyms().filter(s=>!wl.includes(s));
+    if(wl.length)h+='<div class="hint">Watchlist</div>'+wl.map(s=>srow(s,nameOf(s))).join('');
+    if(rc.length)h+='<div class="hint" style="margin-top:14px">Recent</div>'+rc.map(s=>srow(s,nameOf(s))).join('');
+    h+='<div class="hint" style="margin-top:14px">Popular</div>'+POPULAR.filter(p=>!wl.includes(p[0])).map(p=>srow(p[0],p[1])).join('');
+  }else{
+    const ql=q.toLowerCase(),al=aliasSym(q).toUpperCase(),seen=new Set(),rows=[];
+    const add=(s,n)=>{if(!s||seen.has(s))return;seen.add(s);rows.push(srow(s,n));};
+    POPULAR.filter(p=>p[0]===al||p[0].replace('/','').toLowerCase().includes(ql.replace(/[^a-z]/g,''))||p[1].toLowerCase().includes(ql)).forEach(p=>add(p[0],p[1]));
+    if(/^[A-Z]{3,5}\/[A-Z]{3,4}$/.test(al))add(al,'Open this symbol');
+    (remote||[]).forEach(r=>add(r.symbol,[r.instrument_name,r.exchange,r.instrument_type].filter(Boolean).join(' · ')));
+    h=rows.join('')||'<div class="empty">No match yet.</div>';
+  }
+  box.innerHTML=h;
+  box.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{const s=b.dataset.s,f=searchPick;closeSheets();if(f)f(s);});
+}
+function openSearch(onPick){searchPick=onPick;$('symQ').value='';renderSearch();openSheet('searchSheet');setTimeout(()=>$('symQ').focus(),60);}
+$('symQ').addEventListener('input',()=>{renderSearch();clearTimeout(searchT);const q=$('symQ').value.trim();if(q.length<2)return;const my=++searchN;
+  searchT=setTimeout(async()=>{try{const j=await getJSON('https://api.twelvedata.com/symbol_search?outputsize=20&symbol='+encodeURIComponent(q));if(my!==searchN)return;
+    const keep=(j&&j.data||[]).filter(r=>/currency|crypto|commodit|index|etf|stock/i.test(r.instrument_type||'')||/\//.test(r.symbol));renderSearch(keep.slice(0,20));}catch(e){}},350);});
+$('symQ').addEventListener('keydown',e=>{if(e.key==='Enter'){const b=$('symRes').querySelector('[data-s]');if(b)b.click();}});
+
+// ---- watchlist and ticker (v33)
+const WL={get:()=>{try{const a=JSON.parse(store.get('ca_wl')||'null');return Array.isArray(a)?a:['XAU/USD','EUR/USD','GBP/USD'];}catch(e){return ['XAU/USD'];}},
+  set:a=>{store.set('ca_wl',JSON.stringify(a.slice(0,12)));renderTicker();renderWL();}};
+const TK=(()=>{try{return JSON.parse(store.get('ca_tk')||'{}')||{};}catch(e){return {};}})();
+function tickSet(sym,px,pct){TK[sym]={px,pct,at:Date.now()};try{store.set('ca_tk',JSON.stringify(TK));}catch(e){}renderTicker();}
+function renderTicker(){const box=$('ticker');if(!box)return;
+  box.innerHTML=WL.get().map(s=>{const t=TK[s];return `<button class="tk ${s===LC.sym?'on':''}" data-s="${esc(s)}"><b>${esc(s)}</b>${t?`<span class="num">${f2(t.px)}</span><span class="num ${t.pct>=0?'up':'dn'}">${t.pct>=0?'+':'−'}${Math.abs(t.pct).toFixed(2)}%</span>`:'<span>–</span>'}</button>`;}).join('')+'<button class="tk add" id="tkAdd">+ Add</button>';
+  box.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>showOnChart(b.dataset.s));
+  $('tkAdd').onclick=()=>openSearch(s=>{const a=WL.get();if(!a.includes(s)){if(a.length>=12)return alert('The watchlist holds up to 12 pairs.');a.push(s);WL.set(a);}showOnChart(s);});}
+function renderWL(){const box=$('wlChips');if(!box)return;const a=WL.get();
+  box.innerHTML=a.length?a.map(s=>`<span class="chip">${esc(s)} <a href="#" data-x="${esc(s)}" aria-label="Remove ${esc(s)}" style="color:var(--mute);text-decoration:none;margin-left:4px">×</a></span>`).join(''):'<span class="hint">No pairs yet. Add up to 12.</span>';
+  box.querySelectorAll('[data-x]').forEach(x=>x.onclick=e=>{e.preventDefault();WL.set(WL.get().filter(s=>s!==x.dataset.x));lcStarTxt();});}
+
+// ---- Twelve Data credits: counted per UTC day so the robot can slow down before the free limit (800/day, 8/minute)
+function tdUse(){try{const o=JSON.parse(store.get('ca_tdUse')||'{}');return o.d===new Date().toISOString().slice(0,10)?o.n:0;}catch(e){return 0;}}
+function tdCount(){const d=new Date().toISOString().slice(0,10);store.set('ca_tdUse',JSON.stringify({d,n:tdUse()+1}));}
+let tdLast=0;
+async function tdSlot(){const w=tdLast+8000-Date.now();tdLast=Math.max(Date.now(),tdLast+8000);if(w>0)await sleep(w);}
+
+// candles for the robot, closed bars only, cached until the next bar closes
+const SC={};
+async function robotBars(sym,tf,n){
+  const S=String(sym).toUpperCase(),ms=TFI[tf][2]*60000,k=S+'|'+tf,now=Date.now(),c=SC[k];
+  if(c&&now<c.until)return c.bars;
+  const tk=$('kTwelve').value.trim();let bars;
+  if(!tk&&isCrypto(S)){const r=await getJSON(`https://data-api.binance.vision/api/v3/klines?symbol=${binPair(S)}&interval=${TFI[tf][1]}&limit=${n||300}`);bars=r.map(x=>({t:x[0],o:+x[1],h:+x[2],l:+x[3],c:+x[4]}));}
+  else{if(!tk)throw new Error('needs a Twelve Data key');await tdSlot();
+    const j=await getJSON(`https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(S)}&interval=${TFI[tf][0]}&outputsize=${n||300}&timezone=UTC&apikey=${tk}`);
+    if(!j||j.status==='error'||!j.values)throw new Error(j&&j.message||'no data');bars=toBars(j.values);}
+  const live=bars[bars.length-1];if(live)tickLive(S,bars);
+  const closed=bars.filter(b=>b.t+ms<=now);
+  SC[k]={bars:closed,until:(Math.floor(now/ms)+1)*ms+40000};return closed;
+}
+function tickLive(S,bars){const last=bars[bars.length-1],d0=Math.floor(last.t/864e5)*864e5,first=bars.find(b=>b.t>=d0);if(first)tickSet(S,last.c,(last.c-first.o)/first.o*100);}
+
+// ---- alerts (v33)
+const AL={get:()=>{try{return JSON.parse(store.get('ca_alerts')||'[]');}catch(e){return [];}},set:a=>{store.set('ca_alerts',JSON.stringify(a.slice(0,80)));renderAlerts();}};
+async function notify(title,body,tag){
+  try{if(!$('wlNotify').checked||!('Notification' in window)||Notification.permission!=='granted')return;
+    const reg=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();
+    if(reg&&reg.showNotification)reg.showNotification(title,{body,tag,icon:'icon-192.png',badge:'icon-192.png'});else new Notification(title,{body,tag});}catch(e){}
+  try{navigator.vibrate&&navigator.vibrate([80,40,80]);}catch(e){}
+}
+function pushAlert(a){const all=AL.get();all.unshift({id:Date.now()+Math.random(),t:Date.now(),read:false,...a});AL.set(all);notify(a.title,a.body,a.sym+a.kind);}
+function renderAlerts(){
+  const a=AL.get(),un=a.filter(x=>!x.read).length;
+  $('bellDot').hidden=!un;$('bellDot').textContent=un>9?'9+':un;$('robotBadge').hidden=!un;$('robotBadge').textContent=un>9?'9+':un;
+  const box=$('alertList');if(!box)return;
+  box.innerHTML=a.length?a.slice(0,30).map(x=>`<div class="alert ${x.side==='BUY'?'bull':x.side==='SELL'?'bear':''}"><div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline"><b>${esc(x.title)}</b><span class="hint" style="margin:0;white-space:nowrap">${new Date(x.t).toLocaleString([],{weekday:'short',hour:'2-digit',minute:'2-digit'})}</span></div>
+    <div style="font-size:13.5px;margin-top:2px">${esc(x.body)}</div>${x.sym?`<div class="acts" style="display:flex;gap:6px;margin-top:8px"><button class="sec" data-an="${esc(x.sym)}">Full analysis</button><button class="sec" data-ch="${esc(x.sym)}">Chart</button></div>`:''}</div>`).join(''):'<div class="empty">No alerts yet. Add pairs to the watchlist and keep the scanner on.</div>';
+  box.querySelectorAll('[data-an]').forEach(b=>b.onclick=()=>{LC.sym=b.dataset.an;$('lcAnalyze').onclick();});
+  box.querySelectorAll('[data-ch]').forEach(b=>b.onclick=()=>showOnChart(b.dataset.ch));
+}
+function markAlertsRead(){const a=AL.get();if(a.some(x=>!x.read))AL.set(a.map(x=>({...x,read:true})));}
+
+// ---- Haiku screening (v33)
+const SCREEN_SYS=`You are a fast market screener for a discretionary trader in forex, gold and crypto. You get compact candle data for one instrument on 4H, 1H and 15M, and any early-move signals found in code (stop sweeps, changes of character, squeeze breakouts, momentum candles), each with a score and how far price has already moved from the origin in ATRs.
+Decide if there is a trade worth a full analysis now or in the next few hours. Favour the start of a move: a sweep of a high or low that reverses, a change of character after a trend, a squeeze breaking out from a level, or a pullback to a key level inside a clear trend. Be sceptical of moves already more than about 2 ATR from their origin, of signals against the 4H trend without a clear level, and of thin data. Most of the time the right answer is "no" or "watch".
+Reply with ONLY one JSON object and nothing else:
+{"opportunity":"yes|watch|no","direction":"BUY|SELL|NONE","quality":1,"setup":"a few words","trigger":"what must happen next, with the price","invalidation":0,"why":"one or two short sentences"}
+quality is 1 to 5 (5 = textbook). invalidation is the price that proves the idea wrong, or null. Use exact prices from the data.`;
+async function haiku(system,user){
+  const ak=$('kAnthropic').value.trim();if(!ak)throw new Error('Add your Anthropic key in Settings');
+  const model=($('mHaiku')&&$('mHaiku').value.trim())||'claude-haiku-5-5';
+  const body={model,max_tokens:2000,system,messages:[{role:'user',content:user}],output_config:{effort:'low'}};
+  const send=b=>fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':ak,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify(b)});
+  let r=await send(body);if(!r.ok&&r.status===400){delete body.output_config;r=await send(body);}
+  const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error((j.error&&j.error.message)||('HTTP '+r.status));
+  const t=(j.content||[]).filter(c=>c.type==='text').map(c=>c.text).join('');const m=t.match(/\{[\s\S]*\}/);
+  try{return m?JSON.parse(m[0]):null;}catch(e){return null;}
+}
+const sigText=s=>`${s.tf} ${s.side} score ${s.score}: ${s.patterns.join(' + ')}; ${s.why.join('; ')}; origin ${f2(s.origin)}, price ${f2(s.price)}, ATR ${f2(s.atr)}`;
+
+// ---- the scanner (v33)
+const SG={get:()=>{try{return JSON.parse(store.get('ca_sig')||'[]');}catch(e){return [];}},set:a=>store.set('ca_sig',JSON.stringify(a.slice(0,60)))};
+let scanning=false;
+async function scanPair(sym,mode){
+  const m15=await robotBars(sym,'15M',300),h1=await robotBars(sym,'1H',300),h4=EVDetect.to4h(h1);
+  const sig=[...EVDetect.detect(m15,h1,{tf:'15M'}),...EVDetect.detect(h1,h4,{tf:'1H'})].sort((a,b)=>b.score-a.score);
+  const now=Date.now(),min=+$('wlMin').value||60,prev=SG.get();
+  for(const s of sig){if(!prev.some(p=>p.sym===sym&&p.tf===s.tf&&p.at===s.at&&p.side===s.side))prev.unshift({sym,...s,seen:now});}
+  SG.set(prev);
+  const best=sig[0],recent=a=>AL.get().some(x=>x.sym===sym&&x.side===a&&now-x.t<4*36e5);
+  const data=EVDetect.brief(sym,m15,h1,h4)+'\nEARLY-MOVE SIGNALS:\n'+(sig.length?sig.map(sigText).join('\n'):'none');
+  if(mode==='session'){
+    let v=null;try{v=await haiku(SCREEN_SYS,`Session open screen. Current UTC time ${new Date().toISOString()}.\n${data}`);}catch(e){return {sym,err:e.message};}
+    if(v&&v.opportunity==='yes'&&(+v.quality||0)>=3&&!recent(v.direction))pushAlert({kind:'session',sym,side:v.direction,title:`${sym}: possible ${v.direction} (${v.quality}/5)`,body:`${v.setup||''}. ${v.why||''} Trigger: ${v.trigger||'n/a'}. Wrong below/above ${v.invalidation!=null?f2(+v.invalidation):'n/a'}.`});
+    return {sym,v,sig};
+  }
+  if(best&&best.score>=min&&!recent(best.side)){
+    let v=null;try{v=$('kAnthropic').value.trim()?await haiku(SCREEN_SYS,`An early-move signal just fired on a closed candle. Confirm or reject it. Current UTC time ${new Date().toISOString()}.\n${data}`):null;}catch(e){v=null;}
+    if(!v||(v.opportunity!=='no'&&(v.direction===best.side||v.direction==='NONE')))
+      pushAlert({kind:'early',sym,side:best.side,score:best.score,title:`${sym}: early ${best.side} move (${best.tf}, score ${best.score})`,body:(v?`${v.setup||best.patterns.join(' + ')}. ${v.why||''} Trigger: ${v.trigger||'n/a'}.`:best.why.join('; ')+'. (Not confirmed by Haiku: no Anthropic key.)')+` Origin ${f2(best.origin)}, stop idea ${f2(best.stopIdea)}.`});
+  }
+  return {sym,sig};
+}
+async function scanAll(mode){
+  if(scanning)return;const pairs=WL.get();if(!pairs.length)return;
+  scanning=true;const st=$('wlStat');let ok=0,errs=[];
+  for(const s of pairs){
+    if(!isCrypto(s)&&tdUse()>720){errs.push(s+': daily Twelve Data limit nearly used');continue;}
+    st.textContent=(mode==='session'?'Session screen: ':'Scanning ')+s+'…';
+    try{const r=await scanPair(s,mode);if(r.err)errs.push(s+': '+r.err);else ok++;}catch(e){errs.push(s+': '+(e.message||e));}
+  }
+  scanning=false;store.set('ca_lastScan',String(Date.now()));
+  st.textContent=`Last ${mode==='session'?'session screen':'scan'} ${new Date().toISOString().slice(11,16)} UTC: ${ok} pair${ok===1?'':'s'}${errs.length?'. '+errs.join('; '):''}`;
+  renderChartSide();
+}
+function nextOpenText(){const now=Date.now(),n=EVDetect.sessionOpens(now).find(s=>s.t>now);if(!n)return '';const m=Math.round((n.t-now)/60000);return `Next session open: ${n.name} at ${new Date(n.t).toISOString().slice(11,16)} UTC (in ${m>=60?Math.floor(m/60)+'h ':''}${m%60}m).`;}
+// one scheduler for the scanner and the auto-trader, every 30 seconds while the app is open
+const WLS={get:()=>{try{return {sess:true,early:true,notify:false,min:'60',...JSON.parse(store.get('ca_wlset')||'{}')};}catch(e){return {sess:true,early:true,notify:false,min:'60'};}},set:o=>store.set('ca_wlset',JSON.stringify(o))};
+async function robotTick(){
+  if(document.hidden)return;
+  const now=Date.now(),cfg=WLS.get();
+  $('wlNext').textContent=nextOpenText();
+  if(cfg.sess){const s=EVDetect.justOpened(now,65),done=store.get('ca_sessDone');if(s&&done!==s.name+s.t){store.set('ca_sessDone',s.name+s.t);pushAlert({kind:'info',title:`${s.name} session open`,body:`Screening ${WL.get().length} pairs with Claude Haiku.`});await scanAll('session');store.set('ca_lastQ',String(Math.floor(now/9e5)));return;}}
+  if(cfg.early){const q=Math.floor((now-45000)/9e5),last=+store.get('ca_lastQ')||0;if(q>last){store.set('ca_lastQ',String(q));await scanAll('early');}}
+  await botCheck(false);
+}
+(function(){
+  const c=WLS.get();$('wlSess').checked=c.sess;$('wlEarly').checked=c.early;$('wlNotify').checked=c.notify&&'Notification' in window&&Notification.permission==='granted';$('wlMin').value=c.min;
+  const save=()=>WLS.set({sess:$('wlSess').checked,early:$('wlEarly').checked,notify:$('wlNotify').checked,min:$('wlMin').value});
+  ['wlSess','wlEarly','wlMin'].forEach(id=>$(id).onchange=save);
+  $('wlNotify').onchange=async()=>{if($('wlNotify').checked){if(!('Notification' in window)){$('notifState').textContent='This browser cannot show notifications. Install the app first.';$('wlNotify').checked=false;}else{const p=await Notification.requestPermission();if(p!=='granted'){$('wlNotify').checked=false;$('notifState').textContent='Notifications are blocked in the browser settings.';}}}save();};
+  $('wlAdd').onclick=()=>openSearch(s=>{const a=WL.get();if(!a.includes(s)){if(a.length>=12)return alert('The watchlist holds up to 12 pairs.');a.push(s);WL.set(a);}});
+  $('wlScan').onclick=()=>scanAll('session');
+  $('alertClear').onclick=()=>AL.set([]);
+  $('bellBtn').onclick=()=>{go('robot');setTimeout(()=>{$('alertList').scrollIntoView({behavior:'smooth'});markAlertsRead();},120);};
+  $('wlSync').onclick=syncWatchlist;
+  setInterval(robotTick,30000);setTimeout(robotTick,4000);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)setTimeout(robotTick,1500);});
+})();
+// send the watchlist to the background scanner (watchlist.json in the GitHub repository)
+function ghRepo(){const v=($('ghRepo')&&$('ghRepo').value.trim())||'';if(v)return v;const h=location.hostname.match(/^([^.]+)\.github\.io$/),seg=location.pathname.split('/').filter(Boolean)[0];return h&&seg?h[1]+'/'+seg:'abdullahmuhy-pixel/Edgeview-';}
+async function syncWatchlist(){
+  const tok=$('kGh').value.trim(),st=$('wlSyncStat');if(!tok){st.textContent='Add a GitHub token in Settings first.';return;}
+  const repo=ghRepo(),url=`https://api.github.com/repos/${repo}/contents/watchlist.json`,H={Authorization:'Bearer '+tok,Accept:'application/vnd.github+json'};
+  st.textContent='Sending…';
+  try{let sha;const g=await fetch(url,{headers:H});if(g.ok)sha=(await g.json()).sha;
+    const cfg=WLS.get(),body={pairs:WL.get(),minScore:+cfg.min||60,sessionScreen:!!cfg.sess,earlyDetection:!!cfg.early,model:($('mHaiku').value.trim()||'claude-haiku-5-5'),updated:new Date().toISOString()};
+    const r=await fetch(url,{method:'PUT',headers:H,body:JSON.stringify({message:'Update watchlist from the app',content:btoa(unescape(encodeURIComponent(JSON.stringify(body,null,2)+'\n'))),...(sha?{sha}:{})})});
+    const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.message||('HTTP '+r.status));
+    st.textContent=`Sent ${body.pairs.length} pairs to ${repo}. The background scanner uses them from its next hourly run.`;}
+  catch(e){st.textContent='Could not send: '+(e.message||e)+'. Check the token (Contents: read and write on '+repo+').';}
+}
+
+// ---- auto-trader (v33): every BUY or SELL plan becomes a paper trade, followed on 5-minute candles
+const BOTC={get:()=>{try{return {on:true,bal:10000,risk:1,...JSON.parse(store.get('ca_bot')||'{}')};}catch(e){return {on:true,bal:10000,risk:1};}},set:o=>store.set('ca_bot',JSON.stringify(o))};
+const sideOf=e=>/SELL/i.test(e.dec||'')?-1:/BUY/i.test(e.dec||'')?1:0;
+async function barsSince(sym,fromMs,tf){
+  const S=String(sym).toUpperCase(),tk=$('kTwelve').value.trim(),[tdI,bnI]=TFI[tf];
+  if(!tk&&isCrypto(S)){let out=[],st=fromMs;for(let k=0;k<5;k++){const r=await getJSON(`https://data-api.binance.vision/api/v3/klines?symbol=${binPair(S)}&interval=${bnI}&startTime=${st}&limit=1000`);const b=r.map(x=>({t:x[0],o:+x[1],h:+x[2],l:+x[3],c:+x[4]}));out=out.concat(b);if(b.length<1000)break;st=b[b.length-1].t+1;}return out;}
+  if(!tk)return null;await tdSlot();
+  const sd=new Date(fromMs).toISOString().slice(0,19).replace('T',' ');
+  const j=await getJSON(`https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(S)}&interval=${tdI}&start_date=${encodeURIComponent(sd)}&outputsize=5000&timezone=UTC&apikey=${tk}`);
+  if(!j||j.status==='error'||!j.values)throw new Error(j&&j.message||'no data');return toBars(j.values);
+}
+const BOTDUE={};let botBusy=false;
+function botStatus(e){
+  if(e.st==='win')return isLad(e)&&e.hit?{t:`TP${e.hit} hit`,c:'bull'}:{t:'Target hit',c:'bull'};
+  if(e.st==='loss')return {t:'Stopped',c:'bear'};
+  if(e.st==='skip')return {t:e.auto==='robot'||e.auto==='candles'?'Expired, not filled':'Skipped',c:''};
+  const r=e.run||{};if(r.filled){const u=openR(e);return {t:`In trade${u!=null?' '+fR(u):''}${r.hit?' · TP'+r.hit+' banked':''}`,c:u==null?'brass':u>=0?'bull':'bear'};}
+  return {t:'Waiting for entry',c:'brass'};
+}
+function openR(e){const r=e.run||{},en=_n(e.entry),sl=_n(e.sl),s=sideOf(e);if(!r.filled||r.lastP==null||en==null||sl==null||en===sl||!s)return null;return s*(r.lastP-en)/Math.abs(en-sl);}
+async function botCheck(force){
+  if(botBusy)return;const now=Date.now(),open=HS.get().filter(e=>e.bot&&e.st==='open'&&now-e.id<30*864e5);if(!open.length){renderBot();return;}
+  botBusy=true;const by={};open.forEach(e=>(by[e.sym]=by[e.sym]||[]).push(e));const changes=[];
+  for(const sym of Object.keys(by)){
+    const crypto=isCrypto(sym)&&!$('kTwelve').value.trim(),filled=by[sym].some(e=>e.run&&e.run.filled),gap=crypto?60e3:filled?5*60e3:10*60e3;
+    if(!force&&now-(BOTDUE[sym]||0)<gap)continue;
+    if(!crypto&&tdUse()>760)continue;
+    BOTDUE[sym]=now;
+    try{
+      const from=Math.min(...by[sym].map(e=>e.id))-36e5,fine=now-from<14*864e5;
+      const bars=fine?await barsSince(sym,from,'5M'):await hourlyBars(sym,from);if(!bars||!bars.length)continue;
+      const ms=fine?3e5:36e5;
+      HS.set(HS.get().map(e=>{if(!(e.bot&&e.st==='open'&&e.sym===sym))return e;const r=resolveOutcome(e,bars,now,ms);if(!r)return e;
+        if(r.pending){const was=e.run||{};const run={filled:r.filled,hit:r.hit,lastP:r.lastP,fillT:r.fillT,at:now};
+          if(r.filled&&!was.filled)changes.push({e,msg:`filled at ${e.entry.split('|')[0].trim()}`});
+          if(r.hit>(was.hit||0))changes.push({e,msg:`TP${r.hit} reached, stop to break-even`});
+          return {...e,run};}
+        const o={...e,st:r.st,auto:'robot',autoNote:r.note,run:{...(e.run||{}),filled:r.st!=='skip',fillT:r.fillT,exitT:r.exitT,exitP:r.exitP,at:now}};
+        if(isLad(e))o.hit=r.st==='loss'?0:r.st==='win'?r.hit:null;
+        changes.push({e:o,msg:r.st==='win'?`closed in profit (${fR(rOf(o))})`:r.st==='loss'?'stopped out (−1R)':'expired before the entry was reached'});
+        return o;}));
+    }catch(err){$('botStat').textContent='Could not check '+sym+': '+(err.message||err);}
+  }
+  botBusy=false;
+  for(const c of changes){const side=sideOf(c.e)>0?'BUY':'SELL';pushAlert({kind:'trade',sym:c.e.sym,side,title:`Robot: ${c.e.sym} ${side} ${c.msg}`,body:`Entry ${c.e.entry.split('|')[0].trim()}, stop ${c.e.sl.split('|')[0].trim()}, TP1 ${String(c.e.tp1).split('|')[0].trim()}.`});}
+  if(changes.length)renderHist();
+  $('botStat').textContent=`Robot checked ${new Date().toISOString().slice(11,16)} UTC. Twelve Data credits used today: ${tdUse()} of 800.`;
+  renderBot();renderChartSide();if(!$('v-chart').hidden&&LC.bars.length)lcDraw();
+}
+function renderBot(){
+  const c=BOTC.get(),risk=c.bal*c.risk/100,a=HS.get().filter(e=>e.bot);
+  const closed=a.filter(e=>e.st==='win'||e.st==='loss').sort((x,y)=>((x.run&&x.run.exitT)||x.id)-((y.run&&y.run.exitT)||y.id));
+  const R=closed.reduce((t,e)=>t+(rOf(e)||0),0),w=closed.filter(e=>e.st==='win').length,live=a.filter(e=>e.st==='open');
+  const unreal=live.reduce((t,e)=>t+(openR(e)||0),0),eq=c.bal+R*risk;
+  $('botStats').innerHTML=`<div><small>Equity</small><b>$${eq.toLocaleString(undefined,{maximumFractionDigits:0})}</b></div><div><small>Net result</small><b style="color:${R>=0?'var(--bull)':'var(--bear)'}">${fR(R)}</b></div><div><small>Win rate</small><b>${closed.length?Math.round(w/closed.length*100)+'%':'–'}</b></div><div><small>Open</small><b>${live.length}${unreal?` <span style="font-size:12px;color:${unreal>=0?'var(--bull)':'var(--bear)'}">${fR(unreal)}</span>`:''}</b></div>`;
+  // equity curve
+  const cv=$('botEq');if(cv&&cv.offsetParent){const r=cv.getBoundingClientRect(),d=Math.min(2,devicePixelRatio||1);cv.width=r.width*d;cv.height=r.height*d;const x=cv.getContext('2d');x.scale(d,d);x.clearRect(0,0,r.width,r.height);
+    const pts=[c.bal];closed.forEach(e=>pts.push(pts[pts.length-1]+(rOf(e)||0)*risk));
+    if(pts.length<2){x.fillStyle='#5f6b76';x.font='13px Manrope,system-ui';x.fillText('The equity curve appears after the first closed trade.',4,r.height/2);}
+    else{const lo=Math.min(...pts),hi=Math.max(...pts),pad=(hi-lo)*0.1||1,Y=v=>r.height-6-(v-lo+pad)/(hi-lo+2*pad)*(r.height-12),X=i=>4+i*(r.width-8)/(pts.length-1);
+      x.strokeStyle='#2c3844';x.setLineDash([3,4]);x.beginPath();x.moveTo(0,Y(c.bal));x.lineTo(r.width,Y(c.bal));x.stroke();x.setLineDash([]);
+      x.strokeStyle=pts[pts.length-1]>=c.bal?'#3cc08e':'#ea6259';x.lineWidth=2;x.beginPath();pts.forEach((v,i)=>i?x.lineTo(X(i),Y(v)):x.moveTo(X(i),Y(v)));x.stroke();}}
+  const box=$('botList');if(!box)return;
+  box.innerHTML=a.length?a.slice(0,40).map(e=>tradeRow(e,risk)).join(''):'<div class="empty">No robot trades yet. Run an analysis: every BUY or SELL plan is followed here.</div>';
+  wireTradeRows(box);
+}
+function tradeRow(e,risk){const s=botStatus(e),r=e.st==='open'?openR(e):rOf(e),sd=sideOf(e)>0?'BUY':'SELL';
+  return `<div class="trade"><span class="pill ${sd==='BUY'?'bull':'bear'}">${sd}</span><span class="sym">${esc(e.sym)} <span class="hint" style="font-weight:500">${new Date(e.id).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span></span><span class="pill ${s.c}">${esc(s.t)}</span>
+  <div class="lv num">Entry ${esc(String(e.entry).split('|')[0].trim())} · Stop ${esc(String(e.sl).split('|')[0].trim())} · TP1 ${esc(String(e.tp1).split('|')[0].trim())}${r!=null&&e.st!=='skip'?` · ${fR(r)} ≈ $${Math.round(r*risk).toLocaleString()}`:''}</div>
+  <div class="acts"><button class="sec" data-ch="${esc(e.sym)}">Chart</button>${e.text?`<button class="sec" data-vw="${e.id}">Plan</button>`:''}${e.st==='open'?`<button class="sec" data-cx="${e.id}">Cancel</button>`:''}</div></div>`;}
+function wireTradeRows(box){box.querySelectorAll('[data-ch]').forEach(b=>b.onclick=()=>showOnChart(b.dataset.ch));box.querySelectorAll('[data-vw]').forEach(b=>b.onclick=()=>viewH(+b.dataset.vw));
+  box.querySelectorAll('[data-cx]').forEach(b=>b.onclick=()=>{HS.set(HS.get().map(e=>e.id==b.dataset.cx?{...e,st:'skip',auto:'manual',autoNote:'Cancelled by you'}:e));renderBot();renderChartSide();renderHist();});}
+(function(){const c=BOTC.get();$('botOn').checked=c.on;$('botBal').value=c.bal;$('botRisk').value=c.risk;
+  const save=()=>{BOTC.set({on:$('botOn').checked,bal:Math.max(1,+$('botBal').value||10000),risk:Math.min(10,Math.max(0.1,+$('botRisk').value||1))});renderBot();};
+  ['botOn','botBal','botRisk'].forEach(id=>$(id).onchange=save);})();
+// robot trades and signals on the chart
+function chartLines(sym){const S=String(sym).toUpperCase(),own=planLines(S);if(own.length)return own;
+  const e=HS.get().find(x=>x.bot&&x.sym===S&&x.st==='open');if(!e)return [];const L=[],add=(v,c,lab,dash)=>{const x=_num(String(v||'').split('|')[0]);if(x!=null)L.push({p:x,c,label:lab,dash});};
+  add(e.entry,'#6aa9ff','Robot entry');add(e.sl,'#ea6259','Stop');(e.tps||[{px:_num(e.tp1)}]).forEach((t,i)=>add(t.px,'#3cc08e','TP'+(i+1)));return L;}
+function botMarks(sym){const S=String(sym).toUpperCase(),M=[];for(const e of HS.get().filter(x=>x.bot&&x.sym===S).slice(0,6)){const r=e.run||{},en=_num(String(e.entry).split('|')[0]),s=sideOf(e);
+  if(r.fillT&&en!=null)M.push({t:r.fillT,p:en,c:'#6aa9ff',label:(s>0?'▲ ':'▼ ')+'filled',up:s>0});
+  if(r.exitT&&r.exitP!=null)M.push({t:r.exitT,p:r.exitP,c:e.st==='win'?'#3cc08e':'#ea6259',label:e.st==='win'?'● '+(e.hit?'TP'+e.hit:'TP'):'● stop',up:false});}
+  for(const g of SG.get().filter(x=>x.sym===S).slice(0,8))M.push({t:g.at,p:g.origin,c:'#d9a441',label:'◆ '+g.patterns[0],up:g.dir>0});return M;}
+function renderChartSide(){
+  const S=LC.sym,a=HS.get().filter(e=>e.bot&&e.sym===S).slice(0,5),risk=BOTC.get().bal*BOTC.get().risk/100;
+  $('lcBot').innerHTML=a.length?a.map(e=>tradeRow(e,risk)).join(''):'<div class="empty">No robot trades on this market.</div>';wireTradeRows($('lcBot'));
+  const g=SG.get().filter(x=>x.sym===S).slice(0,6);
+  $('lcSig').innerHTML=g.length?g.map(x=>`<div><div style="display:flex;justify-content:space-between;gap:8px"><b>${x.side} · ${x.tf} · ${x.patterns.join(' + ')}</b><span class="pill ${x.score>=70?'brass':''}">${x.score}</span></div><div class="hint" style="margin-top:2px">${esc(x.why.slice(0,2).join('; '))}. ${new Date(x.at).toISOString().slice(5,16).replace('T',' ')} UTC</div></div>`).join(''):`<div class="empty">${WL.get().includes(S)?'No early-move signals yet on this market.':'Add this market to your watchlist and the robot watches it for early moves.'}</div>`;
+}
 
 // ---- plan check card (v30)
 function addCheck(card,text,p){
@@ -837,7 +1296,7 @@ async function hourlyBars(sym,fromMs){
 async function autoResolve(force){
   if(resolving) return; const last=+store.get('ca_lastResolve')||0;
   if(!force&&Date.now()-last<15*60000) return;
-  const now=Date.now(), open=HS.get().filter(e=>e.st==='open'&&e.ord!=='WEEKLY OUTLOOK'&&now-e.id>36e5&&now-e.id<45*864e5);
+  const now=Date.now(), open=HS.get().filter(e=>e.st==='open'&&!e.bot&&e.ord!=='WEEKLY OUTLOOK'&&now-e.id>36e5&&now-e.id<45*864e5);
   if(!open.length) return;
   resolving=true; store.set('ca_lastResolve',String(now));
   const el=$('autoStat'); if(el) el.textContent='Checking open plans against the candles…';
@@ -882,9 +1341,9 @@ $('cV').value=VPP($('symbol').value);calc();
 // ---- shareable plan card
 async function planCard(btn){const card=btn&&btn.closest('.res'),sym=card?card.dataset.sym:'',g=parseFinal(card?card.dataset.raw||'':'');if(!g.decision){alert('No final plan found.');return;}
 const c=document.createElement('canvas');c.width=1080;c.height=1350;const x=c.getContext('2d'),F='sans-serif';
-x.fillStyle='#0e1117';x.fillRect(0,0,1080,1350);x.fillStyle='#161b24';x.fillRect(40,40,1000,1270);x.fillStyle='#2dd4a7';x.fillRect(40,40,1000,10);
-const dec=g.decision.toUpperCase(),col=dec.includes('BUY')?'#2dd4a7':dec.includes('SELL')?'#f4616b':'#8b94a5',T=(t,px,y,c2,b)=>{x.fillStyle=c2;x.font=(b?'bold ':'')+px+'px '+F;x.fillText(t,90,y);};
-T('EDGEVIEW',46,125,'#2dd4a7',1);T(new Date().toISOString().slice(0,16).replace('T',' ')+' UTC',30,175,'#8b94a5');
+x.fillStyle='#0b0f13';x.fillRect(0,0,1080,1350);x.fillStyle='#11171d';x.fillRect(40,40,1000,1270);x.fillStyle='#d9a441';x.fillRect(40,40,1000,10);
+const dec=g.decision.toUpperCase(),col=dec.includes('BUY')?'#3cc08e':dec.includes('SELL')?'#ea6259':'#8b94a5',T=(t,px,y,c2,b)=>{x.fillStyle=c2;x.font=(b?'bold ':'')+px+'px '+F;x.fillText(t,90,y);};
+T('EDGEVIEW',46,125,'#d9a441',1);T(new Date().toISOString().slice(0,16).replace('T',' ')+' UTC',30,175,'#8b94a5');
 T((sym||'').toUpperCase(),96,300,'#ffffff',1);T(dec+(g.order?'  ·  '+g.order.toUpperCase():''),58,390,col,1);
 const lad=['tp3','tp4','tp5','tp6'].map(k=>g[k]?String(g[k]).split('|')[0].trim():'').filter(Boolean);
 const rows=[['Entry',g.entry],['Entry 2',/^none/i.test(g['entry 2']||'')?'':g['entry 2']],['Stop loss',g['stop loss']],['TP1',g.tp1],['TP2',g.tp2],...(lad.length?[['TP3 to TP'+(2+lad.length),lad.join('  ·  ')]]:[]),['Probability',g.probability],['Valid until',g['valid until']]].filter(r=>r[1]);
@@ -894,14 +1353,26 @@ c.toBlob(async b=>{const f=new File([b],'edgeview-plan.png',{type:'image/png'});
 if(navigator.canShare&&navigator.canShare({files:[f]})){try{await navigator.share({files:[f],title:'Edgeview plan'});return;}catch(e){if(e.name==='AbortError')return;}}
 const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='edgeview-plan.png';a.click();},'image/png');}
 
-// ---- hamburger menu / views
-const TITLES={analyze:'Analyze',size:'Position size',journal:'History & journal',settings:'API keys'};
-function closeMenu(){$('drawer').classList.remove('open');$('drawerBg').hidden=true;}
-function go(v){document.querySelectorAll('.view').forEach(x=>x.hidden=x.id!=='v-'+v);document.querySelectorAll('#drawer a').forEach(a=>a.classList.toggle('on',a.dataset.v===v));$('viewTitle').textContent='Edgeview · '+TITLES[v];closeMenu();window.scrollTo(0,0);if(v==='journal')autoResolve(false);}
-$('menuBtn').onclick=()=>{$('drawer').classList.add('open');$('drawerBg').hidden=false;};
-$('drawerBg').onclick=closeMenu;
-document.querySelectorAll('#drawer a').forEach(a=>a.onclick=()=>go(a.dataset.v));
-go(store.get('ca_kAnthropic')?'analyze':'settings');
+// ---- navigation (v33): bottom tabs on phones, a side rail on wide screens, a sheet for the rest
+const TITLES={chart:'Chart',analyze:'Analyze',robot:'Robot',journal:'Journal',weekend:'Weekend engine',size:'Position size',settings:'Settings'};
+const TAB_OF={weekend:'more',size:'more',settings:'more'};
+function closeSheets(){['moreSheet','searchSheet'].forEach(id=>$(id).hidden=true);$('sheetBg').hidden=true;}
+function openSheet(id){closeSheets();$(id).hidden=false;$('sheetBg').hidden=false;}
+function closeMenu(){closeSheets();}
+function go(v){
+  if(v==='more'){openSheet('moreSheet');return;}
+  closeSheets();document.querySelectorAll('.view').forEach(x=>x.hidden=x.id!=='v-'+v);
+  const t=TAB_OF[v]||v;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.v===t));
+  $('viewTitle').textContent=TITLES[v]||'';window.scrollTo(0,0);store.set('ca_view',v);
+  if(v==='journal')autoResolve(false);
+  if(v==='chart'){if(!LC.bars.length||Date.now()-LC.at>90000)lcLoad(false);else lcDraw();}
+  if(v==='robot'){renderWL();renderBot();renderAlerts();markAlertsRead();}
+}
+document.querySelectorAll('#tabs button,#moreSheet [data-v]').forEach(b=>b.onclick=()=>go(b.dataset.v));
+$('sheetBg').onclick=closeSheets;
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeSheets();});
+renderTicker();renderWL();renderAlerts();
+go(store.get('ca_kAnthropic')?((['chart','analyze','robot','journal'].includes(store.get('ca_view'))&&store.get('ca_view'))||'chart'):'settings');
 
 // ==== WEEKEND PURE START
 const DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -934,7 +1405,7 @@ function weekReport(sym,daily,weekly,inter,crypto,price,now){
     const pw=done?rows[1]:rows[0];
     if(pw) t+=`\nPrevious week: high ${f2(+pw.high)}, low ${f2(+pw.low)}, close ${f2(+pw.close)}`;
     if(weekly.length>35) t+='\n'+indicators('1W',weekly);
-  } else t+='\nWeekly candles unavailable (plan or rate limit): use the weekly chart screenshot.';
+  } else t+='\nWeekly candles unavailable (plan or rate limit): weekly view is limited to the daily candles.';
   t+='\n'+indicators('1D',daily.slice(0,300));
   const yr=daily.slice(0,260);
   t+=`\n52-week high ${f2(Math.max(...yr.map(x=>+x.high)))}, low ${f2(Math.min(...yr.map(x=>+x.low)))} (price is ${((px/Math.max(...yr.map(x=>+x.high))-1)*100).toFixed(1)}% from the high)`;
@@ -959,7 +1430,7 @@ function mdW(s){const i=s.search(/^### *Final weekly plan/mi);if(i<0)return md1(
 // ==== WEEKEND PURE END
 
 // ==== WEEKEND UI
-const SYSTEM_W = `You are a weekend market-review analyst for forex, metals and crypto. Your job is to review everything that happened during the trading week and build the outlook and trade plan for the NEXT week. The user may upload plain screenshots of weekly, daily and 4H charts, screenshots of next week's economic calendar or news (Investing.com), and an optional note. The data section holds exact numbers calculated from candles: day-by-day candles for this week, weekly statistics, previous weeks, weekly and daily indicators, exact swing levels, weekly pivots, expected range, average Monday gap, intermarket moves, positioning and headlines. Prefer these exact numbers over levels estimated from images. Never invent data.
+const SYSTEM_W = `You are a weekend market-review analyst for forex, metals and crypto. Your job is to review everything that happened during the trading week and build the outlook and trade plan for the NEXT week. You receive the live economic calendar, recent headlines and an optional note. The data section holds exact numbers calculated from candles: day-by-day candles for this week, weekly statistics, previous weeks, weekly and daily indicators, exact swing levels, weekly pivots, expected range, average Monday gap, intermarket moves, positioning and headlines. Prefer these exact numbers over levels estimated from images. Never invent data.
 
 WEEK STATUS: the data says whether the week is COMPLETED or IN PROGRESS. If it is in progress, say the outlook is preliminary and the week numbers are partial. Crypto never closes, so there is no closed-market gap for it.
 
@@ -975,7 +1446,7 @@ Dollar index, yields, COT or funding and fear-greed, and what they imply. Use th
 ### Key levels for next week
 Exact prices: resistance 1 to 3, support 1 to 3, this week's high and low, previous week's high and low, weekly pivots, 52-week high or low if near.
 ### Next week's calendar
-From the screenshots: day, time in UTC, event, impact, forecast and previous. Mark the danger days and windows to avoid. If a screenshot's timezone is unclear say so. If none was uploaded, say so and remind the user to check for the usual high-impact events.
+From the live calendar block: day, time in UTC, event, impact, forecast and previous. Mark the danger days and windows to avoid. If the feed has no events for next week yet, say so and remind the user to check for the usual high-impact events.
 ### Scenarios for next week
 Bullish, Base or Range, and Bearish. Each has a probability in percent (total 100%, no scenario above 60%), the trigger that confirms it (exact level and timeframe close), the target and the invalidation level.
 ### Expected range
@@ -1090,11 +1561,10 @@ function saveWeek(text,sym){const g=parseWeekFinal(text),a=HS.get();a.unshift({i
     const d=document.createElement('details');d.style.cssText='margin-top:14px;border-top:1px solid var(--line);padding-top:10px';
     d.innerHTML=`<summary style="cursor:pointer;font-weight:600">Pair ${n} (optional)</summary>
     <div class="row"><div><label>Symbol</label><input id="wSymbol${n}" placeholder="e.g. ${n==2?'EUR/USD':'BTC/USD'}"></div><div><label>Market</label><select id="wMarket${n}"><option value="forex">Forex / Metals</option><option value="crypto">Crypto</option></select></div></div>
-    <label>Charts for this pair: weekly, daily, 4H (up to 6)</label>
+    <div hidden><label>Charts for this pair: weekly, daily, 4H (up to 6)</label>
     <div class="drop" id="dropW${n}">Tap to add charts</div>
     <input id="fileW${n}" type="file" accept="image/*" multiple hidden><input id="fileWAlt${n}" type="file" accept=".jpg,.jpeg,.png,.webp,.gif" multiple hidden>
-    <button class="sec" id="altBtnW${n}" style="margin-top:8px">Pick multiple from Files</button><div class="thumbs" id="thumbsW${n}"></div>
-    <div class="hint">Extra pairs run only when they have at least one chart.</div>`;
+    <button class="sec" id="altBtnW${n}" style="margin-top:8px">Pick multiple from Files</button><div class="thumbs" id="thumbsW${n}"></div></div>`;
     box.appendChild(d);
     lists['wcharts'+n]=[];zones['wcharts'+n]={drop:$('dropW'+n),file:$('fileW'+n),alt:$('fileWAlt'+n),altBtn:$('altBtnW'+n),thumbs:$('thumbsW'+n),max:6};
     attachZone('wcharts'+n);
@@ -1105,7 +1575,7 @@ function saveWeek(text,sym){const g=parseWeekFinal(text),a=HS.get();a.unshift({i
   });})();
 function activeWPairs(){const P=[{sym:$('wSymbol').value.trim(),market:$('wMarket').value,key:'wcharts'}];
   for(const n of [2,3])P.push({sym:$('wSymbol'+n).value.trim(),market:$('wMarket'+n).value,key:'wcharts'+n});
-  return P.filter((p,i)=>p.sym&&(i===0||lists[p.key].length));}
+  return P.filter(p=>p.sym);}
 function newWResult(sym){
   const d=document.createElement('div');d.className='card wres';d.dataset.sym=sym;
   d.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px"><b>${esc(sym.toUpperCase())} · weekend outlook</b><button class="sec rc-copy">Copy</button></div><details class="rc-live"><summary class="hint" style="cursor:pointer">Week data used</summary><div class="rc-livetxt" style="font-size:13px;color:var(--mute);white-space:pre-wrap"></div></details><div class="rc-out"></div>`;
@@ -1117,7 +1587,6 @@ $('wGo').onclick=async()=>{
   const ak=$('kAnthropic').value.trim();if(!ak){go('settings');return alert('Enter your Anthropic API key');}
   for(const n of [2,3])if(lists['wcharts'+n].length&&!$('wSymbol'+n).value.trim())return alert('Pair '+n+' has charts but no symbol.');
   const pairs=activeWPairs();if(!pairs.length)return alert('Enter a symbol.');
-  if(pairs.length===1&&!lists.wcharts.length&&!confirm('No charts added. Run on the numbers only?'))return;
   saveAll('Saved ✓');const btn=$('wGo');btn.disabled=true;
   const tk=$('kTwelve').value.trim(),fk=$('kFinnhub').value.trim(),N=pairs.length,deep=$('depth').value==='deep';
   $('wResults').innerHTML='';
@@ -1128,10 +1597,11 @@ $('wGo').onclick=async()=>{
     tk,sleep,now:()=>Date.now(),
     fetchLive:async p=>{const crypto=p.market==='crypto';let data='',news='',errs=[];
       try{data=tk?await weekTwelve(p.sym,tk):(crypto?await weekBinance(p.sym):'');}catch(e){errs.push(e.message);if(crypto){try{data=await weekBinance(p.sym);}catch(e2){errs.push('Binance: '+e2.message);}}}
-      if(!tk&&!crypto)errs.push('Gold and forex need a Twelve Data key for exact weekly numbers. Running from the screenshots only.');
+      if(!tk&&!crypto)errs.push('Gold and forex need a Twelve Data key for the weekly numbers.');
       if(fk){try{news=await finnhub(p.market,p.sym,fk);}catch(e){errs.push('Finnhub: '+e.message);}}
       try{const ps=await positioning(p.sym,p.market);if(ps)data+=(data?'\n':'')+ps;}catch(e){}
       try{const mc=await fredMacro($('kFred').value.trim());if(mc)data+=(data?'\n':'')+mc;}catch(e){}
+      try{const ev=await liveCalendar();if(ev){const ct=calText(calendarFor(ev,p.sym,Date.now()),Date.now());data+=(data?'\n':'')+(ct||'LIVE ECONOMIC CALENDAR: the feed has no upcoming medium or high impact events for '+calCcys(p.sym).join('/')+' yet (it usually lists next week from Sunday).');}}catch(e){}
       errs.push(...srcLog.splice(0));
       return {live:data,news,errs,at:new Date().toISOString()};},
     digestNews:async()=>{if(!lists.wnews.length)return '';btn.textContent='Reading the calendar once…';return await makeDigest(ak,'wnews');},
@@ -1141,7 +1611,7 @@ $('wGo').onclick=async()=>{
       error:(i,e)=>{q(i).innerHTML=`<span class="err">${esc(String(e&&e.message||e))}</span>`;}
     },
     analyze:async(p,L,digest,i)=>{
-      if(!L.live&&!lists[p.key].length)throw new Error(L.errs.join('; ')||'No data and no charts for this pair.');
+      if(!L.live&&!lists[p.key].length)throw new Error(L.errs.join('; ')||'No data for this pair. Check the symbol and your Twelve Data key.');
       const content=[];
       if(lists[p.key].length)content.push({type:'text',text:`CHART SCREENSHOTS for ${p.sym} (${lists[p.key].length}, weekly/daily/4H, any order):`},...lists[p.key].map(imgBlock));
       if(digest)content.push({type:'text',text:"NEXT WEEK'S CALENDAR / NEWS (transcribed from the user's screenshots):\n"+digest});
@@ -1151,7 +1621,7 @@ $('wGo').onclick=async()=>{
       const card=cards[i];
       const co=await claudeStream(ak,SYSTEM_W,content,t=>{q(i).innerHTML=mdW(t);card.dataset.raw=t;if(!scrolled&&t){scrolled=true;card.scrollIntoView({behavior:'smooth'});}btn.textContent=tag(i)+'analyzing the week… ('+t.length+' chars)';},deep);
       const text=co.text,stop=co.stop;
-      if(stop==='max_tokens')q(i).innerHTML+='<p class="err">The answer was cut off. Run this pair again or remove a few screenshots.</p>';
+      if(stop==='max_tokens')q(i).innerHTML+='<p class="err">The answer was cut off. Run this pair again.</p>';
       if(!text.trim())throw new Error(emptyMsg(co));
       saveWeek(text,p.sym);renderHist();return text;
     }
@@ -1379,7 +1849,7 @@ function candleTable(label,vals,n){const b=toBars(vals).slice(-n),d=label==='1D'
 // Candlestick chart on a canvas. bars oldest-first {t,o,h,l,c}. o: {title, emas:[[n,color]], lines:[{p,c,label,dash}], zones:[{lo,hi,c}], count, end}
 function drawCandles(cv,bars,o){
   o=o||{};const ctx=cv.getContext('2d'),W=cv.width,Hh=cv.height,pr=W>700?1:1;
-  const C={bg:'#0e1117',grid:'#1d2330',txt:'#8b94a5',up:'#2dd4a7',dn:'#f4616b',wick:'#9aa3b2'};
+  const C={bg:'#0d1217',grid:'#19212a',txt:'#8a96a1',up:'#3cc08e',dn:'#ea6259',wick:'#9aa3b2'};
   ctx.fillStyle=C.bg;ctx.fillRect(0,0,W,Hh);
   if(!bars||bars.length<2){ctx.fillStyle=C.txt;ctx.font='14px system-ui';ctx.fillText('No candles',20,30);return;}
   const n=Math.min(bars.length,Math.max(20,o.count||120)),end=Math.min(bars.length,o.end||bars.length),v=bars.slice(Math.max(0,end-n),end);
@@ -1407,9 +1877,13 @@ function drawCandles(cv,bars,o){
   // horizontal lines (plan, last price)
   const last=v[v.length-1].c,lines=[...(o.lines||[]),{p:last,c:'#e6e9ef',label:'',dash:[2,3]}];
   for(const l of lines){const y=Y(l.p);if(y<top-2||y>Hh-bot+2)continue;ctx.strokeStyle=l.c;ctx.lineWidth=l.label?1.5:1;ctx.setLineDash(l.dash||[]);ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W-axW,y);ctx.stroke();ctx.setLineDash([]);
-    ctx.fillStyle=l.c;ctx.fillRect(W-axW,y-9,axW,18);ctx.fillStyle='#0e1117';ctx.textBaseline='middle';ctx.fillText(f2(l.p),W-axW+4,y);if(l.label){ctx.fillStyle=l.c;ctx.fillText(l.label,8,y-9);}}
+    ctx.fillStyle=l.c;ctx.fillRect(W-axW,y-9,axW,18);ctx.fillStyle='#0b0f13';ctx.textBaseline='middle';ctx.fillText(f2(l.p),W-axW+4,y);if(l.label){ctx.fillStyle=l.c;ctx.fillText(l.label,8,y-9);}}
+  // markers: robot fills and exits, early-move signals (o.marks: {t, p, c, label, up})
+  for(const m of o.marks||[]){let i=-1;for(let j=0;j<v.length;j++){if(v[j].t<=m.t)i=j;else break;}if(i<0||v[i].t+((v[1]&&v[0])?v[1].t-v[0].t:0)<m.t)continue;
+    const x=X(i),y=Y(m.p);if(y<top||y>Hh-bot)continue;ctx.fillStyle=m.c;ctx.beginPath();ctx.arc(x,y,4,0,Math.PI*2);ctx.fill();
+    ctx.font='bold 11px system-ui';ctx.textBaseline='middle';ctx.fillText(m.label,Math.min(x+7,W-axW-ctx.measureText(m.label).width-4),y+(m.up?12:-12));}
   // title + legend
-  ctx.textBaseline='alphabetic';ctx.fillStyle='#e6e9ef';ctx.font='bold 14px system-ui';ctx.fillText(o.title||'',8,18);
+  ctx.textBaseline='alphabetic';ctx.fillStyle='#ebe6dc';ctx.font='bold 14px system-ui';ctx.fillText(o.title||'',8,18);
   let lx=8+ctx.measureText(o.title||'').width+14;ctx.font='12px system-ui';
   for(const e of em){ctx.fillStyle=e.col;ctx.fillText('EMA'+e.k,lx,18);lx+=58;}
 }
@@ -1485,32 +1959,32 @@ function adjProb(prob,entries){
 // Works out what happened to a saved plan from hourly candles (oldest first, {t,o,h,l,c}).
 // Returns {st:'win'|'loss'|'skip', hit?, note, fillT} when settled, {pending:true, filled, hit, note} when not yet, or null if the plan can't be read.
 // Conservative: a candle that touches both the stop and a target counts as the stop; a target is not counted on the candle that filled the order.
-function resolveOutcome(e,bars,now){
+function resolveOutcome(e,bars,now,barMs){
   const dec=String(e.dec||'').toUpperCase(),side=dec.includes('BUY')?1:dec.includes('SELL')?-1:0;
   const en=_num(e.entry),sl=_num(e.sl),tp1=_num(e.tp1);
   if(!side||en==null||sl==null||tp1==null||side*(sl-en)>=0||side*(tp1-en)<=0) return null;
   const T=x=>side*x,market=/MARKET/i.test(e.ord||''),vm=String(e.valid||'').match(/(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})/);
   const validT=vm?Date.parse(vm[1]+'T'+vm[2].padStart(2,'0')+':'+vm[3]+':00Z'):e.id+24*36e5;
   const lad=e.tps&&e.tps.length>=3?e.tps.map(x=>x.px):[tp1];
-  const start=Math.ceil(e.id/36e5)*36e5; // first full hour after the plan was made
-  let filled=market,fillT=market?e.id:null,k=0,last=null;
+  const bm=barMs||36e5,start=Math.ceil(e.id/bm)*bm; // first full bar after the plan was made
+  let filled=market,fillT=market?e.id:null,k=0,last=null,lastP=null;
   for(const b of bars){
-    if(b.t<start) continue; last=b.t;
+    if(b.t<start) continue; last=b.t; lastP=b.c;
     const H=T(b.h),L=T(b.l),hi=side>0?H:T(b.l),lo=side>0?L:T(b.h); // favourable extreme, adverse extreme
     let fresh=false;
-    if(!filled){ if(b.t>=validT) return {st:'skip',note:'Expired before the entry was reached.'}; if(lo<=T(en)){filled=true;fillT=b.t;fresh=true;} else continue; }
+    if(!filled){ if(b.t>=validT) return {st:'skip',note:'Expired before the entry was reached.',exitT:b.t}; if(lo<=T(en)){filled=true;fillT=b.t;fresh=true;} else continue; }
     const stopLv=k>0?T(en):T(sl);
     if(lo<=stopLv){
-      if(k===0) return {st:'loss',note:'Stop loss hit'+(fresh?' in the hour the order filled':'')+'.',fillT};
-      return {st:'win',hit:k,note:`TP${k} reached, then the rest closed at break-even.`,fillT};
+      if(k===0) return {st:'loss',note:'Stop loss hit'+(fresh?' in the candle the order filled':'')+'.',fillT,exitT:b.t,exitP:sl};
+      return {st:'win',hit:k,note:`TP${k} reached, then the rest closed at break-even.`,fillT,exitT:b.t,exitP:en};
     }
     if(!fresh) while(k<lad.length&&hi>=T(lad[k])) k++;
-    if(lad.length===1&&k>=1) return {st:'win',hit:1,note:'TP1 hit before the stop.',fillT};
-    if(k>=lad.length) return {st:'win',hit:k,note:'Every target reached.',fillT};
+    if(lad.length===1&&k>=1) return {st:'win',hit:1,note:'TP1 hit before the stop.',fillT,exitT:b.t,exitP:tp1};
+    if(k>=lad.length) return {st:'win',hit:k,note:'Every target reached.',fillT,exitT:b.t,exitP:lad[lad.length-1]};
   }
-  if(!filled&&last!=null&&last>=validT) return {st:'skip',note:'Expired before the entry was reached.'};
+  if(!filled&&last!=null&&last>=validT) return {st:'skip',note:'Expired before the entry was reached.',exitT:last};
   if(!filled&&now>validT+2*36e5&&last==null) return null;
-  return {pending:true,filled,hit:k,fillT,note:filled?(k?`Filled; TP${k} reached so far, still running.`:'Filled and still running.'):'Not filled yet.'};
+  return {pending:true,filled,hit:k,fillT,lastP,lastT:last,note:filled?(k?`Filled; TP${k} reached so far, still running.`:'Filled and still running.'):'Not filled yet.'};
 }
 // ==== RESOLVE PURE END
 
@@ -1554,7 +2028,7 @@ function calendarFor(events,sym,now){
 function calText(evs,now){
   if(!evs.length) return '';
   const h=x=>{const d=(x.t-now)/36e5;return d<0?`${(-d).toFixed(1)}h ago`:`in ${d<48?d.toFixed(1)+'h':(d/24).toFixed(1)+' days'}`;};
-  return 'LIVE ECONOMIC CALENDAR (ForexFactory weekly feed, times in UTC; actual results are not in this feed, so read them from screenshots or headlines): '+evs.slice(0,18).map(x=>`${new Date(x.t).toISOString().slice(0,16).replace('T',' ')} ${String(x.country).toUpperCase()} ${x.title} [${x.impact}] ${h(x)}${x.forecast?`, forecast ${x.forecast}`:''}${x.previous?`, previous ${x.previous}`:''}`).join('; ');
+  return 'LIVE ECONOMIC CALENDAR (ForexFactory weekly feed, times in UTC; actual results are not in this feed, so take them from the headlines): '+evs.slice(0,18).map(x=>`${new Date(x.t).toISOString().slice(0,16).replace('T',' ')} ${String(x.country).toUpperCase()} ${x.title} [${x.impact}] ${h(x)}${x.forecast?`, forecast ${x.forecast}`:''}${x.previous?`, previous ${x.previous}`:''}`).join('; ');
 }
 // High-impact events between now and an order's expiry.
 function calClash(evs,now,until){return (evs||[]).filter(x=>/high/i.test(x.impact||'')&&x.t>=now&&x.t<=(until||now+24*36e5));}
