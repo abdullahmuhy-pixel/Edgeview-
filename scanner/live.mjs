@@ -15,6 +15,7 @@ const require = createRequire(import.meta.url);
 const D = require('../detect.js'), TA = require('../ta.js');
 import { derivCode, isSynth, synthCode, synthBrief, derivCandles, SYNTH_LIST } from './deriv.mjs';
 import { derivBroker, sizeMult, tpMoney } from './deriv-trade.mjs';
+import { blindCheck, verdict, verdictLine } from './blind.mjs';
 const crypto = globalThis.crypto || wc;
 
 const env = process.env, now = +env.LIVE_NOW || Date.now();
@@ -160,7 +161,7 @@ export async function run() {
   const sync = await ghGet('edgeview-sync.json'); if (!sync) { log('no cloud memory yet: turn on sync in the app'); return; }
   let mem; try { mem = await openBox(sync.box, PASS); } catch (e) { log('cannot decrypt the cloud memory: EDGEVIEW_PASSPHRASE must equal the backup passphrase'); return; }
   const kv = k => { try { return JSON.parse((mem.kv && mem.kv[k] && mem.kv[k][0]) || 'null'); } catch (e) { return (mem.kv && mem.kv[k] && mem.kv[k][0]) || null; } };
-  const M = defaults(kv('ev_live')), style = (mem.kv && mem.kv.ev_style && mem.kv.ev_style[0]) || '', goals = kv('ev_goals') || {};
+  const M = { ...defaults(kv('ev_live')), ...(kv('ev_blind') === 0 ? { blind: false } : {}) }, style = (mem.kv && mem.kv.ev_style && mem.kv.ev_style[0]) || '', goals = kv('ev_goals') || {};
   BASE = env.METAAPI_BASE || `https://mt-client-api-v1.${M.region || 'london'}.agiliumtrade.ai`;
   const prev = await ghGet('edgeview-live-state.json').catch(() => null);
   let S = { log: [], trades: [], calls: {}, sessDone: {}, sym: {} };
@@ -229,9 +230,13 @@ export async function run() {
         const p = await claude(M.model, LIVE_SYS, `${ctx}\n\nINSTRUMENT ${sym}\n${data}`);
         const v = validPlan(p, price, M.minRR, atrN);
         if (typeof v === 'string') { await note(`${sym}: no trade (${v}${p && p.why ? ': ' + p.why : ''})`); continue; }
+        const BVV = M.blind === false ? null : verdict(await blindCheck({ ak: AK, base: ANTH, m15: a.closed, h1: b.closed, h4, px: px0 }).catch(e => { log(sym, 'blind check failed', e.message); return null; }), v.side);
+        if (BVV) log(sym, verdictLine(BVV));
+        if (BVV && BVV.v === 'disagree') { await note(`${sym}: no trade (the blind second opinion disagreed: it sees ${BVV.side > 0 ? 'BUY' : 'SELL'} from the candles alone${BVV.reason ? ': ' + BVV.reason : ''})`); continue; }
         // size from the account currency tick value; never risk more than the room left under the daily and overall limits
         let riskMoney = acct.balance * Math.min(M.risk, 2) / 100;
         const streak = (() => { let n = 0; for (const t of S.trades) { if (t.st === 'loss') n++; else if (t.st === 'win') break; } return n; })(); if (streak >= 3) riskMoney /= 2;
+        if (BVV && (BVV.v === 'unclear' || BVV.v === 'neutral')) riskMoney /= 2;          // direction not confirmed by the blind check: half size
         riskMoney = Math.min(riskMoney, L.dayRoom * 0.9, L.ddRoom * 0.9);
         if (!(riskMoney > 0)) { await note(`${sym}: skipped, no room left under the loss limits`); continue; }
         let vol = Math.min(lots(riskMoney, v.risk, spec, price), +M.maxLot || 1);
@@ -246,10 +251,10 @@ export async function run() {
           ids.push({ cid: id + i, orderId: r.orderId || null, positionId: r.positionId || null, vol: lv, tp });
         }
         S.day.trades++;
-        S.trades.unshift({ id, at: now, sym, bsym, side: v.side > 0 ? 'BUY' : 'SELL', order: p.order, entry: v.entry, sl: v.sl, tps: v.tps, vol, riskMoney: +riskMoney.toFixed(2), rr: +v.rr.toFixed(2), conf: p.confidence, why: p.why, manage: p.manage, legs: ids, st: 'open' });
+        S.trades.unshift({ id, at: now, sym, bsym, side: v.side > 0 ? 'BUY' : 'SELL', order: p.order, entry: v.entry, sl: v.sl, tps: v.tps, vol, riskMoney: +riskMoney.toFixed(2), rr: +v.rr.toFixed(2), conf: p.confidence, why: p.why, manage: p.manage, legs: ids, st: 'open', ...(BVV ? { bv: BVV.v } : {}) });
         S.trades = S.trades.slice(0, 300);
         await note(`${sym}: placed ${p.order} ${v.side > 0 ? 'BUY' : 'SELL'} ${vol} lots at ${f2(v.entry)}, stop ${f2(v.sl)}, targets ${v.tps.map(f2).join(' / ')}, risking ${riskMoney.toFixed(2)} ${acct.currency}.`,
-          `🤖 <b>Edgeview live: ${esc(sym)} ${v.side > 0 ? 'BUY' : 'SELL'} ${esc(p.order)}</b>\nEntry ${f2(v.entry)} | SL ${f2(v.sl)} | TP ${v.tps.map(f2).join(' / ')}\n${vol} lots, risk ${riskMoney.toFixed(2)} ${esc(acct.currency)} (R:R ${v.rr.toFixed(2)})\n${esc(p.why || '')}`);
+          `🤖 <b>Edgeview live: ${esc(sym)} ${v.side > 0 ? 'BUY' : 'SELL'} ${esc(p.order)}</b>\nEntry ${f2(v.entry)} | SL ${f2(v.sl)} | TP ${v.tps.map(f2).join(' / ')}\n${vol} lots, risk ${riskMoney.toFixed(2)} ${esc(acct.currency)} (R:R ${v.rr.toFixed(2)})\n${esc(p.why || '')}${BVV ? '\n' + esc(verdictLine(BVV)) + (BVV.v === 'agree' ? '' : ', half size') : ''}`);
       } catch (e) { await note(`${sym}: error ${e.message || e}`); }
     }
     await save();
@@ -354,8 +359,12 @@ async function runDeriv({ M, S, note, save, style, goals }) {
         if (p && p.decision === 'TRADE' && p.order !== 'MARKET') { await note(`${sym}: no trade (the plan needs a ${p.order} order; Deriv multipliers fill at market only)`); continue; }
         const v = validPlan(p, { bid: spot, ask: spot }, M.minRR, atr);
         if (typeof v === 'string') { await note(`${sym}: no trade (${v}${p && p.why ? ': ' + p.why : ''})`); continue; }
+        const BVV = M.blind === false ? null : verdict(await blindCheck({ ak: AK, base: ANTH, m15: a.closed, h1: b.closed, h4, px: +spot }).catch(e => { log(sym, 'blind check failed', e.message); return null; }), v.side);
+        if (BVV) log(sym, verdictLine(BVV));
+        if (BVV && BVV.v === 'disagree') { await note(`${sym}: no trade (the blind second opinion disagreed: it sees ${BVV.side > 0 ? 'BUY' : 'SELL'} from the candles alone${BVV.reason ? ': ' + BVV.reason : ''})`); continue; }
         let riskMoney = acct.balance * Math.min(M.risk, 2) / 100;
         const streak = (() => { let n = 0; for (const t of S.trades) { if (t.st === 'loss') n++; else if (t.st === 'win') break; } return n; })(); if (streak >= 3) riskMoney /= 2;
+        if (BVV && (BVV.v === 'unclear' || BVV.v === 'neutral')) riskMoney /= 2;          // direction not confirmed by the blind check: half size
         riskMoney = Math.min(riskMoney, L.dayRoom * 0.9, L.ddRoom * 0.9);
         if (!(riskMoney > 0)) { await note(`${sym}: skipped, no room left under the loss limits`); continue; }
         const { ms, minStake } = await B.mults(code);
@@ -369,10 +378,10 @@ async function runDeriv({ M, S, note, save, style, goals }) {
         }
         S.day.trades++;
         const id = 'EV' + now.toString(36).slice(-5) + Math.random().toString(36).slice(2, 4);
-        S.trades.unshift({ id, at: now, sym, bsym: code, side: v.side > 0 ? 'BUY' : 'SELL', order: 'MARKET', entry: v.entry, sl: v.sl, tps: v.tps, vol: legs.map(l => `${l.stake}x${l.mult}`).join(' + '), riskMoney: +riskMoney.toFixed(2), rr: +v.rr.toFixed(2), conf: p.confidence, why: p.why, manage: p.manage, legs, st: 'open' });
+        S.trades.unshift({ id, at: now, sym, bsym: code, side: v.side > 0 ? 'BUY' : 'SELL', order: 'MARKET', entry: v.entry, sl: v.sl, tps: v.tps, vol: legs.map(l => `${l.stake}x${l.mult}`).join(' + '), riskMoney: +riskMoney.toFixed(2), rr: +v.rr.toFixed(2), conf: p.confidence, why: p.why, manage: p.manage, legs, st: 'open', ...(BVV ? { bv: BVV.v } : {}) });
         S.trades = S.trades.slice(0, 300);
         await note(`${sym}: bought ${v.side > 0 ? 'MULTUP' : 'MULTDOWN'} at ${f2(v.entry)}, stop ${f2(v.sl)}, targets ${v.tps.map(f2).join(' / ')}, stake ${legs.map(l => l.stake + ' x' + l.mult).join(' + ')}, risking ${riskMoney.toFixed(2)} ${acct.currency}.`,
-          `🤖 <b>Edgeview live (Deriv): ${esc(sym)} ${v.side > 0 ? 'BUY' : 'SELL'}</b>\nEntry ${f2(v.entry)} | SL ${f2(v.sl)} | TP ${v.tps.map(f2).join(' / ')}\nStake ${legs.map(l => l.stake + ' x' + l.mult).join(' + ')}, risk ${riskMoney.toFixed(2)} ${esc(acct.currency)} (R:R ${v.rr.toFixed(2)})\n${esc(p.why || '')}`);
+          `🤖 <b>Edgeview live (Deriv): ${esc(sym)} ${v.side > 0 ? 'BUY' : 'SELL'}</b>\nEntry ${f2(v.entry)} | SL ${f2(v.sl)} | TP ${v.tps.map(f2).join(' / ')}\nStake ${legs.map(l => l.stake + ' x' + l.mult).join(' + ')}, risk ${riskMoney.toFixed(2)} ${esc(acct.currency)} (R:R ${v.rr.toFixed(2)})\n${esc(p.why || '')}${BVV ? '\n' + esc(verdictLine(BVV)) + (BVV.v === 'agree' ? '' : ', half size') : ''}`);
       } catch (e) { await note(`${sym}: error ${e.message || e}`); }
     }
     await save();

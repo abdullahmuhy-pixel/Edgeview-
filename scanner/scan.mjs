@@ -10,6 +10,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const D = require('../detect.js');
 import { derivCode, isSynth, synthCode, synthBrief, derivCandles } from './deriv.mjs';
+import { blindCheck, verdict, verdictLine } from './blind.mjs';
 
 const env = process.env, now = +env.SCAN_NOW || Date.now();   // SCAN_NOW only for tests
 const AK = env.ANTHROPIC_API_KEY || '', TK = env.TWELVE_DATA_KEY || '', TG = env.TELEGRAM_BOT_TOKEN || '', CHAT = env.TELEGRAM_CHAT_ID || '';
@@ -116,21 +117,26 @@ for (const sym of pairs) {
     for (const x of sig) if (!S.sig.some(p => p.sym === sym && p.tf === x.tf && p.at === x.at && p.side === x.side)) S.sig.unshift({ sym, tf: x.tf, side: x.side, score: x.score, atr: x.atr, price: x.price, at: x.at, patterns: x.patterns, why: x.why.filter(w => /trend/.test(w)), seen: now });
     const track = [...new Set(sig.map(x => D.sigVerdict(x, S.sig).line).filter(Boolean))];
     const data = (isSynth(sym) ? synthBrief(sym) + '\n' : '') + D.brief(sym, a.closed, b.closed, h4) + `\nPRICE NOW ${f2(pxNow)}\nEARLY-MOVE SIGNALS (last hour):\n` + (sig.length ? sig.map(sigText).join('\n') : 'none') + (track.length ? '\nPAST FOLLOW-THROUGH OF THESE SIGNAL TYPES (1 ATR with the signal before 1 ATR against): ' + track.join(' ') : '');
+    const blind = async dir => { if (W.blind === false || !AK || !/BUY|SELL/.test(dir || '')) return null; const V = verdict(await blindCheck({ ak: AK, model, m15: a.closed, h1: b.closed, h4, px: pxNow }).catch(e => { log(sym, 'blind check failed', e.message); return null; }), dir === 'BUY' ? 1 : -1); if (V) log(sym, verdictLine(V)); return V; };
     if (doSession) {
       const v = await haiku(`${sess.name} session open screen. Current time ${sastNow(now)}.\n${data}`);
       log(sym, 'session', JSON.stringify(v));
-      if (v && v.opportunity === 'yes' && (+v.quality || 0) >= 3 && !recent(sym, v.direction)) {
+      const BV = v && v.opportunity === 'yes' && (+v.quality || 0) >= 3 && !recent(sym, v.direction) ? await blind(v.direction) : null;
+      if (BV && BV.v === 'disagree') log(sym, 'session alert dropped: the blind check disagreed');
+      else if (v && v.opportunity === 'yes' && (+v.quality || 0) >= 3 && !recent(sym, v.direction)) {
         sent.push({ sym, side: v.direction, t: now });
-        await telegram(`🔔 <b>${esc(sym)}: possible ${esc(v.direction)}</b> (${esc(v.quality)}/5) at the ${esc(sess.name)} open\n🕒 ${sast(now)}\n${esc(v.setup)}. ${esc(v.why)}\nTrigger: ${esc(v.trigger)}\nInvalidation: ${v.invalidation != null ? esc(f2(+v.invalidation)) : 'n/a'}\nPrice ${esc(f2(pxNow))}. Open Edgeview for a full analysis.`);
+        await telegram(`🔔 <b>${esc(sym)}: possible ${esc(v.direction)}</b> (${esc(v.quality)}/5) at the ${esc(sess.name)} open\n🕒 ${sast(now)}\n${esc(v.setup)}. ${esc(v.why)}\nTrigger: ${esc(v.trigger)}\nInvalidation: ${v.invalidation != null ? esc(f2(+v.invalidation)) : 'n/a'}\nPrice ${esc(f2(pxNow))}.${BV ? '\n' + esc(verdictLine(BV)) : ''}\nOpen Edgeview for a full analysis.`);
       }
     } else if (W.earlyDetection !== false && sig.length && sig[0].score >= minScore && !recent(sym, sig[0].side) && D.sigVerdict(sig[0], S.sig).weak && sig[0].score < minScore + 15) {
       log(sym, 'skipped weak signal type', D.sigVerdict(sig[0], S.sig).line);
     } else if (W.earlyDetection !== false && sig.length && sig[0].score >= minScore && !recent(sym, sig[0].side)) {
       const s = sig[0], v = await haiku(`An early-move signal fired in the last hour. Confirm or reject it. Current time ${sastNow(now)}.\n${data}`);
       log(sym, 'early', s.side, s.score, JSON.stringify(v));
-      if (!AK || (v && v.opportunity !== 'no' && (v.direction === s.side || v.direction === 'NONE'))) {
+      const ok = !AK || (v && v.opportunity !== 'no' && (v.direction === s.side || v.direction === 'NONE')), BV = ok ? await blind(s.side) : null;
+      if (BV && BV.v === 'disagree') log(sym, 'early alert dropped: the blind check disagreed');
+      else if (ok) {
         sent.push({ sym, side: s.side, t: now });
-        await telegram(`⚡ <b>${esc(sym)}: early ${esc(s.side)} move</b> (${esc(s.tf)}, score ${s.score})\n🕒 ${sast(now)}\n${esc(v ? `${v.setup}. ${v.why}` : s.why.join('; '))}\n${v ? 'Trigger: ' + esc(v.trigger) + '\n' : ''}${(() => { const t = D.sigVerdict(s, S.sig).line; return t ? esc(t) + '\n' : ''; })()}Origin ${esc(f2(s.origin))}, stop idea ${esc(f2(s.stopIdea))}, price ${esc(f2(pxNow))}. Open Edgeview for a full analysis.`);
+        await telegram(`⚡ <b>${esc(sym)}: early ${esc(s.side)} move</b> (${esc(s.tf)}, score ${s.score})\n🕒 ${sast(now)}\n${esc(v ? `${v.setup}. ${v.why}` : s.why.join('; '))}\n${v ? 'Trigger: ' + esc(v.trigger) + '\n' : ''}${(() => { const t = D.sigVerdict(s, S.sig).line; return t ? esc(t) + '\n' : ''; })()}Origin ${esc(f2(s.origin))}, stop idea ${esc(f2(s.stopIdea))}, price ${esc(f2(pxNow))}.${BV ? '\n' + esc(verdictLine(BV)) : ''}\nOpen Edgeview for a full analysis.`);
       }
     } else log(sym, 'no alert', sig.length ? `best ${sig[0].side} ${sig[0].score}` : 'no signal');
   } catch (e) { log(sym, 'error', e.message || e); }
