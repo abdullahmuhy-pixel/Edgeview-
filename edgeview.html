@@ -254,9 +254,13 @@
     <label style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="syncOn"> Keep everything in sync across my devices (analyses, journal, robot, chats, goals and settings)</label>
     <div class="row" style="margin-top:8px"><button class="sec" id="syncNow">Sync now</button><button class="sec" id="syncPull">Restore from cloud</button></div>
     <label style="margin-top:12px">Use Edgeview on another phone</label>
-    <div class="row"><button class="sec" id="linkMake">Create a link code</button></div>
-    <textarea id="linkOut" rows="3" readonly hidden style="width:100%;font-size:11px"></textarea>
-    <div class="row"><input id="linkIn" placeholder="On the new phone: paste the link code here" autocomplete="off"><button class="sec" id="linkUse">Link this phone</button></div>
+    <div class="hint" style="margin:2px 0 6px"><b>On this device:</b> tap Create a link code, then Share it to yourself (WhatsApp, email).</div>
+    <div class="row"><button class="sec" id="linkMake">Create a link code</button><button class="sec" id="linkShare" hidden>Share the code</button></div>
+    <textarea id="linkOut" rows="4" readonly hidden style="width:100%;font-size:11px"></textarea>
+    <div class="hint" style="margin:10px 0 6px"><b>On the other device:</b> paste the code, type the same backup passphrase, tap Link this device.</div>
+    <textarea id="linkIn" rows="3" placeholder="Paste the link code here (it starts with EVLINK1.)" autocomplete="off" style="width:100%;font-size:12px"></textarea>
+    <div class="row"><input id="linkPass" type="password" autocomplete="off" placeholder="Backup passphrase"><button class="sec" id="linkPaste" style="width:auto">Paste</button></div>
+    <button id="linkUse" style="width:100%;margin-top:8px">Link this device</button>
     <div class="hint" id="linkStat">The link code carries your API keys, GitHub token and repository, encrypted with your backup passphrase. On the new phone type the passphrase above, paste the code and tap Link this phone: your full history follows.</div>
     <div class="hint" id="syncStat">The backup is encrypted in this browser (AES-256) and saved to the edgeview-data branch of your repository, so GitHub Pages is not rebuilt and nobody can read it without the passphrase. Open the app on another device with the same token and passphrase to share one memory.</div>
     <div class="row" style="margin-top:12px">
@@ -1211,7 +1215,7 @@ function parseFinal(raw){const i=raw.search(/^### *Final trade plan/mi);if(i<0)r
 const num=x=>{const m=String(x||'').replace(/,/g,'').match(/-?\d+(\.\d+)?/);return m?+m[0]:null;};
 // ---- history + journal
 const HS={get:()=>{try{return JSON.parse(localStorage.getItem('ca_hist')||'[]')}catch(e){return[]}},set:a=>{keepTexts(a);const now=Date.now(),pack=(n,k)=>JSON.stringify(a.slice(0,n).map((e,i)=>(i<k||(e.ord==='WEEKLY OUTLOOK'&&now-e.id<20*86400000))?e:{...e,text:''}));try{localStorage.setItem('ca_hist',pack(400,40));}catch(e){try{localStorage.setItem('ca_hist',pack(150,12));}catch(e2){}}}};
-const APP_VER='edgeview-v43';
+const APP_VER='edgeview-v43.1';
 function META(){return {model:$('model').value.trim()||'claude-sonnet-5-5',deep:$('depth').value,ver:APP_VER};}
 
 function addOdds(card,text,sym){
@@ -1841,16 +1845,28 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden&&syncOk()&&
 setTimeout(()=>{keepTexts(HS.get());if(syncOk())syncRun('push');},3000);
 // link code: moves the keys, token and repository to a new phone, encrypted with the backup passphrase
 const LINK_IDS=['kAnthropic','kTwelve','kFinnhub','kFred','kGh','ghRepo','model','mHaiku','kOpenAI','kMetaApi','kMetaAcc','kDerivTok','kDerivApp'];
-$('linkMake').onclick=async()=>{const out=$('linkOut');try{const pass=$('kSync').value;if(pass.length<10)throw new Error('set your backup passphrase first');
+$('linkMake').onclick=async()=>{const out=$('linkOut');try{const pass=$('kSync').value;if(pass.length<10)throw new Error('set your backup passphrase first');if(!$('kGh').value.trim())throw new Error('add your GitHub token first');
     const keys={};for(const id of LINK_IDS)if($(id)&&$(id).value.trim())keys[id]=$(id).value.trim();keys.ghRepo=keys.ghRepo||ghRepo();
-    const code='EVLINK1.'+btoa(JSON.stringify(await sealData({keys,at:Date.now()},pass)));out.hidden=false;out.value=code;out.select();
-    const ok=await copyText(code);$('linkStat').textContent=(ok?'Copied. ':'')+'On the new phone open Edgeview, go to Settings, paste this code, type the same passphrase and tap Link this phone. The code is useless without the passphrase, but still only send it to yourself.';}
+    const code='EVLINK1.'+btoa(JSON.stringify(await sealData({keys,at:Date.now()},pass)));out.hidden=false;out.value=code;out.select();$('linkShare').hidden=!navigator.share;
+    const ok=await copyText(code);$('linkStat').textContent=(ok?'Copied ('+code.length+' characters). ':'Long-press the code above and copy all of it. ')+'Send it to yourself with Share or paste it in WhatsApp. The code is useless without the passphrase, but only send it to yourself.';}
   catch(e){$('linkStat').textContent='Could not make a code: '+(e.message||e);}};
-$('linkUse').onclick=async()=>{const st=$('linkStat');try{const code=$('linkIn').value.trim(),pass=$('kSync').value;if(!/^EVLINK1\./.test(code))throw new Error('paste the whole code, starting with EVLINK1.');if(pass.length<10)throw new Error('type your backup passphrase in the passphrase box above');
-    let d;try{d=await openData(JSON.parse(atob(code.slice(8))),pass);}catch(e){throw new Error('wrong passphrase or damaged code');}
-    for(const [id,v] of Object.entries(d.keys||{}))if($(id)){$(id).value=v;store.set('ca_'+id,v);}store.set('ca_kSync',pass);
-    store.set('ev_syncOn','1');$('syncOn').checked=true;st.textContent='Linked. Bringing in your history…';$('linkIn').value='';await syncRun('pull');if(!syncBusy)location.reload();}
-  catch(e){st.textContent='Could not link: '+(e.message||e);}};
+$('linkShare').onclick=async()=>{try{await navigator.share({title:'Edgeview link code',text:$('linkOut').value});}catch(e){}};
+$('linkPaste').onclick=async()=>{try{$('linkIn').value=await navigator.clipboard.readText();$('linkStat').textContent='Pasted. Now type the passphrase and tap Link this device.';}catch(e){$('linkStat').textContent='The browser blocked pasting: long-press the box and choose Paste.';}};
+$('linkUse').onclick=async()=>{const st=$('linkStat'),btn=$('linkUse');
+  try{const raw=$('linkIn').value,clean=raw.replace(/\s+/g,''),m=clean.match(/EVLINK1\.([A-Za-z0-9+/=]+)/),pass=$('linkPass').value||$('kSync').value;
+    if(!m)throw new Error(raw.trim()?'that is not a whole link code: it must start with EVLINK1. Copy all of it again on the other device':'paste the link code first');
+    if(pass.length<10)throw new Error('type your backup passphrase (the same one as on the other device)');
+    btn.disabled=true;st.textContent='Opening the code…';
+    let box;try{box=JSON.parse(atob(m[1]));}catch(e){throw new Error(`the code is cut off (${m[1].length+8} characters arrived); copy all of it again, or use Share`);}
+    let d;try{d=await openData(box,pass);}catch(e){throw new Error('wrong passphrase: it must be exactly the same as on the other device (capitals and spaces count)');}
+    for(const [id,v] of Object.entries(d.keys||{}))if($(id)){$(id).value=v;store.set('ca_'+id,v);}$('kSync').value=pass;store.set('ca_kSync',pass);
+    store.set('ev_syncOn','1');$('syncOn').checked=true;st.textContent='Keys restored. Bringing in your history from '+(d.keys.ghRepo||ghRepo())+'…';$('linkIn').value='';$('linkPass').value='';
+    syncFirst=false;await syncRun('pull');const sm=$('syncStat').textContent;
+    if(/failed/i.test(sm)){st.textContent='Keys restored, but the history could not be read: '+sm.replace(/^Sync failed: /,'')+' Check the token on the other device has Contents: Read and write.';return;}
+    st.textContent='Linked ✓ '+sm+' Reloading…';setTimeout(()=>location.reload(),1500);}
+  catch(e){st.textContent='Could not link: '+(e.message||e);}finally{btn.disabled=false;}};
+// show the repository the app is using even when the box is left empty
+if(!$('ghRepo').value.trim())$('ghRepo').placeholder=ghRepo()+' (worked out from the page address)';
 // ---- coach (v38): chat with the robot about its analyses, your goals and your style; screenshots and voice notes
 const CH={get:()=>{try{return JSON.parse(store.get('ev_chat')||'[]');}catch(e){return [];}},set:a=>{try{store.set('ev_chat',JSON.stringify(a.slice(-1500)));}catch(e){store.set('ev_chat',JSON.stringify(a.slice(-500)));}}};
 const GOALS={get:()=>{try{return {day:'',dayD:'',week:'',weekK:'',...JSON.parse(store.get('ev_goals')||'{}')};}catch(e){return {day:'',dayD:'',week:'',weekK:''};}},set:o=>store.set('ev_goals',JSON.stringify(o))};
