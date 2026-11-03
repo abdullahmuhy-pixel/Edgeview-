@@ -215,3 +215,12 @@ Deriv's public API now feeds more than the synthetic indices.
 - **Tick statistics for synthetics.** Each synthetic analysis gets the last 1,000 ticks summarised: for Boom and Crash the number and size of spikes, the drift between spikes and the ticks since the last one (with a reminder that spikes are memoryless and never "due"); for the others the realised volatility against the nominal one.
 - **More synthetics:** Boom and Crash 50/150/600/900, Volatility 15/30/90 (1s), Step Index 200–500, Range Break 100/200, Bull and Bear Market. Search also finds the stock indices, platinum and palladium.
 - **Robots.** The GitHub scanner and live robot take forex, gold and index candles from Deriv too, so they no longer need a Twelve Data key (it remains the fallback).
+
+## Chats (v43)
+The Coach is now a full chat app.
+- **Many chats, named by pair.** The Coach tab opens on your list of chats (newest first, with a preview and search). **＋ New chat** asks which pair the chat is about and names it after it (synthetic indices by their full name, for example "Boom 1000 Index"). A general chat takes the name of the first pair you mention. Rename, change the pair or delete from the ⋯ menu.
+- **Full-screen conversation.** Your messages on the right, the coach's replies as formatted text (headings, lists, tables, bold), a Copy button under each reply, a typing indicator, and a composer at the bottom with ＋ (screenshots), 📈 Chart, 🎤 and send.
+- **Charts are saved.** 📈 Chart draws a live chart of the chat's pair (15M, 1H, 4H or 1D) and attaches it. Shared screenshots and charts are kept in the chat on this device and uploaded, encrypted, to your cloud memory (`edgeview-img/` on the data branch), so they show on your other phones too. Tap an image to see it full screen.
+- **Each chat knows its pair.** With every message the coach gets the pair's live candles and structure, the price now, every saved analysis and robot trade of that pair, and the latest full plan; synthetic chats also get the index briefing.
+- **Discuss** under an analysis opens that pair's chat (or starts one) with the analysis attached.
+- Goals and "How I trade" are under the chat list.

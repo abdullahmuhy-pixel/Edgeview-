@@ -50,8 +50,36 @@
   nav#tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;height:calc(var(--tabh) + env(safe-area-inset-bottom,0px));padding-bottom:env(safe-area-inset-bottom,0px);display:flex;background:rgba(14,19,24,.96);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-top:1px solid var(--line)}
   nav#tabs button{flex:1;background:none;border:0;color:var(--dim);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font:600 11px var(--ui);padding:6px 0;border-radius:0;width:auto;cursor:pointer;position:relative}
   nav#tabs button svg{width:22px;height:22px}
-  #chatLog{display:flex;flex-direction:column;gap:10px;max-height:62vh;overflow-y:auto;padding:2px 0 8px}
-  .msg{max-width:88%;padding:10px 12px;border-radius:14px;font-size:14px;line-height:1.5;word-wrap:break-word;overflow-wrap:anywhere}
+  #coachChat{position:fixed;z-index:20;display:flex;flex-direction:column;background:var(--bg)}
+  #coachChat[hidden]{display:none}
+  .chhead{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line)}
+  .chhead b{display:block;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.chhead small{display:block;color:var(--mute);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #chatMenu{position:absolute;right:12px;top:52px;z-index:5;background:var(--panel2);border:1px solid var(--line2);border-radius:12px;padding:6px;display:flex;flex-direction:column;min-width:200px;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+  #chatMenu[hidden]{display:none}#chatMenu button{background:none;border:0;text-align:left;padding:10px 12px;color:var(--text);font:600 14px var(--ui);border-radius:8px;width:100%}#chatMenu button:hover{background:var(--raise)}
+  #chatLog{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:18px;padding:16px max(16px,calc((100% - 760px)/2)) 12px}
+  .composer{margin:6px max(12px,calc((100% - 784px)/2)) 4px;border:1px solid var(--line2);border-radius:20px;background:var(--panel);padding:10px 10px 6px}
+  .composer textarea{width:100%;border:0;background:transparent;resize:none;min-height:26px;max-height:180px;padding:2px 4px;margin:0;font:15px/1.5 var(--ui);color:var(--text);outline:none;box-shadow:none}
+  .crow{display:flex;align-items:center;gap:6px;margin-top:6px}.crow .grow{flex:1}
+  .cbtn{background:none;border:1px solid var(--line2);color:var(--mute);border-radius:999px;height:34px;min-width:34px;padding:0 10px;font:600 13px var(--ui);width:auto;cursor:pointer}
+  .csend{background:var(--brass);color:#1a1408;border:0;border-radius:50%;width:36px;height:36px;font:800 18px var(--ui);cursor:pointer;padding:0}.csend:disabled{opacity:.4}
+  #chatMic.rec{background:var(--bearbg);color:var(--bear);border-color:var(--bear)}
+  .clbar{display:flex;gap:8px;margin-bottom:10px}.clbar input{flex:1;margin:0}.clbar button{width:auto;white-space:nowrap}
+  .citem{display:flex;gap:12px;align-items:center;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--panel);margin-bottom:8px;cursor:pointer}
+  .citem:hover{border-color:var(--line2)}.citem .cav{width:40px;height:40px;border-radius:12px;background:var(--brassbg);color:var(--brass2);display:flex;align-items:center;justify-content:center;font:800 12px var(--ui);flex:none}
+  .citem .ct{flex:1;min-width:0}.citem b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.citem small{display:block;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.citem time{color:var(--dim);font-size:12px;flex:none}
+  .m-u{align-self:flex-end;max-width:85%;background:var(--panel2);border:1px solid var(--line);border-radius:18px 18px 4px 18px;padding:10px 14px;white-space:pre-wrap;overflow-wrap:anywhere}
+  .m-a{align-self:stretch;line-height:1.65;overflow-wrap:anywhere}
+  .m-a p{margin:0 0 10px}.m-a ul,.m-a ol{margin:0 0 10px;padding-left:22px}.m-a li{margin:3px 0}.m-a h3,.m-a h4{margin:14px 0 6px;font-size:15px}
+  .m-a code{font-family:var(--num);background:var(--raise);padding:1px 5px;border-radius:5px;font-size:13px}.m-a pre{background:var(--raise);padding:10px;border-radius:10px;overflow-x:auto}
+  .m-a table{border-collapse:collapse;margin:6px 0 10px;font-size:13px;display:block;overflow-x:auto}.m-a td,.m-a th{border:1px solid var(--line2);padding:5px 8px;text-align:left}
+  .m-meta{font-size:11px;color:var(--dim);margin-top:4px}.m-u+.m-meta{align-self:flex-end;margin-top:-14px}
+  .m-acts{display:flex;gap:6px;margin-top:4px}.m-acts button{background:none;border:0;color:var(--dim);font:600 12px var(--ui);padding:4px 6px;width:auto;cursor:pointer}
+  .m-img{max-width:min(100%,360px);border-radius:12px;display:block;margin:6px 0;border:1px solid var(--line);cursor:zoom-in}
+  .typing span{display:inline-block;width:7px;height:7px;margin-right:4px;border-radius:50%;background:var(--mute);animation:blink 1.2s infinite}.typing span:nth-child(2){animation-delay:.2s}.typing span:nth-child(3){animation-delay:.4s}
+  @keyframes blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
+  @media (prefers-reduced-motion:reduce){.typing span{animation:none}}
+  #chatCtx{font-size:12px;color:var(--mute);margin:0 4px 6px}
+  .msg-old{max-width:88%;padding:10px 12px;border-radius:14px;font-size:14px;line-height:1.5;word-wrap:break-word;overflow-wrap:anywhere}
   .msg.u{align-self:flex-end;background:var(--brassbg);border:1px solid rgba(217,164,65,.35);border-bottom-right-radius:4px;white-space:pre-wrap}
   .msg.a{white-space:pre-wrap;align-self:flex-start;background:var(--panel2);border:1px solid var(--line);border-bottom-left-radius:4px}
   .msg .mt{font-size:11px;color:var(--dim);margin-top:4px}
@@ -419,20 +447,30 @@
   </div>
   </section>
   <section class="view" id="v-coach" hidden>
-  <div class="card"><b>Goals</b>
-    <div class="row"><div><label>Today</label><input id="gDay" placeholder="e.g. +2R, max 3 trades, London only"></div><div><label>This week</label><input id="gWeek" placeholder="e.g. +5% on the account"></div></div>
-    <div class="hint" id="gProg"></div></div>
-  <details class="card"><summary style="cursor:pointer"><b style="display:inline">How I trade</b> <span class="hint">your style: every analysis uses it for entry, stop and take-profit</span></summary>
-    <textarea id="styleTx" rows="9" placeholder="Tell the coach how you trade and it fills this in. For example: I trade gold and GBP/JPY in London and New York. I wait for a liquidity sweep of the Asia high or low, then a 5M break of structure, and enter on the retest of the order block. Stop 2 pips beyond the sweep wick. TP1 at 1:2, TP2 at the opposite session level. Risk 1% per trade, at most 2 trades a day."></textarea>
-    <div class="hint" id="styleStat">You can edit it here too. It syncs with your other devices.</div></details>
-  <div class="card"><b>Coach</b>
+  <div id="coachList">
+    <div class="clbar"><input id="chatSearch" placeholder="Search chats" autocomplete="off"><button id="chatNew">＋ New chat</button></div>
+    <div id="chatList"></div>
+    <details class="card" id="gsCard" style="margin-top:14px"><summary style="cursor:pointer"><b style="display:inline">Goals and how I trade</b> <span class="hint" id="gsHint"></span></summary>
+      <div class="row" style="margin-top:8px"><div><label>Today</label><input id="gDay" placeholder="e.g. +2R, max 3 trades, London only"></div><div><label>This week</label><input id="gWeek" placeholder="e.g. +5% on the account"></div></div>
+      <div class="hint" id="gProg"></div>
+      <label style="margin-top:10px">How I trade <span class="hint">(every analysis uses it for entry, stop and take-profit; the coach updates it as you talk)</span></label>
+      <textarea id="styleTx" rows="8" placeholder="Tell the coach how you trade and it fills this in. For example: I trade gold and GBP/JPY in London and New York. I wait for a liquidity sweep of the Asia high or low, then a 5M break of structure, and enter on the retest of the order block. Stop 2 pips beyond the sweep wick. TP1 at 1:2, TP2 at the opposite session level. Risk 1% per trade, at most 2 trades a day."></textarea>
+      <div class="hint" id="styleStat">It syncs with your other devices.</div>
+    </details>
+  </div>
+  <div id="coachChat" hidden>
+    <div class="chhead"><button class="iconbtn" id="chatBack" aria-label="All chats">‹</button><div class="grow" style="min-width:0"><b id="chatTitle"></b><small id="chatSub"></small></div><button class="iconbtn" id="chatMenuBtn" aria-label="Chat options">⋯</button></div>
+    <div id="chatMenu" hidden><button data-cm="rename">Rename</button><button data-cm="pair">Change pair</button><button data-cm="chart">Open chart</button><button data-cm="analyze">Run a new analysis</button><button data-cm="delete" style="color:var(--bear)">Delete chat</button></div>
     <div id="chatLog"></div>
-    <div id="chatCtx" class="hint" hidden></div>
-    <div class="thumbs" id="chatAtt"></div>
-    <div class="chatbar"><button class="sec" id="chatImg" aria-label="Add screenshots">＋</button><textarea id="chatIn" rows="1" placeholder="Ask about an analysis, set a goal, share someone's chart…"></textarea><button class="sec" id="chatMic" aria-label="Voice note">🎤</button><button id="chatSend">Send</button></div>
+    <div class="composer">
+      <div id="chatCtx" hidden></div>
+      <div class="thumbs" id="chatAtt" style="margin:0 0 6px"></div>
+      <textarea id="chatIn" rows="1" placeholder="Message the coach…"></textarea>
+      <div class="crow"><button class="cbtn" id="chatImg" aria-label="Add screenshots">＋</button><button class="cbtn" id="chatChart" aria-label="Attach a chart">📈 Chart</button><span id="chartTfs" hidden><button class="cbtn" data-tf="15M">15M</button><button class="cbtn" data-tf="1H">1H</button><button class="cbtn" data-tf="4H">4H</button><button class="cbtn" data-tf="1D">1D</button></span><span class="grow"></span><button class="cbtn" id="chatMic" aria-label="Voice note">🎤</button><button class="csend" id="chatSend" aria-label="Send">↑</button></div>
+    </div>
+    <div class="hint" id="chatStat" style="padding:0 4px"></div>
     <input id="chatFile" type="file" accept="image/*" multiple hidden>
-    <div class="hint" id="chatStat">Tap 🎤 to record a voice note, tap again to send it. Screenshots you share are kept on this device; the conversation syncs.</div>
-    <div class="row" style="margin-top:6px"><button class="sec" id="chatClear">Start a new conversation</button></div></div>
+  </div>
   </section>
   <section class="view" id="v-journal" hidden>
   <div class="card"><b>What the robot has learned</b><div id="learnBox"></div>
@@ -639,7 +677,7 @@ function synthBrief(sym){const c=synthCode(sym),k=synthKind(sym);if(!c)return ''
     jump:`Jump ${n} Index: volatility ${n}% a year with sudden large jumps, on average about three an hour, equally likely up or down.`}[k];
   return `INSTRUMENT BACKGROUND (Deriv synthetic index, Deriv code ${c}): ${kind} Synthetic indices are generated by Deriv's audited random number generator. They trade 24/7 including weekends, and they are NOT moved by economic news, central banks, sessions, positioning, correlations or any other market: ignore the economic calendar, headlines, COT, currency strength and session opens for this instrument, and do not mention them as reasons. Volatility is statistically constant, so ATR-based stops and targets are reliable; chart structure (swings, ranges, liquidity sweeps, trend legs) is the only edge, and it is weaker than on real markets, so be strict about reward to risk, size small and say so when there is no clear setup. Trade on Deriv (MT5 or Deriv options/multipliers); costs are the spread only.`;}
 // ---- cloud memory (v37): settings that follow you to every device, with the time each was last changed
-const SYNC_KEYS=['ca_wl','ca_wlset','ca_bot','ev_brk','ev_bt','ca_alerts','ca_cBal','ca_cRisk','ca_symbol','ca_market','ca_spread','ca_depth','ca_model','ca_mHaiku','ca_tdplan','ca_ghRepo','ev_fxOn','ev_pmOff','ev_chat','ev_chatCur','ev_goals','ev_style','ev_live','ev_src'];
+const SYNC_KEYS=['ca_wl','ca_wlset','ca_bot','ev_brk','ev_bt','ca_alerts','ca_cBal','ca_cRisk','ca_symbol','ca_market','ca_spread','ca_depth','ca_model','ca_mHaiku','ca_tdplan','ca_ghRepo','ev_fxOn','ev_pmOff','ev_chat','ev_chats','ev_goals','ev_style','ev_live','ev_src'];
 let syncApplying=false;
 const KMT=()=>{try{return JSON.parse(localStorage.getItem('ev_kmt')||'{}');}catch(e){return {};}};
 {const _set=store.set;store.set=(k,v)=>{_set(k,v);if(!syncApplying&&SYNC_KEYS.includes(k)){const m=KMT();m[k]=Date.now();localStorage.setItem('ev_kmt',JSON.stringify(m));}};}
@@ -1173,7 +1211,7 @@ function parseFinal(raw){const i=raw.search(/^### *Final trade plan/mi);if(i<0)r
 const num=x=>{const m=String(x||'').replace(/,/g,'').match(/-?\d+(\.\d+)?/);return m?+m[0]:null;};
 // ---- history + journal
 const HS={get:()=>{try{return JSON.parse(localStorage.getItem('ca_hist')||'[]')}catch(e){return[]}},set:a=>{keepTexts(a);const now=Date.now(),pack=(n,k)=>JSON.stringify(a.slice(0,n).map((e,i)=>(i<k||(e.ord==='WEEKLY OUTLOOK'&&now-e.id<20*86400000))?e:{...e,text:''}));try{localStorage.setItem('ca_hist',pack(400,40));}catch(e){try{localStorage.setItem('ca_hist',pack(150,12));}catch(e2){}}}};
-const APP_VER='edgeview-v42';
+const APP_VER='edgeview-v43';
 function META(){return {model:$('model').value.trim()||'claude-sonnet-5-5',deep:$('depth').value,ver:APP_VER};}
 
 function addOdds(card,text,sym){
@@ -1745,7 +1783,8 @@ function syncPayload(){const h=HS.get().map((e,i)=>i<10||!e.text?e:{...e,text:''
   for(const k of SYNC_KEYS){const v=localStorage.getItem(k);if(v!=null)kv[k]=[v,m[k]||0];}
   return {v:2,hist:h,lessons:LS.get(),shadow:SH.get(),sig:SG.get(),kv,at:Date.now(),ver:APP_VER};}
 // lists that grow on several devices are merged; single settings take the most recently changed value
-const KV_MERGE={ev_chat:(a,b)=>{const m=new Map();for(const x of [...a,...b])if(x&&x.id)m.set(x.id,{...(m.get(x.id)||{}),...x});return [...m.values()].sort((x,y)=>x.t-y.t).slice(-400);}};
+const KV_MERGE={ev_chat:(a,b)=>{const m=new Map();for(const x of [...a,...b])if(x&&x.id)m.set(x.id,{...(m.get(x.id)||{}),...x});return [...m.values()].sort((x,y)=>x.t-y.t).slice(-1500);},
+  ev_chats:(a,b)=>{const m=new Map();for(const x of [...a,...b]){if(!x||!x.id)continue;const o=m.get(x.id);if(!o){m.set(x.id,x);continue;}const w=(x.u||0)>=(o.u||0)?{...o,...x}:{...x,...o};if(o.del||x.del)w.del=o.del||x.del;m.set(x.id,w);}return [...m.values()].slice(-300);}};
 function applyRemote(d){if(!d||!Array.isArray(d.hist))return {added:0,kv:0};const before=HS.get().length;
   const hist=mergeById(HS.get(),d.hist);HS.set(hist);SH.set(mergeById(SH.get(),d.shadow));SG.set(mergeSigs(SG.get(),d.sig));
   const lm=new Map(LS.get().map(l=>[l.id,l]));for(const l of d.lessons||[])if(!lm.has(l.id))lm.set(l.id,l);LS.set([...lm.values()].sort((a,b)=>b.t-a.t));
@@ -1760,6 +1799,12 @@ async function ghFile(c,path){const u=`https://api.github.com/repos/${c.repo}/co
 async function ghPut(c,path,box,sha,msg){const r=await fetch(`https://api.github.com/repos/${c.repo}/contents/${path}`,{method:'PUT',headers:c.H,body:JSON.stringify({message:msg,branch:SYNC_BR,content:btoa(JSON.stringify(box)),...(sha?{sha}:{})})});
   const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.message||('HTTP '+r.status));}
 const txMonth=id=>new Date(+id).toISOString().slice(0,7),txPath=m=>`edgeview-texts-${m}.json`;
+const imgPath=k=>'edgeview-img/'+String(k).replace(/[^a-z0-9-]/gi,'_')+'.json';
+// screenshots and charts shared in chats go to the cloud too (a few per sync), so every device sees them
+async function syncImgs(c){let up={};try{up=JSON.parse(store.get('ev_imgUp')||'{}');}catch(e){}let n=0;
+  for(const m of CH.get().slice(-600).reverse())for(const k of m.imgs||[]){if(up[k]||n>=12)continue;const b=await IDB.kv.get(k);if(!b)continue;
+    const cur=await ghFile(c,imgPath(k)).catch(()=>null);if(!cur)await ghPut(c,imgPath(k),await sealData({b},c.pass),null,'Edgeview chat image');up[k]=1;n++;}
+  store.set('ev_imgUp',JSON.stringify(up));return n;}
 // upload each month of full analysis texts that changed since the last upload, merging with what other devices sent
 async function syncTexts(c){keepTexts(HS.get());const all=await IDB.texts.entries(),by={};for(const [id,t] of all)if(t)(by[txMonth(id)]=by[txMonth(id)]||{})[id]=t;
   let sig={};try{sig=JSON.parse(store.get('ev_txSig')||'{}');}catch(e){}const sg=o=>{const k=Object.keys(o).sort();return k.length+':'+k[k.length-1];};let n=0;
@@ -1778,7 +1823,7 @@ async function syncRun(mode){if(syncBusy)return;syncBusy=true;const st=$('syncSt
   try{const c=syncCfg();st.textContent=mode==='pull'?'Reading your cloud memory…':'Syncing…';
     await ghBranch(c);let res={added:0,kv:0};const cur=await ghFile(c,SYNC_PATH).catch(()=>null);
     if(cur&&cur.box&&cur.box.ct){let d;try{d=await openData(cur.box,c.pass);}catch(e){throw new Error('the backup could not be decrypted: wrong passphrase?');}res=applyRemote(d);}
-    let tx=0;if(mode!=='pull'){await ghPut(c,SYNC_PATH,await sealData(syncPayload(),c.pass),cur&&cur.sha,'Edgeview encrypted backup');tx=await syncTexts(c).catch(()=>0);}
+    let tx=0;if(mode!=='pull'){await ghPut(c,SYNC_PATH,await sealData(syncPayload(),c.pass),cur&&cur.sha,'Edgeview encrypted backup');tx=await syncTexts(c).catch(()=>0);await syncImgs(c).catch(()=>0);}
     store.set('ev_syncAt',String(Date.now()));store.set('ev_syncSig',syncSig());
     st.textContent=`Synced ${new Date().toISOString().slice(11,16)} UTC with ${c.repo} (${SYNC_BR} branch)`+(res.added?`, ${res.added} new journal entr${res.added===1?'y':'ies'} from another device`:'')+(res.kv?`, ${res.kv} setting${res.kv===1?'':'s'} updated`:'')+(tx?`, ${tx} month${tx===1?'':'s'} of analyses archived`:'')+'.';
     if(res.added){renderHist();renderBot();}renderLearn();renderSigStats();
@@ -1807,7 +1852,7 @@ $('linkUse').onclick=async()=>{const st=$('linkStat');try{const code=$('linkIn')
     store.set('ev_syncOn','1');$('syncOn').checked=true;st.textContent='Linked. Bringing in your history…';$('linkIn').value='';await syncRun('pull');if(!syncBusy)location.reload();}
   catch(e){st.textContent='Could not link: '+(e.message||e);}};
 // ---- coach (v38): chat with the robot about its analyses, your goals and your style; screenshots and voice notes
-const CH={get:()=>{try{return JSON.parse(store.get('ev_chat')||'[]');}catch(e){return [];}},set:a=>{try{store.set('ev_chat',JSON.stringify(a.slice(-400)));}catch(e){store.set('ev_chat',JSON.stringify(a.slice(-120)));}}};
+const CH={get:()=>{try{return JSON.parse(store.get('ev_chat')||'[]');}catch(e){return [];}},set:a=>{try{store.set('ev_chat',JSON.stringify(a.slice(-1500)));}catch(e){store.set('ev_chat',JSON.stringify(a.slice(-500)));}}};
 const GOALS={get:()=>{try{return {day:'',dayD:'',week:'',weekK:'',...JSON.parse(store.get('ev_goals')||'{}')};}catch(e){return {day:'',dayD:'',week:'',weekK:''};}},set:o=>store.set('ev_goals',JSON.stringify(o))};
 const STYLE={get:()=>store.get('ev_style')||'',set:t=>store.set('ev_style',t)};
 const dKey=(t=Date.now())=>{const d=new Date(t);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
@@ -1826,26 +1871,126 @@ $('styleTx').value=STYLE.get();$('styleTx').onchange=()=>{STYLE.set($('styleTx')
 function styleBlock(){const st=STYLE.get().trim(),g=goalsNow();if(!st&&!g.day&&!g.week)return '';
   return `TRADER'S OWN STYLE (written with the user in the Coach). Build the Final trade plan the way this trader enters, places stops and takes profit, unless the data clearly argues against it; if you deviate, say why in one line:\n${st||'(not described yet)'}`+
     (g.day||g.week?`\n\nTRADER'S GOALS: today: ${g.day||'none set'}; this week: ${g.week||'none set'}. Progress: ${progText()}. If today's goal or loss limit is already reached, say so in the Risk line and prefer NO TRADE.`:'');}
-const chatCur=()=>store.get('ev_chatCur')||'c0';
+// ---- chats (v43): many conversations, each named after its pair, in a full-screen chat like Claude's
+const CHATS={get:()=>{try{return JSON.parse(store.get('ev_chats')||'[]');}catch(e){return [];}},set:a=>store.set('ev_chats',JSON.stringify(a.slice(-300)))};
+const chatCur=()=>store.get('ev_chatCur')||'';
 let ATT=[],CTX=null;
-function discuss(x){CTX={sym:x.sym,id:x.id,text:String(x.text||'').slice(0,14000)};go('coach');$('chatCtx').hidden=false;
-  $('chatCtx').innerHTML=`Discussing the ${esc(String(x.sym||'').toUpperCase())} analysis${x.id?' from '+new Date(x.id).toISOString().slice(0,16).replace('T',' ')+'Z':''}. <button class="sec" style="padding:2px 8px" id="ctxX">✕</button>`;$('ctxX').onclick=()=>{CTX=null;$('chatCtx').hidden=true;};
+const symTitle=s=>{s=String(s||'').toUpperCase();if(!s)return 'General';const n=nameOf(s);return n&&isSynth(s)?n:s;};
+function chatsLive(){return CHATS.get().filter(c=>!c.del).sort((a,b)=>(b.u||b.t)-(a.u||a.t));}
+function chatGet(id){return CHATS.get().find(c=>c.id===id)||null;}
+function chatPut(id,patch){const a=CHATS.get(),i=a.findIndex(c=>c.id===id);if(i<0)return;a[i]={...a[i],...patch,u:Date.now()};CHATS.set(a);}
+function chatNew(sym,extra){const id='c'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),c={id,sym:sym?String(sym).toUpperCase():'',title:'',t:Date.now(),u:Date.now(),...(extra||{})};CHATS.set([...CHATS.get(),c]);return id;}
+// conversations from before v43 become chats
+(function(){const known=new Set(CHATS.get().map(c=>c.id)),msgs=CH.get(),add=[];for(const m of msgs)if(m.c&&!known.has(m.c)){known.add(m.c);const first=msgs.find(x=>x.c===m.c);add.push({id:m.c,sym:'',title:'',t:first.t,u:msgs.filter(x=>x.c===m.c).pop().t});}if(add.length)CHATS.set([...CHATS.get(),...add]);})();
+function layoutChat(){const box=$('coachChat');if(box.hidden)return;const hd=document.querySelector('header.appbar'),wr=document.querySelector('main.wrap'),tb=$('tabs').getBoundingClientRect();
+  const top=hd?hd.getBoundingClientRect().bottom:0,bottom=tb.top>innerHeight/2?innerHeight-tb.top:0,r=wr?wr.getBoundingClientRect():{left:0,width:innerWidth};
+  const left=tb.top>innerHeight/2?0:Math.max(0,tb.right);Object.assign(box.style,{top:Math.max(0,top)+'px',bottom:bottom+'px',left:left+'px',right:'0px'});}
+addEventListener('resize',layoutChat);if(window.visualViewport)visualViewport.addEventListener('resize',layoutChat);
+function chatOpen(id){store.set('ev_chatCur',id);const c=chatGet(id);CTX=c&&c.ctx?{...c.ctx}:null;$('coachList').hidden=true;$('coachChat').hidden=false;$('chatMenu').hidden=true;
+  if(c&&c.draft!=null&&!$('chatIn').value)$('chatIn').value='';chatHead();layoutChat();chatRender();setTimeout(layoutChat,50);}
+function chatClose(){store.set('ev_chatCur','');$('coachChat').hidden=true;$('coachList').hidden=false;$('chatMenu').hidden=true;CTX=null;chatListRender();}
+function chatHead(){const c=chatGet(chatCur());if(!c)return;$('chatTitle').textContent=c.title||symTitle(c.sym);
+  const px=c.sym&&TK[c.sym]?` · ${f2(TK[c.sym].px)} ${TK[c.sym].pct>=0?'+':''}${(+TK[c.sym].pct||0).toFixed(2)}%`:'';
+  $('chatSub').textContent=(c.sym?(isSynth(c.sym)?'Deriv synthetic':'Market')+px:'General chat: goals, style, account')+(CTX?' · discussing an analysis':'');}
+function chatListRender(){const q=$('chatSearch').value.trim().toLowerCase(),msgs=CH.get(),last={};for(const m of msgs)last[m.c]=m;
+  const list=chatsLive().filter(c=>!q||(c.title||symTitle(c.sym)).toLowerCase().includes(q)||(c.sym||'').toLowerCase().includes(q)||msgs.some(m=>m.c===c.id&&(m.x||'').toLowerCase().includes(q)));
+  const when=t=>{const d=new Date(t),n=new Date();return d.toDateString()===n.toDateString()?d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):n-d<6*864e5?d.toLocaleDateString([],{weekday:'short'}):d.toLocaleDateString([],{day:'numeric',month:'short'});};
+  $('chatList').innerHTML=list.length?list.map(c=>{const l=last[c.id],ti=c.title||symTitle(c.sym),av=c.sym?String(c.sym).replace(/[^A-Z0-9]/gi,'').slice(0,4):'✦';
+      return `<div class="citem" data-ci="${esc(c.id)}"><div class="cav">${esc(av)}</div><div class="ct"><b>${esc(ti)}</b><small>${l?esc((l.r==='u'?'You: ':'')+String(l.x||(l.imgs&&l.imgs.length?'📷 Screenshot':'')).replace(/\s+/g,' ').slice(0,90)):'No messages yet'}</small></div><time>${when(l?l.t:c.t)}</time></div>`;}).join(''):
+    `<div class="card hint" style="text-align:center;padding:28px 16px">${q?'No chat matches.':'No chats yet. Tap <b>＋ New chat</b> and pick the pair you want to talk about, or tap Discuss under any analysis.'}</div>`;
+  $('chatList').querySelectorAll('[data-ci]').forEach(el=>el.onclick=()=>chatOpen(el.dataset.ci));
+  const g=goalsNow();$('gsHint').textContent=g.day||g.week?`today: ${g.day||'none'} · week: ${g.week||'none'}`:'set goals and your style';}
+$('chatSearch').oninput=chatListRender;
+$('chatNew').onclick=()=>openSearch(s=>chatOpen(chatNew(s)));
+$('chatBack').onclick=chatClose;
+$('chatMenuBtn').onclick=e=>{e.stopPropagation();$('chatMenu').hidden=!$('chatMenu').hidden;};
+document.addEventListener('click',e=>{if(!$('chatMenu').hidden&&!$('chatMenu').contains(e.target))$('chatMenu').hidden=true;});
+$('chatMenu').querySelectorAll('[data-cm]').forEach(b=>b.onclick=()=>{const id=chatCur(),c=chatGet(id);$('chatMenu').hidden=true;if(!c)return;const k=b.dataset.cm;
+  if(k==='rename'){const t=window.prompt?prompt('Chat name',c.title||symTitle(c.sym)):null;if(t!=null){chatPut(id,{title:t.trim().slice(0,60)});chatHead();}}
+  else if(k==='pair')openSearch(s=>{chatPut(id,{sym:String(s).toUpperCase(),title:''});chatHead();});
+  else if(k==='chart'){if(c.sym)showOnChart(c.sym);}
+  else if(k==='analyze'){if(c.sym){$('symbol').value=c.sym;store.set('ca_symbol',c.sym);updSummary();go('analyze');$('go').click();}}
+  else if(k==='delete'){chatPut(id,{del:Date.now()});chatClose();}});
+// "Discuss" opens the chat for that pair (or starts one) with the analysis attached
+function discuss(x){const S=String(x.sym||'').toUpperCase();let id=(chatsLive().find(c=>c.sym===S)||{}).id;
+  const hit=x.id?{id:x.id}:HS.get().find(e=>e.text===x.text);const ctx={sym:S,id:hit?hit.id:null,...(hit?{}:{text:String(x.text||'').slice(0,14000)})};
+  if(!id)id=chatNew(S,{ctx});else chatPut(id,{ctx});go('coach');chatOpen(id);
   if(!$('chatIn').value)$('chatIn').value='Talk me through this analysis. ';$('chatIn').focus();}
-async function discussH(id){const e=HS.get().find(x=>x.id==id);if(!e)return;const text=e.text||await fullText(id);if(!text){alert('The full text of this entry is not available.');return;}discuss({sym:e.sym,id:e.id,text});}
+async function discussH(id){const e=HS.get().find(x=>x.id==id);if(!e)return;discuss({sym:e.sym,id:e.id,text:e.text||''});}
+async function ctxText(){if(!CTX)return null;if(CTX.text)return CTX;const t=CTX.id?await fullText(CTX.id):'';return t?{...CTX,text:t.slice(0,14000)}:null;}
 function renderAtt(){$('chatAtt').innerHTML=ATT.map((im,i)=>`<div class="th"><img src="${im.url}" alt=""><b data-ai="${i}">×</b></div>`).join('');
   $('chatAtt').querySelectorAll('[data-ai]').forEach(b=>b.onclick=()=>{ATT.splice(+b.dataset.ai,1);renderAtt();});}
 $('chatImg').onclick=()=>$('chatFile').click();
 $('chatFile').onchange=async e=>{for(const f of [...e.target.files].slice(0,6-ATT.length)){try{ATT.push(await shrink(f));}catch(_){}}e.target.value='';renderAtt();};
 $('chatIn').addEventListener('paste',async e=>{const fs=[...(e.clipboardData||{}).items||[]].filter(i=>i.type.startsWith('image/')).map(i=>i.getAsFile());if(!fs.length)return;e.preventDefault();for(const f of fs.slice(0,6-ATT.length))ATT.push(await shrink(f));renderAtt();});
-$('chatIn').addEventListener('input',()=>{const t=$('chatIn');t.style.height='auto';t.style.height=Math.min(140,t.scrollHeight)+'px';});
+$('chatIn').addEventListener('input',()=>{const t=$('chatIn');t.style.height='auto';t.style.height=Math.min(180,t.scrollHeight)+'px';});
 $('chatIn').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&matchMedia('(pointer:fine)').matches){e.preventDefault();chatSend();}});
-function chatRender(){const cur=chatCur(),a=CH.get().filter(m=>m.c===cur),log=$('chatLog');
-  log.innerHTML=a.length?a.map(m=>`<div class="msg ${m.r}">${m.r==='a'?md1(m.x||''):esc(m.x||'')}${(m.imgs||[]).map(k=>`<img data-k="${esc(k)}" alt="shared screenshot">`).join('')}${(m.chips||[]).map(c=>`<div class="chip">${esc(c)}</div>`).join(' ')}${m.prop?`<div style="margin-top:8px;padding:8px;border:1px solid var(--line2);border-radius:10px"><b>Change to the live mandate:</b> ${esc(Object.entries(m.prop).map(([k,v])=>k+' = '+(Array.isArray(v)?v.join(', '):v)).join('; '))}<br>${m.applied?'<span class="chip">Applied</span>':`<button class="sec" style="margin-top:6px" data-ap="${esc(m.id)}">Apply</button>`}</div>`:''}<div class="mt">${m.voice?'🎤 ':''}${new Date(m.t).toLocaleString([],{weekday:'short',hour:'2-digit',minute:'2-digit'})}${m.ctx?' · about '+esc(m.ctx):''}</div></div>`).join(''):
-    '<div class="hint">Ask anything: "Why a sell on gold today?", "My goal this week is +4R, help me plan it", "Here is a setup from a channel I follow, what do you think?", or describe how you enter trades so every analysis follows your style.</div>';
+// attach a chart of the chat's pair drawn by the app from live candles
+$('chatChart').onclick=()=>{$('chartTfs').hidden=!$('chartTfs').hidden;};
+$('chartTfs').querySelectorAll('[data-tf]').forEach(b=>b.onclick=async()=>{$('chartTfs').hidden=true;const c=chatGet(chatCur()),sym=(c&&c.sym)||LC.sym,tf=b.dataset.tf;
+  $('chatStat').textContent=`Drawing ${sym} ${tf}…`;try{const bars=await fetchTF(sym,tf,false),cv=document.createElement('canvas');cv.width=1200;cv.height=720;
+    drawCandles(cv,bars,{title:`${sym} ${tf} · ${new Date().toISOString().slice(0,16).replace('T',' ')} UTC`,emas:EMAS,count:120,end:bars.length,lines:chartLines(sym),zones:zonesFor(sym),marks:botMarks(sym)});
+    const url=cv.toDataURL('image/jpeg',0.85);ATT.push({url,b64:url.split(',')[1],chart:`${sym} ${tf}`});renderAtt();$('chatStat').textContent='';}
+  catch(e){$('chatStat').textContent='Could not draw the chart: '+(e.message||e);}});
+// markdown for coach replies: headings, lists, tables, bold, italics, code
+function mdChat(src){const L=esc(String(src||'')).split('\n'),out=[];let i=0;const inl=t=>t.replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/(^|[\s(])\*(?!\s)([^*]+?)\*(?=[\s).,;:!?]|$)/g,'$1<i>$2</i>').replace(/(^|[\s(])_(?!\s)([^_]+?)_(?=[\s).,;:!?]|$)/g,'$1<i>$2</i>');
+  while(i<L.length){const l=L[i];
+    if(/^```/.test(l)){const b=[];i++;while(i<L.length&&!/^```/.test(L[i]))b.push(L[i++]);i++;out.push('<pre><code>'+b.join('\n')+'</code></pre>');continue;}
+    if(/^\s*\|.*\|\s*$/.test(l)&&i+1<L.length&&/^\s*\|[\s:|-]+\|\s*$/.test(L[i+1])){const row=r=>r.trim().replace(/^\||\|$/g,'').split('|').map(x=>inl(x.trim()));const h=row(l);i+=2;const rows=[];while(i<L.length&&/^\s*\|.*\|\s*$/.test(L[i]))rows.push(row(L[i++]));
+      out.push('<table><tr>'+h.map(x=>'<th>'+x+'</th>').join('')+'</tr>'+rows.map(r=>'<tr>'+r.map(x=>'<td>'+x+'</td>').join('')+'</tr>').join('')+'</table>');continue;}
+    let m;if((m=l.match(/^(#{1,4})\s+(.*)$/))){out.push(`<h${m[1].length<3?3:4}>${inl(m[2])}</h${m[1].length<3?3:4}>`);i++;continue;}
+    if(/^\s*([-*•])\s+/.test(l)){const it=[];while(i<L.length&&/^\s*([-*•])\s+/.test(L[i]))it.push(inl(L[i++].replace(/^\s*([-*•])\s+/,'')));out.push('<ul>'+it.map(x=>'<li>'+x+'</li>').join('')+'</ul>');continue;}
+    if(/^\s*\d+[.)]\s+/.test(l)){const it=[];while(i<L.length&&/^\s*\d+[.)]\s+/.test(L[i]))it.push(inl(L[i++].replace(/^\s*\d+[.)]\s+/,'')));out.push('<ol>'+it.map(x=>'<li>'+x+'</li>').join('')+'</ol>');continue;}
+    if(!l.trim()){i++;continue;}const p=[];while(i<L.length&&L[i].trim()&&!/^(#{1,4}\s|\s*[-*•]\s|\s*\d+[.)]\s|```|\s*\|)/.test(L[i]))p.push(inl(L[i++]));if(!p.length){out.push('<p>'+inl(L[i++])+'</p>');continue;}out.push('<p>'+p.join('<br>')+'</p>');}
+  return out.join('');}
+const imgCache={};
+async function chatImg(k){if(imgCache[k])return imgCache[k];let b=await IDB.kv.get(k);
+  if(!b&&syncOk()){try{const c=syncCfg(),f=await ghFile(c,imgPath(k));if(f&&f.box&&f.box.ct){const d=await openData(f.box,c.pass);b=d.b;if(b)IDB.kv.put(k,b);}}catch(e){}}
+  if(b)imgCache[k]=b;return b||null;}
+function chatRender(){const cur=chatCur(),a=CH.get().filter(m=>m.c===cur),log=$('chatLog');if(!cur){chatListRender();return;}
+  const c=chatGet(cur),nm=c?(c.title||symTitle(c.sym)):'this chat';
+  log.innerHTML=a.length?a.map(m=>{const t=new Date(m.t).toLocaleString([],{weekday:'short',hour:'2-digit',minute:'2-digit'}),imgs=(m.imgs||[]).map(k=>`<img class="m-img" data-k="${esc(k)}" alt="shared chart">`).join('');
+      if(m.r==='u')return `<div class="m-u">${imgs}${esc(m.x||'')}</div><div class="m-meta">${m.voice?'🎤 ':''}${t}${m.ctx?' · about the '+esc(m.ctx)+' analysis':''}</div>`;
+      return `<div class="m-a">${mdChat(m.x||'')}${(m.chips||[]).map(x=>`<span class="chip">${esc(x)}</span> `).join('')}${m.prop?`<div style="margin-top:8px;padding:10px;border:1px solid var(--line2);border-radius:12px"><b>Change to the live mandate:</b> ${esc(Object.entries(m.prop).map(([k,v])=>k+' = '+(Array.isArray(v)?v.join(', '):v)).join('; '))}<br>${m.applied?'<span class="chip">Applied</span>':`<button class="sec" style="margin-top:6px" data-ap="${esc(m.id)}">Apply</button>`}</div>`:''}<div class="m-acts"><button data-cp="${esc(m.id)}">Copy</button><span class="m-meta" style="margin:0;align-self:center">${t}</span></div></div>`;}).join(''):
+    `<div class="hint" style="margin:auto;text-align:center;max-width:440px">Start talking about <b>${esc(nm)}</b>.<br>Ask why the robot took its view, share a screenshot of someone else's analysis, tap 📈 Chart to attach a live chart, or set a goal. ${c&&c.sym?'The coach gets the live candles and every saved analysis of '+esc(c.sym)+'.':''}</div>`;
   log.querySelectorAll('[data-ap]').forEach(b=>b.onclick=()=>{const all=CH.get(),m=all.find(x=>x.id===b.dataset.ap);if(!m||!m.prop)return;
     MANDATE.set({...MANDATE.get(),...m.prop,allowReal:MANDATE.get().allowReal});liveForm();MANDATE.set({...liveRead(),startAt:MANDATE.get().startAt,flatAt:MANDATE.get().flatAt});liveForm();m.applied=Date.now();CH.set(all);chatRender();});
-  log.querySelectorAll('img[data-k]').forEach(async im=>{const b=await IDB.kv.get(im.dataset.k);if(b)im.src='data:image/jpeg;base64,'+b;else im.replaceWith(Object.assign(document.createElement('span'),{className:'chip',textContent:'screenshot on another device'}));});
+  log.querySelectorAll('[data-cp]').forEach(b=>b.onclick=async()=>{const m=CH.get().find(x=>x.id===b.dataset.cp);if(m){const ok=await copyText(m.x||'');b.textContent=ok?'Copied':'Copy failed';setTimeout(()=>b.textContent='Copy',1500);}});
+  log.querySelectorAll('img[data-k]').forEach(async im=>{const b=await chatImg(im.dataset.k);if(b){im.src='data:image/jpeg;base64,'+b;im.onclick=()=>{const w=document.createElement('div');w.style.cssText='position:fixed;inset:0;z-index:99;background:rgba(0,0,0,.9);display:flex;align-items:center;justify-content:center';w.innerHTML=`<img src="${im.src}" style="max-width:100%;max-height:100%">`;w.onclick=()=>w.remove();document.body.appendChild(w);};}
+    else im.replaceWith(Object.assign(document.createElement('span'),{className:'chip',textContent:'chart not synced yet'}));});
+  $('chatCtx').hidden=!CTX;if(CTX)$('chatCtx').innerHTML=`📎 Discussing the ${esc(CTX.sym)} analysis${CTX.id?' from '+new Date(CTX.id).toISOString().slice(0,16).replace('T',' ')+'Z':''} <button class="cbtn" style="height:24px;padding:0 8px" id="ctxX">✕</button>`;
+  if(CTX)$('ctxX').onclick=()=>{CTX=null;chatPut(cur,{ctx:null});chatRender();chatHead();};
   log.scrollTop=log.scrollHeight;}
+// what the coach knows about the pair of this chat: live candles and structure, and every saved analysis of it
+async function pairContext(sym){if(!sym)return '';const S=String(sym).toUpperCase(),out=[`THIS CHAT IS ABOUT ${S}${nameOf(S)?' ('+nameOf(S)+')':''}. Keep the conversation on it unless the trader changes topic.`];
+  try{const [m15,h1]=await Promise.all([fetchTF(S,'15M',false),fetchTF(S,'1H',false)]);const cl=b=>b.slice(0,-1);if(window.EVDetect&&h1.length>60)out.push('LIVE CANDLES AND STRUCTURE (closed candles):\n'+EVDetect.brief(S,cl(m15),cl(h1),EVDetect.to4h(cl(h1))));
+    const px=(TS.last[S]||{}).px||(h1.length?h1[h1.length-1].c:null);if(px)out.push(`PRICE NOW ${f2(px)}`);}catch(e){out.push('Live candles unavailable: '+(e.message||e));}
+  if(isSynth(S))out.push(synthBrief(S));
+  const an=HS.get().filter(e=>String(e.sym).toUpperCase()===S&&e.ord!=='WEEKLY OUTLOOK');
+  if(an.length)out.push(`SAVED ANALYSES AND TRADES OF ${S} (newest first):\n`+an.slice(0,8).map(e=>`- ${new Date(e.id).toISOString().slice(0,16).replace('T',' ')}Z ${e.dec} ${e.ord} entry ${e.entry} SL ${e.sl} TP1 ${e.tp1}${e.prob!=null?' p='+e.prob+'%':''} -> ${e.st}${e.st==='win'||e.st==='loss'?' '+fR(rOf(e)):''}${e.bot?' (robot)':''}`).join('\n'));
+  const last=an.find(e=>e.text)||null;if(last&&!(CTX&&CTX.id===last.id)){const i=last.text.search(/^### *Final trade plan/mi);out.push(`LATEST ${S} ANALYSIS (${new Date(last.id).toISOString().slice(0,16).replace('T',' ')}Z), final plan:\n`+(i>=0?last.text.slice(i,i+2500):last.text.slice(0,2500)));}
+  return out.join('\n\n');}
+let chatBusy=false;
+async function chatSend(o={}){if(chatBusy)return;const txt=$('chatIn').value.trim();if(!txt&&!ATT.length)return;const cur=chatCur();if(!cur)return;
+  const ak=$('kAnthropic').value.trim();if(!ak){$('chatStat').textContent='Add your Anthropic key in Settings first.';return;}
+  chatBusy=true;$('chatSend').disabled=true;const chat=chatGet(cur)||{},m={id:Date.now()+'-'+Math.random().toString(36).slice(2,6),c:cur,t:Date.now(),r:'u',x:txt,imgs:[],voice:!!o.voice,ctx:CTX?String(CTX.sym||'').toUpperCase():null};
+  for(let i=0;i<ATT.length;i++){const k='img:'+m.id+':'+i;await IDB.kv.put(k,ATT[i].b64);m.imgs.push(k);}
+  // a general chat takes the name of the first pair it talks about
+  if(!chat.sym&&!chat.title){const mm=(txt.toUpperCase().match(/\b(XAU\/?USD|GOLD|XAG\/?USD|BTC\/?USD|ETH\/?USD|[A-Z]{3}\/[A-Z]{3}|V\d{2,3}(\(1S\))?|BOOM ?\d+|CRASH ?\d+|STEP|US500|NAS100|US30|GER40)\b/)||[])[0];
+    if(mm){const S=mm==='GOLD'?'XAU/USD':/^[A-Z]{6}$/.test(mm)?mm.slice(0,3)+'/'+mm.slice(3):isSynth(mm)?synthApp(synthCode(mm)):mm;chatPut(cur,{sym:S});}}
+  CH.set([...CH.get(),m]);chatPut(cur,{});ATT=[];renderAtt();$('chatIn').value='';$('chatIn').style.height='';chatRender();chatHead();
+  const bub=document.createElement('div');bub.className='m-a';bub.innerHTML='<div class="typing"><span></span><span></span><span></span></div>';$('chatLog').appendChild(bub);$('chatLog').scrollTop=$('chatLog').scrollHeight;
+  try{CTX=await ctxText()||CTX;const msgs=await buildMsgs(CH.get().filter(x=>x.c===cur).slice(-30)),pc=await pairContext((chatGet(cur)||{}).sym);
+    let stick=true;$('chatLog').onscroll=()=>{const L=$('chatLog');stick=L.scrollHeight-L.scrollTop-L.clientHeight<80;};
+    const raw=await chatStream(ak,COACH_SYS+'\n\nCONTEXT FROM THE APP (live data from the user\'s Edgeview):\n'+coachContext()+(pc?'\n\n'+pc:''),msgs,t=>{bub.innerHTML=mdChat(stripTags(t))||'<div class="typing"><span></span><span></span><span></span></div>';if(stick)$('chatLog').scrollTop=$('chatLog').scrollHeight;});
+    const chips=[],su=raw.match(/<style_update>([\s\S]*?)<\/style_update>/),gu=raw.match(/<goals_update>([\s\S]*?)<\/goals_update>/);
+    if(su&&su[1].trim().length>20){STYLE.set(su[1].trim().slice(0,4000));$('styleTx').value=STYLE.get();chips.push('Updated how you trade');}
+    if(gu){try{const g=JSON.parse(gu[1].trim());setGoals({...(g.day!=null?{day:g.day}:{}),...(g.week!=null?{week:g.week}:{})});chips.push('Goals updated');}catch(e){}}
+    let prop=null;const mu=raw.match(/<mandate_update>([\s\S]*?)<\/mandate_update>/);if(mu){try{const o2=JSON.parse(mu[1].trim()),ok=['on','risk','target','maxDD','dayLoss','maxOpen','maxDay','minRR','maxLot','pairs','sessions','tpMode','be','notes'];prop=Object.fromEntries(Object.entries(o2).filter(([k])=>ok.includes(k)));if(!Object.keys(prop).length)prop=null;}catch(e){}}
+    CH.set([...CH.get(),{id:Date.now()+'-a',c:cur,t:Date.now(),r:'a',x:stripTags(raw)||'(no answer)',chips,...(prop?{prop}:{})}]);chatPut(cur,{});$('chatStat').textContent='';}
+  catch(e){$('chatStat').textContent='Coach error: '+(e.message||e);}
+  finally{chatBusy=false;$('chatSend').disabled=false;chatRender();}}
+$('chatSend').onclick=()=>chatSend();
 const COACH_SYS=`You are Edgeview Coach, the trading coach inside the user's own Edgeview app (forex, gold and crypto). You talk with one trader, usually on a phone.
 What you do:
 - Explain and discuss Edgeview's analyses: why the bias, why each level, what would invalidate it, how to manage the trade. Use the data in the context; never invent prices, news or results. If a fresh plan is needed, say to run Analyze, or work from the latest saved analysis and give its time.
@@ -1887,24 +2032,6 @@ async function buildMsgs(list){const out=[],withImg=list.filter(m=>m.r==='u'&&(m
     const tx=(m.voice?'(voice note) ':'')+(m.x||'');if(tx.trim())content.push({type:'text',text:tx});if(!content.length)continue;
     const prev=out[out.length-1];if(prev&&prev.role===role)prev.content.push(...content);else out.push({role,content});}
   while(out.length&&out[0].role!=='user')out.shift();return out;}
-let chatBusy=false;
-async function chatSend(o={}){if(chatBusy)return;const txt=$('chatIn').value.trim();if(!txt&&!ATT.length)return;
-  const ak=$('kAnthropic').value.trim();if(!ak){$('chatStat').textContent='Add your Anthropic key in Settings first.';return;}
-  chatBusy=true;$('chatSend').disabled=true;const cur=chatCur(),m={id:Date.now()+'-'+Math.random().toString(36).slice(2,6),c:cur,t:Date.now(),r:'u',x:txt,imgs:[],voice:!!o.voice,ctx:CTX?String(CTX.sym||'').toUpperCase():null};
-  for(let i=0;i<ATT.length;i++){const k='img:'+m.id+':'+i;await IDB.kv.put(k,ATT[i].b64);m.imgs.push(k);}
-  CH.set([...CH.get(),m]);ATT=[];renderAtt();$('chatIn').value='';$('chatIn').style.height='';chatRender();
-  const bub=document.createElement('div');bub.className='msg a';bub.innerHTML='<span class="hint">Thinking…</span>';$('chatLog').appendChild(bub);$('chatLog').scrollTop=$('chatLog').scrollHeight;
-  try{const msgs=await buildMsgs(CH.get().filter(x=>x.c===cur).slice(-24));
-    const raw=await chatStream(ak,COACH_SYS+'\n\nCONTEXT FROM THE APP (live data from the user\'s Edgeview):\n'+coachContext(),msgs,t=>{bub.innerHTML=md1(stripTags(t));$('chatLog').scrollTop=$('chatLog').scrollHeight;});
-    const chips=[],su=raw.match(/<style_update>([\s\S]*?)<\/style_update>/),gu=raw.match(/<goals_update>([\s\S]*?)<\/goals_update>/);
-    if(su&&su[1].trim().length>20){STYLE.set(su[1].trim().slice(0,4000));$('styleTx').value=STYLE.get();chips.push('Updated how you trade');}
-    if(gu){try{const g=JSON.parse(gu[1].trim());setGoals({...(g.day!=null?{day:g.day}:{}),...(g.week!=null?{week:g.week}:{})});chips.push('Goals updated');}catch(e){}}
-    let prop=null;const mu=raw.match(/<mandate_update>([\s\S]*?)<\/mandate_update>/);if(mu){try{const o=JSON.parse(mu[1].trim()),ok=['on','risk','target','maxDD','dayLoss','maxOpen','maxDay','minRR','maxLot','pairs','sessions','tpMode','be','notes'];prop=Object.fromEntries(Object.entries(o).filter(([k])=>ok.includes(k)));if(!Object.keys(prop).length)prop=null;}catch(e){}}
-    CH.set([...CH.get(),{id:Date.now()+'-a',c:cur,t:Date.now(),r:'a',x:stripTags(raw)||'(no answer)',chips,...(prop?{prop}:{})}]);$('chatStat').textContent='';}
-  catch(e){$('chatStat').textContent='Coach error: '+(e.message||e);}
-  finally{chatBusy=false;$('chatSend').disabled=false;chatRender();}}
-$('chatSend').onclick=()=>chatSend();
-$('chatClear').onclick=()=>{store.set('ev_chatCur','c'+Date.now());CTX=null;$('chatCtx').hidden=true;chatRender();};
 // voice notes: Whisper when an OpenAI key is set, otherwise the phone's speech recognition
 const VO={rec:null,sr:null,chunks:[],base:''};
 async function micToggle(){const btn=$('chatMic'),st=$('chatStat'),ok=$('kOpenAI').value.trim();
@@ -1930,7 +2057,8 @@ async function micToggle(){const btn=$('chatMic'),st=$('chatStat'),ok=$('kOpenAI
   sr.onend=()=>{VO.sr=null;btn.classList.remove('rec');st.textContent='';if(fin.trim())chatSend({voice:true});};
   try{sr.start();btn.classList.add('rec');st.textContent='Listening… tap 🎤 again to send';}catch(e){VO.sr=null;st.textContent='Voice: '+(e.message||e);}}
 $('chatMic').onclick=micToggle;
-renderGoals();chatRender();setInterval(()=>{if(!$('v-coach').hidden)renderGoals();},60000);
+function coachEnter(){const c=chatGet(chatCur());if(c&&!c.del)chatOpen(c.id);else chatClose();}
+renderGoals();coachEnter();setInterval(()=>{if(!$('v-coach').hidden){renderGoals();if(!$('coachChat').hidden)chatHead();}},60000);
 // ---- live account (v39): mandate for the robot that trades a MetaTrader account through MetaApi from GitHub Actions
 const LIVE_DEF={broker:'deriv',derivAcct:'demo',on:false,allowReal:false,region:'london',pairs:['XAU/USD'],risk:0.5,target:8,maxDD:8,dayLoss:4,maxOpen:2,maxDay:3,minRR:1.5,sessions:['london','newyork'],tpMode:'split',be:true,maxLot:1,maxCalls:10,notes:'',symMap:'',endDate:''};
 const MANDATE={get:()=>{try{return {...LIVE_DEF,...JSON.parse(store.get('ev_live')||'{}')};}catch(e){return {...LIVE_DEF};}},set:o=>{store.set('ev_live',JSON.stringify(o));if(syncOk())setTimeout(()=>syncRun('push'),300);}};
@@ -2046,6 +2174,7 @@ function go(v){
   if(v==='journal')autoResolve(false);
   if(v==='chart'){if(!LC.bars.length||Date.now()-LC.at>90000)lcLoad(false);else lcDraw();}
   setTimeout(tickSync,1200);
+  if(v==='coach'&&typeof coachEnter==='function')coachEnter();
   if(v==='robot'){renderWL();renderBot();renderAlerts();markAlertsRead();if(typeof liveRender==='function'){liveRender();if(syncOk())liveLoad().then(liveRender);}}
 }
 document.querySelectorAll('#tabs button,#moreSheet [data-v]').forEach(b=>b.onclick=()=>go(b.dataset.v));
