@@ -18,6 +18,8 @@ A single static page (`edgeview.html`). No server, no build step.
 3. Add your charts, highest timeframe first (tap, drag, or paste). Up to 8. Optionally add screenshots of news or the economic calendar (for example from the Investing.com app), up to 6. Claude reads the events, forecasts and impact levels from them.
 4. Add an optional note, then tap **Analyze**.
 
+All times in the app are South African time (SAST, UTC+2, no daylight saving): the clock in the header, session opens, the calendar, news, "Valid until" on every plan, the journal, the coach and the Telegram alerts. Plans saved before v43.3 were written in UTC; the app still reads them correctly because their times are labelled UTC.
+
 ## Security
 - Keys live only in your browser's localStorage and go straight to the three providers. Nothing is stored on GitHub.
 - Anyone who opens the page on their own device must enter their own keys. Never hard-code keys into `edgeview.html`.

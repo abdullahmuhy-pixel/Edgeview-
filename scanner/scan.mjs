@@ -14,6 +14,9 @@ import { derivCode, isSynth, synthCode, synthBrief, derivCandles } from './deriv
 const env = process.env, now = +env.SCAN_NOW || Date.now();   // SCAN_NOW only for tests
 const AK = env.ANTHROPIC_API_KEY || '', TK = env.TWELVE_DATA_KEY || '', TG = env.TELEGRAM_BOT_TOKEN || '', CHAT = env.TELEGRAM_CHAT_ID || '';
 const STATE = '.scanner-state.json';
+// South African time (SAST = UTC+2, no daylight saving) for everything the user reads
+const sast = t => new Date(t + 2 * 36e5).toISOString().slice(0, 16).replace('T', ' ') + ' SAST';
+const sastNow = t => `${sast(t)} (South Africa, UTC+2; write any time in SAST)`;
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const isCrypto = s => /^(BTC|ETH|SOL|XRP|BNB|ADA|DOGE|AVAX|DOT|LINK|LTC|TRX|TON|MATIC|SHIB|PEPE|SUI|APT|ARB|OP|NEAR|ATOM)\b/i.test(String(s).replace('/', ' '));
@@ -106,20 +109,20 @@ for (const sym of pairs) {
     const track = [...new Set(sig.map(x => D.sigVerdict(x, S.sig).line).filter(Boolean))];
     const data = (isSynth(sym) ? synthBrief(sym) + '\n' : '') + D.brief(sym, a.closed, b.closed, h4) + `\nPRICE NOW ${f2(pxNow)}\nEARLY-MOVE SIGNALS (last hour):\n` + (sig.length ? sig.map(sigText).join('\n') : 'none') + (track.length ? '\nPAST FOLLOW-THROUGH OF THESE SIGNAL TYPES (1 ATR with the signal before 1 ATR against): ' + track.join(' ') : '');
     if (doSession) {
-      const v = await haiku(`${sess.name} session open screen. Current UTC time ${new Date(now).toISOString()}.\n${data}`);
+      const v = await haiku(`${sess.name} session open screen. Current time ${sastNow(now)}.\n${data}`);
       log(sym, 'session', JSON.stringify(v));
       if (v && v.opportunity === 'yes' && (+v.quality || 0) >= 3 && !recent(sym, v.direction)) {
         sent.push({ sym, side: v.direction, t: now });
-        await telegram(`🔔 <b>${esc(sym)}: possible ${esc(v.direction)}</b> (${esc(v.quality)}/5) at the ${esc(sess.name)} open\n${esc(v.setup)}. ${esc(v.why)}\nTrigger: ${esc(v.trigger)}\nInvalidation: ${v.invalidation != null ? esc(f2(+v.invalidation)) : 'n/a'}\nPrice ${esc(f2(pxNow))}. Open Edgeview for a full analysis.`);
+        await telegram(`🔔 <b>${esc(sym)}: possible ${esc(v.direction)}</b> (${esc(v.quality)}/5) at the ${esc(sess.name)} open\n🕒 ${sast(now)}\n${esc(v.setup)}. ${esc(v.why)}\nTrigger: ${esc(v.trigger)}\nInvalidation: ${v.invalidation != null ? esc(f2(+v.invalidation)) : 'n/a'}\nPrice ${esc(f2(pxNow))}. Open Edgeview for a full analysis.`);
       }
     } else if (W.earlyDetection !== false && sig.length && sig[0].score >= minScore && !recent(sym, sig[0].side) && D.sigVerdict(sig[0], S.sig).weak && sig[0].score < minScore + 15) {
       log(sym, 'skipped weak signal type', D.sigVerdict(sig[0], S.sig).line);
     } else if (W.earlyDetection !== false && sig.length && sig[0].score >= minScore && !recent(sym, sig[0].side)) {
-      const s = sig[0], v = await haiku(`An early-move signal fired in the last hour. Confirm or reject it. Current UTC time ${new Date(now).toISOString()}.\n${data}`);
+      const s = sig[0], v = await haiku(`An early-move signal fired in the last hour. Confirm or reject it. Current time ${sastNow(now)}.\n${data}`);
       log(sym, 'early', s.side, s.score, JSON.stringify(v));
       if (!AK || (v && v.opportunity !== 'no' && (v.direction === s.side || v.direction === 'NONE'))) {
         sent.push({ sym, side: s.side, t: now });
-        await telegram(`⚡ <b>${esc(sym)}: early ${esc(s.side)} move</b> (${esc(s.tf)}, score ${s.score})\n${esc(v ? `${v.setup}. ${v.why}` : s.why.join('; '))}\n${v ? 'Trigger: ' + esc(v.trigger) + '\n' : ''}${(() => { const t = D.sigVerdict(s, S.sig).line; return t ? esc(t) + '\n' : ''; })()}Origin ${esc(f2(s.origin))}, stop idea ${esc(f2(s.stopIdea))}, price ${esc(f2(pxNow))}. Open Edgeview for a full analysis.`);
+        await telegram(`⚡ <b>${esc(sym)}: early ${esc(s.side)} move</b> (${esc(s.tf)}, score ${s.score})\n🕒 ${sast(now)}\n${esc(v ? `${v.setup}. ${v.why}` : s.why.join('; '))}\n${v ? 'Trigger: ' + esc(v.trigger) + '\n' : ''}${(() => { const t = D.sigVerdict(s, S.sig).line; return t ? esc(t) + '\n' : ''; })()}Origin ${esc(f2(s.origin))}, stop idea ${esc(f2(s.stopIdea))}, price ${esc(f2(pxNow))}. Open Edgeview for a full analysis.`);
       }
     } else log(sym, 'no alert', sig.length ? `best ${sig[0].side} ${sig[0].score}` : 'no signal');
   } catch (e) { log(sym, 'error', e.message || e); }
