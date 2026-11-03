@@ -14,6 +14,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const D = require('../detect.js'), TA = require('../ta.js');
 import { isSynth, synthCode, synthBrief, derivCandles, SYNTH_LIST } from './deriv.mjs';
+import { derivBroker, sizeMult, tpMoney } from './deriv-trade.mjs';
 const crypto = globalThis.crypto || wc;
 
 const env = process.env, now = +env.LIVE_NOW || Date.now();
@@ -150,12 +151,12 @@ export function lots(riskMoney, dist, spec, price) {
   return v + 1e-12 < (+spec.minVolume || step) ? 0 : +v.toFixed(dec);
 }
 function defaults(M) {
-  return { on: false, allowReal: false, region: 'london', pairs: ['XAU/USD'], risk: 0.5, target: 8, maxDD: 8, dayLoss: 4, maxOpen: 2, maxDay: 3, minRR: 1.5, sessions: ['london', 'newyork'], tpMode: 'split', be: true, maxLot: 1, maxCalls: 10, model: 'claude-sonnet-5-5', notes: '', symMap: '', ...(M || {}) };
+  return { broker: 'deriv', derivAcct: 'demo', on: false, allowReal: false, region: 'london', pairs: ['XAU/USD'], risk: 0.5, target: 8, maxDD: 8, dayLoss: 4, maxOpen: 2, maxDay: 3, minRR: 1.5, sessions: ['london', 'newyork'], tpMode: 'split', be: true, maxLot: 1, maxCalls: 10, model: 'claude-sonnet-5-5', notes: '', symMap: '', ...(M || {}) };
 }
 
 // ---------- the run
 export async function run() {
-  if (!MT || !ACC || !PASS || !GH || !REPO) { log('live trading is not set up (needs METAAPI_TOKEN, METAAPI_ACCOUNT_ID and EDGEVIEW_PASSPHRASE secrets)'); return; }
+  if (!PASS || !GH || !REPO) { log('live trading is not set up (needs the EDGEVIEW_PASSPHRASE secret and a broker: MetaApi or Deriv)'); return; }
   const sync = await ghGet('edgeview-sync.json'); if (!sync) { log('no cloud memory yet: turn on sync in the app'); return; }
   let mem; try { mem = await openBox(sync.box, PASS); } catch (e) { log('cannot decrypt the cloud memory: EDGEVIEW_PASSPHRASE must equal the backup passphrase'); return; }
   const kv = k => { try { return JSON.parse((mem.kv && mem.kv[k] && mem.kv[k][0]) || 'null'); } catch (e) { return (mem.kv && mem.kv[k] && mem.kv[k][0]) || null; } };
@@ -166,6 +167,8 @@ export async function run() {
   if (prev && prev.box && prev.box.ct) { try { S = { ...S, ...(await openBox(prev.box, PASS)) }; } catch (e) { log('previous state unreadable, starting fresh'); } }
   const note = (msg, tg) => { S.log.unshift({ t: now, msg }); S.log = S.log.slice(0, 200); log(msg.replace(/\d[\d.,]*/g, '#')); /* Actions logs of a public repository are public: no figures */ if (tg) return telegram(tg === true ? esc(msg) : tg); };
   const save = async () => { S.at = now; S.mandate = { on: M.on, rev: M.startAt }; await ghPut('edgeview-live-state.json', await sealBox(S, PASS), prev && prev.sha); };
+  if (M.broker === 'deriv') return await runDeriv({ M, S, note, save, style, goals });
+  if (!MT || !ACC) { log('MetaApi is not set up (needs METAAPI_TOKEN and METAAPI_ACCOUNT_ID)'); return; }
   try {
     const acct = await mt('GET', '/account-information');
     const real = /REAL/i.test(acct.type || ''), [pos, ord] = await Promise.all([mt('GET', '/positions'), mt('GET', '/orders')]);
@@ -287,5 +290,93 @@ async function settle(S, note) {
     t.pl = +pl.toFixed(2); t.st = pl > 0 ? 'win' : pl < 0 ? 'loss' : 'be'; t.closedAt = now; t.r = t.riskMoney ? +(pl / t.riskMoney).toFixed(2) : null;
     await note(`${t.sym}: ${t.side} closed, ${t.pl >= 0 ? '+' : ''}${t.pl}${t.r != null ? ` (${t.r >= 0 ? '+' : ''}${t.r}R)` : ''}`, `${t.pl >= 0 ? '✅' : '❌'} <b>Edgeview live: ${esc(t.sym)} ${t.side} closed</b> ${t.pl >= 0 ? '+' : ''}${t.pl}${t.r != null ? ` (${t.r}R)` : ''}`);
   }
+}
+
+// ---------- Deriv: Multipliers on the Deriv options account (synthetic indices)
+async function runDeriv({ M, S, note, save, style, goals }) {
+  let B = null;
+  try {
+    B = await (env.DERIV_MOCK ? (await import(env.DERIV_MOCK)).default(M) : derivBroker(M, env));
+    const acct = B.acct; S.acct = { ...acct, real: B.real };
+    const byId = new Map(B.open.map(o => [String(o.id), o]));
+    S.pos = B.open.map(o => { const t = S.trades.find(t => (t.legs || []).some(l => String(l.cid) === String(o.id))); return { id: o.id, sym: t ? t.sym : o.code, type: /UP/.test(o.type) ? 'BUY' : 'SELL', vol: `stake ${o.stake} x${o.mult || ''}`, open: o.entry, sl: t ? t.sl : null, tp: t ? t.tps[0] : null, cur: o.spot, pl: o.pl, mine: !!t, cid: String(o.id) }; });
+    S.ord = [];
+    if (M.startAt && (!S.ch || S.ch.startAt !== M.startAt)) { S.ch = { startAt: M.startAt, startBal: acct.balance, peak: acct.equity, status: 'running' }; S.trades = []; await note(`New mandate started on Deriv (${acct.type} account): balance ${acct.balance} ${acct.currency}, target +${M.target}%, max drawdown ${M.maxDD}%, daily loss ${M.dayLoss}%, risk ${M.risk}% per trade.`, true); }
+    if (!S.ch) { await note('No mandate started yet: press Start in the app (Robot > Live account).'); return await save(); }
+    S.ch.peak = Math.max(S.ch.peak || 0, acct.equity);
+    const dk = dayKey(now); if (!S.day || S.day.key !== dk) S.day = { key: dk, startBal: Math.max(acct.balance, acct.equity), trades: 0, halted: false };
+    // settle closed contracts
+    for (const t of S.trades.filter(t => t.st === 'open')) {
+      if (t.legs.some(l => byId.has(String(l.cid)))) continue;
+      let pl = 0; for (const l of t.legs) { try { const r = await B.result(l.cid); pl += r.pl; } catch (e) { } }
+      t.pl = +pl.toFixed(2); t.st = pl > 0 ? 'win' : pl < 0 ? 'loss' : 'be'; t.closedAt = now; t.r = t.riskMoney ? +(pl / t.riskMoney).toFixed(2) : null;
+      await note(`${t.sym}: ${t.side} closed, ${t.pl >= 0 ? '+' : ''}${t.pl}${t.r != null ? ` (${t.r >= 0 ? '+' : ''}${t.r}R)` : ''}`, `${t.pl >= 0 ? '✅' : '❌'} <b>Edgeview live (Deriv): ${esc(t.sym)} ${t.side} closed</b> ${t.pl >= 0 ? '+' : ''}${t.pl}${t.r != null ? ` (${t.r}R)` : ''}`);
+    }
+    const openRisk = S.trades.filter(t => t.st === 'open').reduce((s, t) => s + (t.riskMoney || 0), 0);
+    const L = limits(M, S.ch, S.day, acct, openRisk); S.lim = L;
+    const closeAll = async why => { let n = 0; for (const o of B.open) { try { await B.sell(o.id); n++; } catch (e) { await note('close failed: ' + e.message); } } if (n) await note(`Closed ${n} contract(s): ${why}.`, `🛑 <b>Edgeview live (Deriv): everything closed</b>\n${esc(why)}`); };
+    if (M.flatAt && (!S.flatDone || S.flatDone < M.flatAt)) { await closeAll('you asked to close everything'); S.flatDone = M.flatAt; }
+    if (S.ch.status === 'running') {
+      if (L.breachDD) { S.ch.status = 'failed'; S.ch.reason = `maximum drawdown of ${M.maxDD}% reached`; await closeAll(S.ch.reason); }
+      else if (L.target) { S.ch.status = 'passed'; S.ch.reason = `profit target of +${M.target}% reached`; await closeAll(S.ch.reason); }
+      else if (L.breachDay && !S.day.halted) { S.day.halted = true; await closeAll(`daily loss limit of ${M.dayLoss}% reached; trading resumes next broker day`); }
+      else if (M.endDate && now > Date.parse(M.endDate + 'T21:00:00Z')) { S.ch.status = 'ended'; S.ch.reason = 'end date reached'; await note('Mandate end date reached: no new trades.', true); }
+    }
+    const mineOpen = () => S.pos.filter(p => p.mine).length;
+    const stop = !M.on ? 'paused in the app' : B.real && !M.allowReal ? 'this is a real-money account and the mandate does not allow real accounts' : S.ch.status !== 'running' ? `challenge ${S.ch.status}: ${S.ch.reason}` :
+      S.day.halted ? 'daily loss limit reached today' : S.day.trades >= M.maxDay ? `already ${S.day.trades} trades today (max ${M.maxDay})` : mineOpen() >= M.maxOpen ? `${M.maxOpen} trades already open` : '';
+    S.idle = stop || '';
+    if (stop) { log('no new trades:', stop.replace(/\d[\d.,]*/g, '#')); return await save(); }
+    S.calls = S.calls.day === dk ? S.calls : { day: dk, n: 0 };
+    for (const sym of M.pairs.slice(0, 6)) {
+      if (!isSynth(sym)) { await note(`${sym}: skipped, the Deriv robot trades synthetic indices only`); continue; }
+      if (S.calls.n >= M.maxCalls) { log('daily analysis budget used'); break; }
+      const code = synthCode(sym);
+      if (S.pos.some(p => p.mine && synthCode(p.sym) === code)) continue;
+      if (mineOpen() >= M.maxOpen || S.day.trades >= M.maxDay) break;
+      try {
+        const a = await bars(sym, '15M', 300), b = await bars(sym, '1H', 300), h4 = D.to4h(b.closed);
+        const sig = D.detect(a.closed, b.closed, { tf: '15M' }).concat(D.detect(b.closed, h4, { tf: '1H' })).filter(s => now - s.at < 45 * 60000 && s.score >= 60).sort((x, y) => y.score - x.score);
+        const hk = sym + new Date(now).toISOString().slice(0, 13);                        // otherwise look at each index once every 4 hours
+        const due = new Date(now).getUTCHours() % 4 === 0 && !S.sessDone[hk];
+        if (!sig.length && !due && !env.LIVE_FORCE) { log(sym, 'nothing new'); continue; }
+        if (due) S.sessDone[hk] = 1;
+        const spot = await B.spot(code); if (!spot) { await note(`${sym}: no price from Deriv`); continue; }
+        const atr = TA.atr(b.closed, 14), px0 = spot;
+        const data = synthBrief(sym) + '\n' + D.brief(sym, a.closed, b.closed, h4) + '\n' + [TA.tfTools('1H', b.closed, px0, 3), TA.tfTools('15M', a.closed, px0, 3)].filter(Boolean).join('\n') +
+          `\nDERIV PRICE NOW: ${spot}` + (sig.length ? '\nEARLY-MOVE SIGNALS: ' + sig.slice(0, 3).map(s => `${s.tf} ${s.side} score ${s.score}: ${(s.patterns || []).join(' + ')}`).join('; ') : '');
+        const ctx = `TIME ${new Date(now).toISOString()}\nACCOUNT: Deriv ${acct.type} options account, balance ${acct.balance} ${acct.currency}, equity ${acct.equity}; challenge ${L.gain.toFixed(2)}% of +${M.target}% target; drawdown used ${L.ddUsed.toFixed(2)}% of ${M.maxDD}%; today's loss used ${L.dayUsed.toFixed(2)}% of ${M.dayLoss}%; ${S.day.trades} trade(s) today.\n` +
+          `EXECUTION: Deriv Multiplier contracts, market orders only. Use order MARKET and only trade a setup that is valid at the current price; otherwise NO_TRADE.\n` +
+          `RECENT ROBOT TRADES: ${S.trades.slice(0, 6).map(t => `${t.sym} ${t.side} ${t.st}${t.pl != null ? ' ' + t.pl.toFixed(2) : ''}`).join('; ') || 'none'}\n` +
+          `MANDATE: minimum reward to risk ${M.minRR}. ${M.notes ? "TRADER'S INSTRUCTIONS FOR THIS ACCOUNT: " + M.notes : ''}\nTRADER'S STYLE:\n${style || '(not described)'}\nGOALS: today ${goals.day || 'none'}; week ${goals.week || 'none'}`;
+        S.calls.n++;
+        const p = await claude(M.model, LIVE_SYS, `${ctx}\n\nINSTRUMENT ${sym}\n${data}`);
+        if (p && p.decision === 'TRADE' && p.order !== 'MARKET') { await note(`${sym}: no trade (the plan needs a ${p.order} order; Deriv multipliers fill at market only)`); continue; }
+        const v = validPlan(p, { bid: spot, ask: spot }, M.minRR, atr);
+        if (typeof v === 'string') { await note(`${sym}: no trade (${v}${p && p.why ? ': ' + p.why : ''})`); continue; }
+        let riskMoney = acct.balance * Math.min(M.risk, 2) / 100;
+        const streak = (() => { let n = 0; for (const t of S.trades) { if (t.st === 'loss') n++; else if (t.st === 'win') break; } return n; })(); if (streak >= 3) riskMoney /= 2;
+        riskMoney = Math.min(riskMoney, L.dayRoom * 0.9, L.ddRoom * 0.9);
+        if (!(riskMoney > 0)) { await note(`${sym}: skipped, no room left under the loss limits`); continue; }
+        const { ms, minStake } = await B.mults(code);
+        const split = M.tpMode === 'split' && v.tps.length > 1, legsPlan = split ? [[riskMoney / 2, v.tps[0]], [riskMoney / 2, v.tps[Math.min(1, v.tps.length - 1)]]] : [[riskMoney, M.tpMode === 'tp2' && v.tps[1] ? v.tps[1] : v.tps[0]]];
+        const sized = legsPlan.map(([rm, tp]) => ({ z: sizeMult(rm, v.entry, v.sl, ms, minStake), tp }));
+        if (sized.some(x => !x.z)) { await note(`${sym}: skipped, the stop is too wide for Deriv's multipliers or the stake would be under the minimum (${minStake} ${acct.currency})`); continue; }
+        const legs = [];
+        for (const { z, tp } of sized) {
+          const r = await B.buy({ code, side: v.side, stake: z.stake, mult: z.mult, sl: z.slMoney, tp: tpMoney(z.stake, z.mult, v.entry, tp) });
+          legs.push({ cid: String(r.contractId), stake: z.stake, mult: z.mult, tp, entry: r.entry });
+        }
+        S.day.trades++;
+        const id = 'EV' + now.toString(36).slice(-5) + Math.random().toString(36).slice(2, 4);
+        S.trades.unshift({ id, at: now, sym, bsym: code, side: v.side > 0 ? 'BUY' : 'SELL', order: 'MARKET', entry: v.entry, sl: v.sl, tps: v.tps, vol: legs.map(l => `${l.stake}x${l.mult}`).join(' + '), riskMoney: +riskMoney.toFixed(2), rr: +v.rr.toFixed(2), conf: p.confidence, why: p.why, manage: p.manage, legs, st: 'open' });
+        S.trades = S.trades.slice(0, 300);
+        await note(`${sym}: bought ${v.side > 0 ? 'MULTUP' : 'MULTDOWN'} at ${f2(v.entry)}, stop ${f2(v.sl)}, targets ${v.tps.map(f2).join(' / ')}, stake ${legs.map(l => l.stake + ' x' + l.mult).join(' + ')}, risking ${riskMoney.toFixed(2)} ${acct.currency}.`,
+          `🤖 <b>Edgeview live (Deriv): ${esc(sym)} ${v.side > 0 ? 'BUY' : 'SELL'}</b>\nEntry ${f2(v.entry)} | SL ${f2(v.sl)} | TP ${v.tps.map(f2).join(' / ')}\nStake ${legs.map(l => l.stake + ' x' + l.mult).join(' + ')}, risk ${riskMoney.toFixed(2)} ${esc(acct.currency)} (R:R ${v.rr.toFixed(2)})\n${esc(p.why || '')}`);
+      } catch (e) { await note(`${sym}: error ${e.message || e}`); }
+    }
+    await save();
+  } catch (e) { S.err = String(e.message || e); await note('robot error: ' + S.err); await save().catch(x => log('could not save state', x.message)); process.exitCode = 1; }
+  finally { if (B && B.close) B.close(); }
 }
 if (import.meta.url === `file://${process.argv[1]}`) await run();

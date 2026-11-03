@@ -263,18 +263,19 @@
   <section class="view" id="v-robot" hidden>
   <div class="card" id="liveCard">
     <div class="ttl">Live account <span id="liveBadge" class="hint" style="font-weight:600"></span></div>
-    <div id="liveStatus" class="hint" style="margin-top:0">Connect a MetaTrader account through MetaApi and give the robot a mandate. It runs from your GitHub repository every 15 minutes, even when this phone is off.</div>
+    <div id="liveStatus" class="hint" style="margin-top:0">Connect your Deriv account (free) or a MetaTrader account through MetaApi, and give the robot a mandate. It runs from your GitHub repository every 15 minutes, even when this phone is off.</div>
     <div class="row" style="margin-top:8px;flex-wrap:wrap"><button class="sec" id="liveRefresh">Refresh</button><button class="sec" id="liveRunNow">Run the robot now</button><button class="sec" id="livePause">Pause</button><button class="sec" id="liveFlat" style="color:var(--bear);border-color:var(--bear)">Close everything now</button></div>
     <div id="liveConfirm" hidden class="hint" style="margin-top:8px;padding:10px;border:1px solid var(--bear);border-radius:10px"></div>
     <details style="margin-top:12px"><summary style="cursor:pointer;font-weight:700">Mandate: how the robot runs the account</summary>
+      <div class="row"><div><label>Broker</label><select id="lvBroker"><option value="deriv">Deriv options account (Multipliers, synthetic indices)</option><option value="metaapi">MetaTrader through MetaApi (XM, Deriv MT5…)</option></select></div><div><label>Deriv account</label><select id="lvDerivAcct"><option value="demo">Demo</option><option value="real">Real</option></select></div></div>
       <label class="switch"><span>Trading on<small>Off = the robot only watches and protects open trades</small></span><input type="checkbox" class="tgl" id="lvOn"></label>
       <div class="row"><div><label>Profit target (%)</label><input id="lvTarget" inputmode="decimal"></div><div><label>Max drawdown from start (%)</label><input id="lvDD" inputmode="decimal"></div><div><label>Daily loss limit (%)</label><input id="lvDay" inputmode="decimal"></div></div>
       <div class="row"><div><label>Risk per trade (%)</label><input id="lvRisk" inputmode="decimal"></div><div><label>Max open trades</label><input id="lvOpen" inputmode="numeric"></div><div><label>Max trades a day</label><input id="lvMaxDay" inputmode="numeric"></div></div>
       <div class="row"><div><label>Minimum reward:risk</label><input id="lvRR" inputmode="decimal"></div><div><label>Max lot size</label><input id="lvLot" inputmode="decimal"></div><div><label>Analyses a day (cost cap)</label><input id="lvCalls" inputmode="numeric"></div></div>
       <label>Pairs (Twelve Data names, comma separated)</label><input id="lvPairs" placeholder="XAU/USD, GBP/JPY">
-      <label>Sessions</label><div class="row" style="gap:14px;flex-wrap:wrap"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="lvAsia"> Asia</label><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="lvLon"> London</label><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="lvNY"> New York</label></div>
+      <label>Sessions <span class="hint">(MetaTrader pairs; the Deriv robot trades synthetics around the clock)</span></label><div class="row" style="gap:14px;flex-wrap:wrap"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="lvAsia"> Asia</label><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="lvLon"> London</label><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="lvNY"> New York</label></div>
       <div class="row"><div><label>Take profit</label><select id="lvTp"><option value="split">Half at TP1, half at TP2</option><option value="tp1">All at TP1</option><option value="tp2">All at TP2</option></select></div><div><label>End date (optional)</label><input id="lvEnd" type="date"></div></div>
-      <label class="switch"><span>Break-even at +1R<small>Moves the stop to entry once the trade is 1R in profit</small></span><input type="checkbox" class="tgl" id="lvBe"></label>
+      <label class="switch"><span>Break-even at +1R<small>Moves the stop to entry once the trade is 1R in profit (MetaTrader only; Deriv multipliers keep their stop)</small></span><input type="checkbox" class="tgl" id="lvBe"></label>
       <label>Your instructions for this account</label><textarea id="lvNotes" rows="4" placeholder="e.g. Treat it like a funded account. Only A+ setups that match my style, no trades 30 minutes either side of red-folder news, no trades on Friday after 14:00 UTC, gold only in the New York session."></textarea>
       <div class="row"><div><label>Broker symbols (optional)</label><input id="lvMap" placeholder="XAU/USD=GOLD, GBP/JPY=GBPJPY#"></div><div><label>MetaApi region</label><select id="lvRegion"><option value="london">London</option><option value="new-york">New York</option><option value="singapore">Singapore</option></select></div></div>
       <label style="display:flex;gap:8px;align-items:flex-start;margin-top:10px"><input type="checkbox" id="lvReal"> <span>Allow a <b>real-money</b> account. Leave this off while you test on a demo account. The robot refuses to trade a real account unless this is on.</span></label>
@@ -282,7 +283,11 @@
       <div class="hint" id="lvStat">Saving sends the mandate to your cloud memory; the robot reads it on its next run. Start a new challenge to reset the starting balance, target and drawdown.</div>
     </details>
     <details style="margin-top:8px"><summary style="cursor:pointer;font-weight:700">Connect the account (one-time setup)</summary>
-      <div class="hint">1. Create a MetaApi account at metaapi.cloud, add your XM MT5 login there (server, login, password) and copy its <b>account ID</b> and your <b>API token</b>. MetaApi costs about $30 a month after a 7-day trial (one MetaTrader account included).<br>2. Your GitHub token needs <b>Secrets</b> and <b>Actions</b> read and write on this repository, besides Contents. Turn on cloud sync in Settings.<br>3. Paste the two values below and tap <b>Send to the robot</b>. They are encrypted for GitHub in this browser and stored as repository secrets, with your Anthropic, Twelve Data and Telegram keys and the backup passphrase.</div>
+      <div class="hint">For MetaApi: 1. Create a MetaApi account at metaapi.cloud, add your XM MT5 login there (server, login, password) and copy its <b>account ID</b> and your <b>API token</b>. MetaApi costs about $30 a month after a 7-day trial (one MetaTrader account included).<br>2. Your GitHub token needs <b>Secrets</b> and <b>Actions</b> read and write on this repository, besides Contents. Turn on cloud sync in Settings.<br>3. Paste the two values below and tap <b>Send to the robot</b>. They are encrypted for GitHub in this browser and stored as repository secrets, with your Anthropic, Twelve Data and Telegram keys and the backup passphrase.</div>
+      <div class="hint"><b>Deriv (free):</b> sign in at developers.deriv.com, open the Dashboard, register an app of the <b>PAT</b> type and copy its <b>App ID</b>; then in API tokens create a Personal Access Token with the <b>trade</b> scope and copy it (it is shown once). New Deriv users already have a demo options account.</div>
+      <label>Deriv Personal Access Token</label><input id="kDerivTok" type="password" autocomplete="off">
+      <label>Deriv App ID</label><input id="kDerivApp" autocomplete="off">
+      <div class="hint" style="margin-top:10px"><b>MetaTrader through MetaApi (paid):</b> only if you choose that broker.</div>
       <label>MetaApi token</label><input id="kMetaApi" type="password" autocomplete="off">
       <label>MetaApi account ID</label><input id="kMetaAcc" autocomplete="off">
       <button class="sec" id="liveSecrets" style="margin-top:10px;width:100%">Send to the robot</button>
@@ -539,7 +544,7 @@ const IDB=(()=>{let dbp;const db=()=>dbp||(dbp=new Promise((res,rej)=>{const r=i
 const TXseen=new Set();
 function keepTexts(a){for(const e of a||[])if(e&&e.text&&e.id!=null&&!TXseen.has(e.id)){TXseen.add(e.id);IDB.texts.put(+e.id,e.text);}}
 // ---- keys
-['kAnthropic','kTwelve','kFinnhub','kFred','kOpenAI','kMetaApi','kMetaAcc','model','mHaiku','kGh','ghRepo','kSync','symbol','market'].forEach(id=>{ const v=store.get('ca_'+id); if(v) $(id).value=v; });
+['kAnthropic','kTwelve','kFinnhub','kFred','kOpenAI','kMetaApi','kMetaAcc','kDerivTok','kDerivApp','model','mHaiku','kGh','ghRepo','kSync','symbol','market'].forEach(id=>{ const v=store.get('ca_'+id); if(v) $(id).value=v; });
 
 const BRK={get:()=>{try{return {broker:'xm',acc:'standard',ov:'',...JSON.parse(store.get('ev_brk')||'{}')};}catch(e){return {broker:'xm',acc:'standard',ov:''};}},set:o=>store.set('ev_brk',JSON.stringify(o))};
 const costFor=sym=>brokerCost(sym,BRK.get());
@@ -564,7 +569,7 @@ function brkInfo(){const b=BRK.get();if(b.broker!=='xm'&&!b.ov.trim()){$('brkInf
 (()=>{const b=BRK.get();$('brk').value=b.broker;$('brkAcc').value=b.acc;$('brkOv').value=b.ov;$('acct').value=b.ccy||'ZAR';$('usdzar').value=b.usdzar||'';const sv=()=>{BRK.set({broker:$('brk').value,acc:$('brkAcc').value,ov:$('brkOv').value.trim(),ccy:$('acct').value,usdzar:$('usdzar').value.trim()});brkInfo();ccyLabels();try{renderBot();}catch(e){}};['brk','brkAcc','brkOv','acct','usdzar'].forEach(id=>$(id).onchange=sv);setTimeout(brkInfo,0);setTimeout(()=>refreshUsdZar(false).then(()=>{try{renderBot();}catch(e){}}),3000);})();
 $('tdplan').value=store.get('ca_tdplan')||'free';$('tdplan').onchange=()=>store.set('ca_tdplan',$('tdplan').value);
 $('depth').value=store.get('ca_depth')||'std';$('depth').onchange=()=>store.set('ca_depth',$('depth').value);
-const KEY_IDS=['kAnthropic','kTwelve','kFinnhub','kFred','kOpenAI','kMetaApi','kMetaAcc','model','mHaiku','kGh','ghRepo','kSync'];
+const KEY_IDS=['kAnthropic','kTwelve','kFinnhub','kFred','kOpenAI','kMetaApi','kMetaAcc','kDerivTok','kDerivApp','model','mHaiku','kGh','ghRepo','kSync'];
 function saveAll(msg){
   KEY_IDS.forEach(id=>store.set('ca_'+id,$(id).value.trim()));
   const el=$('saveStatus'); el.textContent=msg||'Saved on this device ✓';
@@ -1101,7 +1106,7 @@ function parseFinal(raw){const i=raw.search(/^### *Final trade plan/mi);if(i<0)r
 const num=x=>{const m=String(x||'').replace(/,/g,'').match(/-?\d+(\.\d+)?/);return m?+m[0]:null;};
 // ---- history + journal
 const HS={get:()=>{try{return JSON.parse(localStorage.getItem('ca_hist')||'[]')}catch(e){return[]}},set:a=>{keepTexts(a);const now=Date.now(),pack=(n,k)=>JSON.stringify(a.slice(0,n).map((e,i)=>(i<k||(e.ord==='WEEKLY OUTLOOK'&&now-e.id<20*86400000))?e:{...e,text:''}));try{localStorage.setItem('ca_hist',pack(400,40));}catch(e){try{localStorage.setItem('ca_hist',pack(150,12));}catch(e2){}}}};
-const APP_VER='edgeview-v40';
+const APP_VER='edgeview-v41';
 function META(){return {model:$('model').value.trim()||'claude-sonnet-5-5',deep:$('depth').value,ver:APP_VER};}
 
 function addOdds(card,text,sym){
@@ -1721,7 +1726,7 @@ setInterval(()=>{if(syncOk()&&!document.hidden&&syncSig()!==store.get('ev_syncSi
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&syncOk()&&syncSig()!==store.get('ev_syncSig'))syncRun('push');else if(!document.hidden&&syncOk()&&Date.now()-(+store.get('ev_syncAt')||0)>5*6e4)syncRun('push');});
 setTimeout(()=>{keepTexts(HS.get());if(syncOk())syncRun('push');},3000);
 // link code: moves the keys, token and repository to a new phone, encrypted with the backup passphrase
-const LINK_IDS=['kAnthropic','kTwelve','kFinnhub','kFred','kGh','ghRepo','model','mHaiku','kOpenAI','kMetaApi','kMetaAcc'];
+const LINK_IDS=['kAnthropic','kTwelve','kFinnhub','kFred','kGh','ghRepo','model','mHaiku','kOpenAI','kMetaApi','kMetaAcc','kDerivTok','kDerivApp'];
 $('linkMake').onclick=async()=>{const out=$('linkOut');try{const pass=$('kSync').value;if(pass.length<10)throw new Error('set your backup passphrase first');
     const keys={};for(const id of LINK_IDS)if($(id)&&$(id).value.trim())keys[id]=$(id).value.trim();keys.ghRepo=keys.ghRepo||ghRepo();
     const code='EVLINK1.'+btoa(JSON.stringify(await sealData({keys,at:Date.now()},pass)));out.hidden=false;out.value=code;out.select();
@@ -1858,15 +1863,15 @@ async function micToggle(){const btn=$('chatMic'),st=$('chatStat'),ok=$('kOpenAI
 $('chatMic').onclick=micToggle;
 renderGoals();chatRender();setInterval(()=>{if(!$('v-coach').hidden)renderGoals();},60000);
 // ---- live account (v39): mandate for the robot that trades a MetaTrader account through MetaApi from GitHub Actions
-const LIVE_DEF={on:false,allowReal:false,region:'london',pairs:['XAU/USD'],risk:0.5,target:8,maxDD:8,dayLoss:4,maxOpen:2,maxDay:3,minRR:1.5,sessions:['london','newyork'],tpMode:'split',be:true,maxLot:1,maxCalls:10,notes:'',symMap:'',endDate:''};
+const LIVE_DEF={broker:'deriv',derivAcct:'demo',on:false,allowReal:false,region:'london',pairs:['XAU/USD'],risk:0.5,target:8,maxDD:8,dayLoss:4,maxOpen:2,maxDay:3,minRR:1.5,sessions:['london','newyork'],tpMode:'split',be:true,maxLot:1,maxCalls:10,notes:'',symMap:'',endDate:''};
 const MANDATE={get:()=>{try{return {...LIVE_DEF,...JSON.parse(store.get('ev_live')||'{}')};}catch(e){return {...LIVE_DEF};}},set:o=>{store.set('ev_live',JSON.stringify(o));if(syncOk())setTimeout(()=>syncRun('push'),300);}};
 const LVF=[['lvTarget','target'],['lvDD','maxDD'],['lvDay','dayLoss'],['lvRisk','risk'],['lvOpen','maxOpen'],['lvMaxDay','maxDay'],['lvRR','minRR'],['lvLot','maxLot'],['lvCalls','maxCalls']];
-function liveForm(){const M=MANDATE.get();$('lvOn').checked=!!M.on;for(const [id,k] of LVF)$(id).value=M[k];$('lvPairs').value=(M.pairs||[]).join(', ');
+function liveForm(){const M=MANDATE.get();$('lvBroker').value=M.broker||'deriv';$('lvDerivAcct').value=M.derivAcct||'demo';$('lvOn').checked=!!M.on;for(const [id,k] of LVF)$(id).value=M[k];$('lvPairs').value=(M.pairs||[]).join(', ');
   $('lvAsia').checked=M.sessions.includes('asia');$('lvLon').checked=M.sessions.includes('london');$('lvNY').checked=M.sessions.includes('newyork');
   $('lvTp').value=M.tpMode;$('lvEnd').value=M.endDate||'';$('lvBe').checked=!!M.be;$('lvNotes').value=M.notes||'';$('lvMap').value=M.symMap||'';$('lvRegion').value=M.region||'london';$('lvReal').checked=!!M.allowReal;}
 // hard caps the robot also enforces: risk at most 2% a trade, limits that make sense together
 function liveRead(){const M=MANDATE.get(),num=(id,lo,hi,d)=>{const v=parseFloat($(id).value);return isFinite(v)?Math.min(hi,Math.max(lo,v)):d;};
-  const o={...M,on:$('lvOn').checked,target:num('lvTarget',0,100,8),maxDD:num('lvDD',1,50,8),dayLoss:num('lvDay',0.5,20,4),risk:num('lvRisk',0.05,2,0.5),maxOpen:Math.round(num('lvOpen',1,10,2)),maxDay:Math.round(num('lvMaxDay',1,20,3)),
+  const o={...M,broker:$('lvBroker').value,derivAcct:$('lvDerivAcct').value,on:$('lvOn').checked,target:num('lvTarget',0,100,8),maxDD:num('lvDD',1,50,8),dayLoss:num('lvDay',0.5,20,4),risk:num('lvRisk',0.05,2,0.5),maxOpen:Math.round(num('lvOpen',1,10,2)),maxDay:Math.round(num('lvMaxDay',1,20,3)),
     minRR:num('lvRR',0.5,10,1.5),maxLot:num('lvLot',0.01,100,1),maxCalls:Math.round(num('lvCalls',1,60,10)),pairs:$('lvPairs').value.split(',').map(x=>x.trim().toUpperCase()).filter(Boolean).slice(0,6),
     sessions:[['lvAsia','asia'],['lvLon','london'],['lvNY','newyork']].filter(([i])=>$(i).checked).map(([,k])=>k),tpMode:$('lvTp').value,endDate:$('lvEnd').value,be:$('lvBe').checked,notes:$('lvNotes').value.trim().slice(0,2000),symMap:$('lvMap').value.trim(),region:$('lvRegion').value,allowReal:$('lvReal').checked};
   if(!o.sessions.length)o.sessions=['london','newyork'];if(o.dayLoss>o.maxDD)o.dayLoss=o.maxDD;if(o.risk>o.dayLoss/2)o.risk=+(o.dayLoss/2).toFixed(2);return o;}
@@ -1880,7 +1885,7 @@ $('liveFlat').onclick=()=>liveAsk('<b>Close every position and cancel every pend
   let direct='';try{direct=await liveCloseDirect();}catch(e){direct='';}
   $('liveStatus').textContent=direct||'Paused. The robot closes everything on its next run; tap Run the robot now to do it within a minute or two.';dispatchLive().catch(()=>{});},'Close everything');
 // try to close straight away from this phone too (works if MetaApi accepts requests from browsers)
-async function liveCloseDirect(){const tok=$('kMetaApi').value.trim(),acc=$('kMetaAcc').value.trim();if(!tok||!acc)return '';
+async function liveCloseDirect(){const tok=$('kMetaApi').value.trim(),acc=$('kMetaAcc').value.trim();if(!tok||!acc||MANDATE.get().broker!=='metaapi')return '';
   const base=`https://mt-client-api-v1.${MANDATE.get().region||'london'}.agiliumtrade.ai/users/current/accounts/${acc}`,H={'auth-token':tok,'content-type':'application/json'};
   const [pos,ord]=await Promise.all([fetch(base+'/positions',{headers:H}).then(r=>r.json()),fetch(base+'/orders',{headers:H}).then(r=>r.json())]);let n=0;
   for(const o of ord||[]){await fetch(base+'/trade',{method:'POST',headers:H,body:JSON.stringify({actionType:'ORDER_CANCEL',orderId:o.id})});n++;}
@@ -1924,9 +1929,9 @@ async function putSecrets(vals){const c=syncCfg();await loadNacl();const r=await
   for(const [name,v] of Object.entries(vals)){if(!v)continue;const enc=b64(sealedBox(new TextEncoder().encode(v),pk));
     const p=await fetch(`https://api.github.com/repos/${c.repo}/actions/secrets/${name}`,{method:'PUT',headers:c.H,body:JSON.stringify({encrypted_value:enc,key_id:k.key_id})});if(!p.ok){const j=await p.json().catch(()=>({}));throw new Error(name+': '+(j.message||p.status));}n++;}
   return n;}
-$('liveSecrets').onclick=async()=>{const st=$('liveSecStat');try{if(!$('kMetaApi').value.trim()||!$('kMetaAcc').value.trim())throw new Error('paste the MetaApi token and account ID first');st.textContent='Encrypting and sending…';
-    const n=await putSecrets({METAAPI_TOKEN:$('kMetaApi').value.trim(),METAAPI_ACCOUNT_ID:$('kMetaAcc').value.trim(),EDGEVIEW_PASSPHRASE:$('kSync').value,ANTHROPIC_API_KEY:$('kAnthropic').value.trim(),TWELVE_DATA_KEY:$('kTwelve').value.trim()});
-    st.textContent=`Done: ${n} secrets saved in ${syncCfg().repo}. Now set the mandate and start a challenge (demo account first).`;}
+$('liveSecrets').onclick=async()=>{const st=$('liveSecStat');try{const dv=$('kDerivTok').value.trim()&&$('kDerivApp').value.trim(),mt=$('kMetaApi').value.trim()&&$('kMetaAcc').value.trim();if(!dv&&!mt)throw new Error('paste the Deriv token and app ID (or the MetaApi token and account ID) first');st.textContent='Encrypting and sending…';
+    const n=await putSecrets({DERIV_TOKEN:$('kDerivTok').value.trim(),DERIV_APP_ID:$('kDerivApp').value.trim(),METAAPI_TOKEN:$('kMetaApi').value.trim(),METAAPI_ACCOUNT_ID:$('kMetaAcc').value.trim(),EDGEVIEW_PASSPHRASE:$('kSync').value,ANTHROPIC_API_KEY:$('kAnthropic').value.trim(),TWELVE_DATA_KEY:$('kTwelve').value.trim()});
+    st.textContent=`Done: ${n} secrets saved in ${syncCfg().repo}. Now choose the broker in the mandate, save it and start a challenge (demo account first).`;}
   catch(e){st.textContent='Could not send: '+(e.message||e);}};
 liveForm();IDB.kv.get('liveState').then(v=>{if(v&&!LST){LST=v;liveRender();}});setTimeout(async()=>{if(syncOk()){await liveLoad();liveRender();}},6000);
 setInterval(async()=>{if(!document.hidden&&!$('v-robot').hidden&&syncOk()){await liveLoad();liveRender();}},5*6e4);
