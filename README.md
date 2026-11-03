@@ -189,3 +189,11 @@ Robot > **Live account** connects a MetaTrader account (for example XM MT5) thro
 - **Safety.** It refuses to trade a real-money account unless "Allow a real-money account" is on (with a confirmation). **Pause** stops new trades; **Close everything now** closes positions and cancels orders (from the phone straight away if MetaApi accepts it, otherwise on the next run, which "Run the robot now" starts at once).
 - **Status.** The robot writes the account, challenge progress, open trades and its log, encrypted, to `edgeview-live-state.json` on the data branch; the Live account card shows them. Logs in GitHub Actions show no figures, because Actions logs of a public repository are public.
 - **Coach.** The Coach sees the live account and the mandate. Ask it to change how the account is run; it proposes the change and you tap **Apply**. It can never switch on real-money trading.
+
+## Deriv synthetic indices (v40)
+Edgeview now knows Deriv's synthetic indices: Volatility 10/25/50/75/100 (and the 1s versions), Boom and Crash 300/500/1000, Step Index and Jump indices.
+- **Names.** Type `V75`, `V75(1S)`, `BOOM1000`, `CRASH500`, `STEP`, `JUMP25`, or the full name ("Volatility 75 Index"). Search lists them under "Deriv synthetic indices".
+- **Data.** Candles come free from Deriv's public API (no key, no Twelve Data credits), for the chart, Analyze, the watchlist robot, paper trades, backtests and both GitHub robots (`scanner/deriv.mjs`; the workflows now use Node 22 for its built-in WebSocket).
+- **Analysis.** Claude gets a briefing for each index (constant volatility; Boom spikes up and drifts down, Crash the reverse, on average once every N ticks; Step moves 0.1 a tick; Jump indices jump about three times an hour) and is told that news, sessions, the calendar and intermarket data do not move them, so those are left out. Structure is the only edge, so it is strict about reward to risk.
+- **Costs.** Deriv spreads are not modelled; add yours under "Your spreads" in Settings (for example `V75=1.2, BOOM1000=0.5`).
+- **Live robot.** It runs every day now, since synthetics trade at weekends. Through MetaApi it finds the Deriv MT5 symbol names ("Volatility 75 Index") automatically.

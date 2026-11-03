@@ -13,6 +13,7 @@ import { gzipSync, gunzipSync } from 'node:zlib';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const D = require('../detect.js'), TA = require('../ta.js');
+import { isSynth, synthCode, synthBrief, derivCandles, SYNTH_LIST } from './deriv.mjs';
 const crypto = globalThis.crypto || wc;
 
 const env = process.env, now = +env.LIVE_NOW || Date.now();
@@ -77,6 +78,7 @@ let lastTd = 0;
 async function bars(sym, tf, n) {
   const ms = tf === '15M' ? 9e5 : 36e5; let out;
   if (env.BARS_FILE) { const B = JSON.parse(require('node:fs').readFileSync(env.BARS_FILE, 'utf8')); out = B[sym + '|' + tf]; if (!out) throw new Error('no test bars'); }
+  else if (isSynth(sym)) out = await derivCandles(synthCode(sym), tf === '15M' ? 900 : 3600, n);
   else if (isCrypto(sym) && !TK) {
     const r = await fetch(`https://data-api.binance.vision/api/v3/klines?symbol=${sym.toUpperCase().replace('/', '').replace(/USD$/, 'USDT')}&interval=${tf === '15M' ? '15m' : '1h'}&limit=${n}`);
     if (!r.ok) throw new Error('Binance ' + r.status); out = (await r.json()).map(k => ({ t: k[0], o: +k[1], h: +k[2], l: +k[3], c: +k[4] }));
@@ -202,7 +204,7 @@ export async function run() {
     const ck = dk; S.calls = S.calls.day === ck ? S.calls : { day: ck, n: 0 };
     for (const sym of M.pairs.slice(0, 6)) {
       if (S.calls.n >= M.maxCalls) { log('daily analysis budget used'); break; }
-      if (!isCrypto(sym) && !fxOpen(now)) continue;
+      if (!isCrypto(sym) && !isSynth(sym) && !fxOpen(now)) continue;
       const bsym = await brokerSym(S, M, sym); if (!bsym) { await note(`${sym}: no matching symbol on the broker; set it in the symbol map`); continue; }
       if (S.pos.some(p => p.sym === bsym && p.mine) || S.ord.some(o => o.sym === bsym && o.mine)) continue;
       if (S.pos.filter(p => p.mine).length + S.ord.filter(o => o.mine).length >= M.maxOpen || S.day.trades >= M.maxDay) break;
@@ -215,7 +217,7 @@ export async function run() {
         const price = await mt('GET', `/symbols/${encodeURIComponent(bsym)}/current-price`), spec = await mt('GET', `/symbols/${encodeURIComponent(bsym)}/specification`);
         if (!price || !spec) { await note(`${sym}: broker has no price or specification for ${bsym}`); continue; }
         const atr = TA.atr(b.closed, 14), atrN = Array.isArray(atr) ? atr[atr.length - 1] : atr;
-        const data = D.brief(sym, a.closed, b.closed, h4) + '\n' + [TA.tfTools('1H', b.closed, px0, 3), TA.tfTools('15M', a.closed, px0, 3)].filter(Boolean).join('\n') +
+        const data = (isSynth(sym) ? synthBrief(sym) + '\n' : '') + D.brief(sym, a.closed, b.closed, h4) + '\n' + [TA.tfTools('1H', b.closed, px0, 3), TA.tfTools('15M', a.closed, px0, 3)].filter(Boolean).join('\n') +
           `\nBROKER PRICE NOW (${bsym}): bid ${price.bid}, ask ${price.ask}, spread ${f2(price.ask - price.bid)}` + (sig.length ? '\nEARLY-MOVE SIGNALS: ' + sig.slice(0, 3).map(s => `${s.tf} ${s.side} score ${s.score}: ${(s.patterns || []).join(' + ')}`).join('; ') : '') + (sess ? `\nThe ${sess.name} session just opened.` : '');
         const ctx = `TIME ${new Date(now).toISOString()}\nACCOUNT: balance ${acct.balance} ${acct.currency}, equity ${acct.equity}; challenge ${L.gain.toFixed(2)}% of +${M.target}% target; drawdown used ${L.ddUsed.toFixed(2)}% of ${M.maxDD}%; today's loss used ${L.dayUsed.toFixed(2)}% of ${M.dayLoss}%; ${S.day.trades} trade(s) today.\n` +
           `RECENT ROBOT TRADES: ${S.trades.slice(0, 6).map(t => `${t.sym} ${t.side} ${t.st}${t.pl != null ? ' ' + t.pl.toFixed(2) : ''}`).join('; ') || 'none'}\n` +
@@ -253,6 +255,7 @@ export async function run() {
 async function brokerSym(S, M, sym) {
   const map = Object.fromEntries(String(M.symMap || '').split(',').map(x => x.split('=').map(y => y.trim())).filter(x => x[0] && x[1]));
   if (map[sym]) return map[sym]; if (S.sym[sym]) return S.sym[sym];
+  if (isSynth(sym)) { const c = synthCode(sym), nm = (SYNTH_LIST.find(x => x[1] === c) || [])[0]; for (const k of [nm, c].filter(Boolean)) { const sp = await mt('GET', `/symbols/${encodeURIComponent(k)}/specification`).catch(() => null); if (sp && (sp.symbol || sp.tickSize)) { S.sym[sym] = k; return k; } } return null; }
   const base = sym.replace('/', '').toUpperCase(), cands = [...(/^XAU/.test(base) ? ['GOLD', 'XAUUSD'] : /^XAG/.test(base) ? ['SILVER', 'XAGUSD'] : [base])].flatMap(c => [c, c + '#', c + '.', c + 'm', c + '.a']);
   for (const c of cands) { const s = await mt('GET', `/symbols/${encodeURIComponent(c)}/specification`).catch(() => null); if (s && (s.symbol || s.tickSize)) { S.sym[sym] = c; return c; } }
   return null;

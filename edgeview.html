@@ -644,7 +644,58 @@ function renderThumbs(name){
 }
 
 // ---- live data
-async function getJSON(url){ if(/api\.twelvedata\.com\/(?!symbol_search)/.test(url)&&typeof tdCount==='function')tdCount(); const r=await fetch(url); if(!r.ok) throw new Error(r.status); return r.json(); }
+async function getJSON(url){ if(/api\.twelvedata\.com\/(time_series|quote)\?/.test(url)){const sy=new URL(url).searchParams.get('symbol');if(sy&&!sy.includes(',')&&isSynth(sy))return synthTD(url);} if(/api\.twelvedata\.com\/(?!symbol_search)/.test(url)&&typeof tdCount==='function')tdCount(); const r=await fetch(url); if(!r.ok) throw new Error(r.status); return r.json(); }
+// ---- Deriv synthetic indices (v40): candles from Deriv's free public API, served to the rest of the app in Twelve Data's format
+function synthCode(sym){const s=String(sym||'').trim().toUpperCase().replace(/\s+/g,' ');let m;
+  if(/^R_(10|25|50|75|100)$/.test(s))return s;if((m=s.match(/^1HZ(\d+)V$/)))return '1HZ'+m[1]+'V';if(/^(BOOM|CRASH)\d+N?$/.test(s))return s.replace(/^(BOOM|CRASH)300$/,'$1300N');
+  if(/^STPRNG\d*$/.test(s))return 'stpRNG'+s.slice(6);if((m=s.match(/^JD(\d+)$/)))return 'JD'+m[1];
+  if((m=s.match(/^V(?:OL(?:ATILITY)?)? ?(\d+) ?\(1S\)(?: INDEX)?$/))||(m=s.match(/^V(\d+)\(1S\)$/)))return '1HZ'+m[1]+'V';
+  if((m=s.match(/^V(?:OL(?:ATILITY)?)? ?(10|25|50|75|100)(?: INDEX)?$/)))return 'R_'+m[1];
+  if((m=s.match(/^(BOOM|CRASH) ?(\d+)(?: INDEX)?$/)))return m[1]+m[2]+(m[2]==='300'?'N':'');
+  if(/^STEP(?: INDEX)?$/.test(s))return 'stpRNG';if((m=s.match(/^JUMP ?(\d+)(?: INDEX)?$/)))return 'JD'+m[1];return null;}
+const isSynth=sym=>!!synthCode(sym);
+// the short name the app uses: V75, V75(1S), BOOM1000, CRASH500, STEP, JUMP25
+function synthApp(c){let m;return (m=c.match(/^R_(\d+)$/))?'V'+m[1]:(m=c.match(/^1HZ(\d+)V$/))?'V'+m[1]+'(1S)':c==='stpRNG'?'STEP':(m=c.match(/^JD(\d+)$/))?'JUMP'+m[1]:c.replace(/N$/,'');}
+function synthKind(sym){const c=synthCode(sym)||'';return /^BOOM/.test(c)?'boom':/^CRASH/.test(c)?'crash':/^stpRNG/.test(c)?'step':/^JD/.test(c)?'jump':/^1HZ/.test(c)?'vol1s':c?'vol':'';}
+const DERIV_WS=['wss://api.derivws.com/trading/v1/options/ws/public','wss://ws.derivws.com/websockets/v3?app_id=1089'];
+const DV={ws:null,ready:null,i:0,seq:1,wait:new Map(),cache:new Map()};
+function derivOpen(){if(DV.ws&&DV.ws.readyState===1)return Promise.resolve(DV.ws);if(DV.ready)return DV.ready;
+  DV.ready=new Promise((res,rej)=>{let tried=0;const go=()=>{const url=DERIV_WS[DV.i%DERIV_WS.length];let ok=false;const ws=new WebSocket(url);
+      const to=setTimeout(()=>{if(!ok){try{ws.close();}catch(e){}}},8000);
+      ws.onopen=()=>{ok=true;clearTimeout(to);DV.ws=ws;DV.ready=null;res(ws);};
+      ws.onmessage=e=>{let j;try{j=JSON.parse(e.data);}catch(_){return;}const w=DV.wait.get(j.req_id);if(w){DV.wait.delete(j.req_id);j.error?w.rej(new Error('Deriv: '+j.error.message)):w.res(j);}};
+      ws.onclose=()=>{clearTimeout(to);if(DV.ws===ws)DV.ws=null;for(const [k,w] of DV.wait){w.rej(new Error('Deriv connection closed'));DV.wait.delete(k);}
+        if(!ok){DV.i++;if(++tried<DERIV_WS.length)go();else{DV.ready=null;rej(new Error('cannot reach Deriv'));}}};};go();});return DV.ready;}
+async function deriv(req){const ws=await derivOpen(),id=DV.seq++;return new Promise((res,rej)=>{DV.wait.set(id,{res,rej});ws.send(JSON.stringify({...req,req_id:id}));setTimeout(()=>{if(DV.wait.has(id)){DV.wait.delete(id);rej(new Error('Deriv timeout'));}},20000);});}
+// candles oldest first as {t,o,h,l,c}; granularity in seconds; start (ms) optional
+async function derivCandles(code,gran,count,startMs){const k=code+'|'+gran+'|'+count+'|'+(startMs||''),c=DV.cache.get(k);if(c&&Date.now()-c.at<20000)return c.bars;
+  const j=await deriv({ticks_history:code,style:'candles',granularity:gran,count:Math.min(5000,count||500),end:'latest',...(startMs?{start:Math.floor(startMs/1000)}:{})});
+  const bars=(j.candles||[]).map(x=>({t:x.epoch*1000,o:+x.open,h:+x.high,l:+x.low,c:+x.close}));DV.cache.set(k,{at:Date.now(),bars});return bars;}
+const TD_GRAN={'1min':60,'5min':300,'15min':900,'30min':1800,'45min':900,'1h':3600,'2h':7200,'4h':14400,'1day':86400,'1week':86400};
+function aggBars(b,ms,anchor){const out=[];for(const x of b){const k=anchor?anchor(x.t):Math.floor(x.t/ms)*ms,l=out[out.length-1];if(l&&l.t===k){l.h=Math.max(l.h,x.h);l.l=Math.min(l.l,x.l);l.c=x.c;}else out.push({...x,t:k});}return out;}
+const tdDt=(t,daily)=>daily?new Date(t).toISOString().slice(0,10):new Date(t).toISOString().slice(0,19).replace('T',' ');
+// answers a Twelve Data time_series or quote URL for a synthetic index from Deriv
+async function synthTD(url){const u=new URL(url),sym=u.searchParams.get('symbol'),code=synthCode(sym),path=u.pathname;
+  if(/\/quote$/.test(path)){const d=await derivCandles(code,86400,3),h=await derivCandles(code,60,2),px=h.length?h[h.length-1].c:d[d.length-1].c,td=d[d.length-1],y=d[d.length-2]||td;
+    return {symbol:sym,name:sym,close:String(px),open:String(td.o),high:String(Math.max(td.h,px)),low:String(Math.min(td.l,px)),previous_close:String(y.c),percent_change:String((px-y.c)/y.c*100),is_market_open:true};}
+  const iv=u.searchParams.get('interval')||'1h',g=TD_GRAN[iv]||3600,n=+u.searchParams.get('outputsize')||300,sd=u.searchParams.get('start_date');
+  const mult=iv==='1week'?7:iv==='45min'?3:1;let bars=await derivCandles(code,g,Math.min(5000,n*mult+mult),sd?Date.parse(sd.replace(' ','T')+(sd.length>10?'Z':'T00:00:00Z')):0);
+  if(iv==='1week')bars=aggBars(bars,0,t=>{const d=new Date(t),dow=(d.getUTCDay()+6)%7;return Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate()-dow);});
+  if(iv==='45min')bars=aggBars(bars,2700e3);
+  const daily=iv==='1day'||iv==='1week';
+  return {meta:{symbol:sym,interval:iv,exchange:'Deriv'},status:'ok',values:bars.slice(-n).reverse().map(b=>({datetime:tdDt(b.t,daily),open:String(b.o),high:String(b.h),low:String(b.l),close:String(b.c)}))};}
+const SYNTH_LIST=[['Volatility 10 Index','R_10'],['Volatility 25 Index','R_25'],['Volatility 50 Index','R_50'],['Volatility 75 Index','R_75'],['Volatility 100 Index','R_100'],
+  ['Volatility 10 (1s) Index','1HZ10V'],['Volatility 25 (1s) Index','1HZ25V'],['Volatility 50 (1s) Index','1HZ50V'],['Volatility 75 (1s) Index','1HZ75V'],['Volatility 100 (1s) Index','1HZ100V'],
+  ['Boom 1000 Index','BOOM1000'],['Boom 500 Index','BOOM500'],['Boom 300 Index','BOOM300N'],['Crash 1000 Index','CRASH1000'],['Crash 500 Index','CRASH500'],['Crash 300 Index','CRASH300N'],
+  ['Step Index','stpRNG'],['Jump 10 Index','JD10'],['Jump 25 Index','JD25'],['Jump 50 Index','JD50'],['Jump 75 Index','JD75'],['Jump 100 Index','JD100']];
+function synthBrief(sym){const c=synthCode(sym),k=synthKind(sym);if(!c)return '';const n=(c.match(/\d+/)||[''])[0];
+  const kind={vol:`Volatility ${n} Index: simulates a market with a constant volatility of ${n}% a year, one tick every 2 seconds.`,
+    vol1s:`Volatility ${n} (1s) Index: constant volatility of ${n}% a year, one tick every second (same behaviour, twice the ticks of the standard version).`,
+    boom:`Boom ${n} Index: on average one sharp UPWARD spike every ${n} ticks; between spikes it drifts lower in small ticks. Selling it means riding the drift while carrying the risk of a spike against you; buying it means waiting for spikes. Stops on sells must allow for a spike.`,
+    crash:`Crash ${n} Index: on average one sharp DOWNWARD spike every ${n} ticks; between spikes it drifts higher in small ticks. Buying it rides the drift with the risk of a crash spike against you; selling it waits for spikes. Stops on buys must allow for a spike.`,
+    step:'Step Index: moves up or down by exactly 0.1 each tick with equal probability, so its volatility is steady and small.',
+    jump:`Jump ${n} Index: volatility ${n}% a year with sudden large jumps, on average about three an hour, equally likely up or down.`}[k];
+  return `INSTRUMENT BACKGROUND (Deriv synthetic index, Deriv code ${c}): ${kind} Synthetic indices are generated by Deriv's audited random number generator. They trade 24/7 including weekends, and they are NOT moved by economic news, central banks, sessions, positioning, correlations or any other market: ignore the economic calendar, headlines, COT, currency strength and session opens for this instrument, and do not mention them as reasons. Volatility is statistically constant, so ATR-based stops and targets are reliable; chart structure (swings, ranges, liquidity sweeps, trend legs) is the only edge, and it is weaker than on real markets, so be strict about reward to risk, size small and say so when there is no clear setup. Trade on Deriv (MT5 or Deriv options/multipliers); costs are the spread only.`;}
 
 // ---- indicator maths (computed locally from candles; 1 API call per timeframe)
 // decimals by magnitude so FX keeps 5 decimals, JPY pairs 3, gold/indices/BTC 2, small coins 6-8
@@ -861,7 +912,7 @@ function activePairs(){
   const fillSp=x=>{if(!x.sp&&x.sym){try{const c=costFor(aliasSym(x.sym));if(c.spr>0){x.sp=String(+(c.spr+c.com).toPrecision(6));x.spSrc=c.src+(c.com?' (spread + commission)':'');}}catch(e){}}return x;};
   for(const n of [2,3])P.push({n,sym:$('symbol'+n).value.trim(),market:$('market'+n).value,px:$('manualPx'+n).value.trim(),sp:$('spread'+n).value.trim(),key:'charts'+n});
   P.forEach(p=>{p.sym=aliasSym(p.sym);});
-  const liveOK=p=>!!$('kTwelve').value.trim()||p.market==='crypto'||isCrypto(p.sym);
+  const liveOK=p=>!!$('kTwelve').value.trim()||p.market==='crypto'||isCrypto(p.sym)||isSynth(p.sym);
   return P.filter(p=>p.sym&&(lists[p.key].length||liveOK(p))).map(fillSp);
 }
 function updSummary(){const P=activePairs(),im=P.reduce((t,p)=>t+lists[p.key].length,0),nn=lists.news.length;
@@ -926,8 +977,11 @@ async function depthBlock(sym){if(!isCrypto(sym))return '';try{const j=await get
   return `ORDER BOOK (Binance spot, within 2% of ${f2(mid)}): biggest bid walls ${walls(bids).map(x=>f2(x.p)+' ($'+fm(x.v)+')').join(', ')}; biggest ask walls ${walls(asks).map(x=>f2(x.p)+' ($'+fm(x.v)+')').join(', ')}; within 1%: bids $${fm(nb)} vs asks $${fm(na)} (${nb>na?'more resting buyers':'more resting sellers'}). Walls can be pulled at any time.`;}catch(e){srcFail('Binance order book');return '';}}
 async function liveFor(p,tk,fk){
   let live='',news='',errs=[];
-  if(tk){try{live=await twelve(p.sym,tk);}catch(e){errs.push('Twelve Data: '+e.message);}}
+  const syn=isSynth(p.sym);
+  if(syn){try{live=await twelve(p.sym,tk||'-');}catch(e){errs.push('Deriv: '+e.message);}}
+  else if(tk){try{live=await twelve(p.sym,tk);}catch(e){errs.push('Twelve Data: '+e.message);}}
   else if(p.market==='crypto'){try{live=await binance(p.sym);}catch(e){errs.push('Binance: '+e.message);}}
+  if(syn){errs.push(...srcLog.splice(0));try{const xt=expoText(HS.get(),Date.now(),p.sym);if(xt)live=(live?live+'\n':'')+xt;}catch(e){}return {live,news:'',errs,cal:null,at:new Date().toISOString()};}
   if(fk){try{news=await finnhub(p.market,p.sym,fk);}catch(e){errs.push('Finnhub: '+e.message);}}
   try{const ps=await positioning(p.sym,p.market);if(ps)live=(live?live+'\n':'')+ps;}catch(e){}
   try{const mc=await fredMacro($('kFred').value.trim());if(mc)live=(live?live+'\n':'')+mc;}catch(e){}
@@ -1047,7 +1101,7 @@ function parseFinal(raw){const i=raw.search(/^### *Final trade plan/mi);if(i<0)r
 const num=x=>{const m=String(x||'').replace(/,/g,'').match(/-?\d+(\.\d+)?/);return m?+m[0]:null;};
 // ---- history + journal
 const HS={get:()=>{try{return JSON.parse(localStorage.getItem('ca_hist')||'[]')}catch(e){return[]}},set:a=>{keepTexts(a);const now=Date.now(),pack=(n,k)=>JSON.stringify(a.slice(0,n).map((e,i)=>(i<k||(e.ord==='WEEKLY OUTLOOK'&&now-e.id<20*86400000))?e:{...e,text:''}));try{localStorage.setItem('ca_hist',pack(400,40));}catch(e){try{localStorage.setItem('ca_hist',pack(150,12));}catch(e2){}}}};
-const APP_VER='edgeview-v39';
+const APP_VER='edgeview-v40';
 function META(){return {model:$('model').value.trim()||'claude-sonnet-5-5',deep:$('depth').value,ver:APP_VER};}
 
 function addOdds(card,text,sym){
@@ -1113,7 +1167,7 @@ async function fetchTF(sym,tf,force){
   if(!force&&cd&&Date.now()-cd.at<120000){if(key&&cd[key])return toBars(cd[key]);if(tf==='1W'&&cd.d1)return toBars(weeklyFromDaily(cd.d1));}
   const tk=$('kTwelve').value.trim(),[tdI,bnI]=TFI[tf];
   if(!tk&&isCrypto(S)){const r=await getJSON(`https://data-api.binance.vision/api/v3/klines?symbol=${binPair(S)}&interval=${bnI}&limit=500`);return r.map(k=>({t:k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4]}));}
-  if(!tk) throw new Error('Charts for gold and forex need a Twelve Data key (Settings). Crypto works without one.');
+  if(!tk&&!isSynth(S)) throw new Error('Charts for gold and forex need a Twelve Data key (Settings). Crypto and Deriv synthetic indices work without one.');
   const j=await getJSON(`https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(S)}&interval=${tdI}&outputsize=500&timezone=UTC&apikey=${tk}`);
   if(!j||j.status==='error'||!j.values) throw new Error(j&&j.message||'no data');
   return toBars(j.values);
@@ -1168,7 +1222,7 @@ const POPULAR=[['XAU/USD','Gold'],['XAG/USD','Silver'],['EUR/USD','Euro / US dol
 let searchPick=null,searchT=null,searchN=0;
 function recentSyms(){const out=[];for(const e of HS.get()){const s=e.sym;if(s&&!out.includes(s))out.push(s);if(out.length>=6)break;}return out;}
 function srow(sym,name){return `<button data-s="${esc(sym)}"><span>${esc(sym)}<br><small>${esc(name||'')}</small></span><small>${WL.get().includes(sym)?'★':''}</small></button>`;}
-function nameOf(sym){const p=POPULAR.find(x=>x[0]===sym);return p?p[1]:'';}
+function nameOf(sym){const p=POPULAR.find(x=>x[0]===sym);if(p)return p[1];const c=synthCode(sym),q=c&&SYNTH_LIST.find(x=>x[1]===c);return q?q[0]:'';}
 function renderSearch(remote){
   const q=$('symQ').value.trim(),box=$('symRes');let h='';
   if(!q){
@@ -1176,11 +1230,13 @@ function renderSearch(remote){
     if(wl.length)h+='<div class="hint">Watchlist</div>'+wl.map(s=>srow(s,nameOf(s))).join('');
     if(rc.length)h+='<div class="hint" style="margin-top:14px">Recent</div>'+rc.map(s=>srow(s,nameOf(s))).join('');
     h+='<div class="hint" style="margin-top:14px">Popular</div>'+POPULAR.filter(p=>!wl.includes(p[0])).map(p=>srow(p[0],p[1])).join('');
+    h+='<div class="hint" style="margin-top:14px">Deriv synthetic indices (24/7)</div>'+SYNTH_LIST.filter(([n,c])=>!wl.includes(synthApp(c))).map(([n,c])=>srow(synthApp(c),n)).join('');
   }else{
     const ql=q.toLowerCase(),al=aliasSym(q).toUpperCase(),seen=new Set(),rows=[];
     const add=(s,n)=>{if(!s||seen.has(s))return;seen.add(s);rows.push(srow(s,n));};
     POPULAR.filter(p=>p[0]===al||p[0].replace('/','').toLowerCase().includes(ql.replace(/[^a-z]/g,''))||p[1].toLowerCase().includes(ql)).forEach(p=>add(p[0],p[1]));
     if(/^[A-Z]{3,5}\/[A-Z]{3,4}$/.test(al))add(al,'Open this symbol');
+    SYNTH_LIST.filter(([n,c])=>n.toLowerCase().includes(ql)||c.toLowerCase().includes(ql)||synthCode(q)===c||(/^(v|vol|boom|crash|step|jump|synth|deriv)/.test(ql)&&ql.length<4)).slice(0,12).forEach(([n,c])=>add(synthApp(c),n+' · Deriv synthetic'));
     (remote||[]).forEach(r=>add(r.symbol,[r.instrument_name,r.exchange,r.instrument_type].filter(Boolean).join(' · ')));
     h=rows.join('')||'<div class="empty">No match yet.</div>';
   }
@@ -1219,7 +1275,7 @@ async function robotBars(sym,tf,n){
   if(c&&now<c.until)return c.bars;
   const tk=$('kTwelve').value.trim();let bars;
   if(!tk&&isCrypto(S)){const r=await getJSON(`https://data-api.binance.vision/api/v3/klines?symbol=${binPair(S)}&interval=${TFI[tf][1]}&limit=${n||300}`);bars=r.map(x=>({t:x[0],o:+x[1],h:+x[2],l:+x[3],c:+x[4]}));}
-  else{if(!tk)throw new Error('needs a Twelve Data key');await tdSlot();
+  else{if(!tk&&!isSynth(S))throw new Error('needs a Twelve Data key');if(!isSynth(S))await tdSlot();
     const j=await getJSON(`https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(S)}&interval=${TFI[tf][0]}&outputsize=${n||300}&timezone=UTC&apikey=${tk}`);
     if(!j||j.status==='error'||!j.values)throw new Error(j&&j.message||'no data');bars=toBars(j.values);}
   const live=bars[bars.length-1];if(live)tickLive(S,bars);
@@ -1276,7 +1332,7 @@ const btAll=()=>Object.entries(BT.get()).flatMap(([k,v])=>(v.sigs||[]).map(x=>({
 const sigList=()=>SG.get().concat(btAll());
 async function btBars(sym,tf){const S=String(sym).toUpperCase(),tk=$('kTwelve').value.trim(),iv={'15M':['15min','15m',9e5],'1H':['1h','1h',36e5],'4H':['4h','4h',144e5]}[tf];
   if(!tk&&isCrypto(S)){let out=[],end=Date.now();for(let k=0;k<5;k++){const r=await getJSON(`https://data-api.binance.vision/api/v3/klines?symbol=${binPair(S)}&interval=${iv[1]}&endTime=${end}&limit=1000`);const b=r.map(x=>({t:x[0],o:+x[1],h:+x[2],l:+x[3],c:+x[4]}));out=b.concat(out);if(b.length<1000)break;end=b[0].t-1;}return out.filter(b=>b.t+iv[2]<=Date.now());}
-  if(!tk)throw new Error('needs a Twelve Data key (crypto works without one)');await tdSlot();
+  if(!tk&&!isSynth(S))throw new Error('needs a Twelve Data key (crypto works without one)');if(!isSynth(S))await tdSlot();
   const j=await getJSON(`https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(S)}&interval=${iv[0]}&outputsize=5000&timezone=UTC&apikey=${tk}`);if(!j||j.status==='error'||!j.values)throw new Error(j&&j.message||'no data');
   return toBars(j.values).filter(b=>b.t+iv[2]<=Date.now());}
 let btBusy=false;
@@ -2323,7 +2379,7 @@ const PAIRN={
  AUDUSD:'A risk-sensitive pair: China data, iron ore and the RBA against Fed expectations. Active from the Sydney and Tokyo sessions.',
  USDCAD:'Oil and the BoC against Fed expectations. Quoted as Canadian dollars per US dollar, so higher oil usually pushes USDCAD down.'
 };
-function normSym(sym){return String(sym||'').toUpperCase().replace(/[^A-Z]/g,'');}
+function normSym(sym){if(isSynth(sym))return synthCode(sym).toUpperCase();return String(sym||'').toUpperCase().replace(/[^A-Z]/g,'');}
 function playbookFor(sym){
   const k=normSym(sym); if(k.length<6) return '';
   const a=k.slice(0,3), b=k.slice(3,6); if(!CCY[a]||!CCY[b]) return '';
@@ -2348,7 +2404,7 @@ function trackRecord(entries,sym){
   return t;
 }
 function pairBrief(sym,withTrack){
-  let t=playbookFor(sym); let tr=''; try{ if(withTrack) tr=trackRecord(HS.get(),sym); }catch(e){}
+  let t=isSynth(sym)?synthBrief(sym):playbookFor(sym); let tr=''; try{ if(withTrack) tr=trackRecord(HS.get(),sym); }catch(e){}
   return (t||tr)?'\n\n'+[t,tr].filter(Boolean).join('\n\n')+'\n\n':'';
 }
 // ==== PAIR PURE END
@@ -2549,10 +2605,10 @@ function XM_TABLE(){return {
   standard:{EURUSD:1.7,GBPUSD:2.4,USDJPY:1.6,XAUUSD:35,_AUDUSD:1.8,_NZDUSD:2.2,_USDCAD:2.2,_USDCHF:2.0,_EURJPY:2.5,_GBPJPY:3.5,_EURGBP:2.0,_AUDJPY:2.5,_CHFJPY:3.0,_CADJPY:2.8,_EURAUD:3.0,_GBPAUD:4.0,_USDZAR:150,_XAGUSD:35,_BTCUSD:40,_ETHUSD:3,_other:3.0},
   ultralow:{EURUSD:0.8,GBPUSD:1.1,USDJPY:0.8,XAUUSD:25,_k:0.55},
   zero:{EURUSD:0.1,GBPUSD:0.3,USDJPY:0.1,XAUUSD:21,_k:0.2,_com:7}};}
-const VPPX=sy=>/XAU/i.test(sy)?100:/XAG/i.test(sy)?5000:/BTC|ETH|SOL|XRP|BNB/i.test(sy)?1:/ZAR/i.test(sy)?5500:/JPY/i.test(sy)?650:/CAD/i.test(sy)?72000:/CHF/i.test(sy)?110000:100000;
-function parseOv(t){const o={};String(t||'').split(/[,;\n]/).forEach(x=>{const m=x.match(/([A-Za-z\/]{6,8})\s*[=:]\s*(\d*\.?\d+)/);if(m)o[normSym(m[1])]=+m[2];});return o;}
+const VPPX=sy=>isSynth(sy)?1:/XAU/i.test(sy)?100:/XAG/i.test(sy)?5000:/BTC|ETH|SOL|XRP|BNB/i.test(sy)?1:/ZAR/i.test(sy)?5500:/JPY/i.test(sy)?650:/CAD/i.test(sy)?72000:/CHF/i.test(sy)?110000:100000;
+function parseOv(t){const o={};String(t||'').split(/[,;\n]/).forEach(x=>{const m=x.match(/([A-Za-z\/]{6,8}|[A-Za-z_ ]{1,12}\d{1,4}N?(?:\(1S\))?|STEP)\s*[=:]\s*(\d*\.?\d+)/i);if(m)o[normSym(m[1])]=+m[2];});return o;}
 // prof: {broker:'xm'|'none', acc:'standard'|'ultralow'|'zero', ov:'XAU/USD=0.30, GBPJPY=0.035'}. Overrides are in price units.
-function brokerCost(sym,prof){prof=prof||{};const S=normSym(sym).replace(/USDT$/,'USD'),ov=parseOv(prof.ov);
+function brokerCost(sym,prof){prof=prof||{};if(isSynth(sym)){const ov0=parseOv(prof.ov),k=normSym(sym);return {spr:ov0[k]!=null?ov0[k]:0,com:0,rough:true,src:'Deriv (spread not modelled; add it under Your spreads)'};}const S=normSym(sym).replace(/USDT$/,'USD'),ov=parseOv(prof.ov);
   if(ov[S]!=null)return {spr:ov[S],com:0,rough:false,src:'your spread'};
   if(prof.broker!=='xm')return {spr:0,com:0,rough:false,src:'none'};
   const T=XM_TABLE(),st=T.standard,acc=T[prof.acc]||st,pip=pipOf(S);

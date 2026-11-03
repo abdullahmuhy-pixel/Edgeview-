@@ -9,6 +9,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const D = require('../detect.js');
+import { isSynth, synthCode, synthBrief, derivCandles } from './deriv.mjs';
 
 const env = process.env, now = +env.SCAN_NOW || Date.now();   // SCAN_NOW only for tests
 const AK = env.ANTHROPIC_API_KEY || '', TK = env.TWELVE_DATA_KEY || '', TG = env.TELEGRAM_BOT_TOKEN || '', CHAT = env.TELEGRAM_CHAT_ID || '';
@@ -34,7 +35,9 @@ let lastTd = 0;
 async function bars(sym, tf, n) {
   const ms = tf === '15M' ? 9e5 : 36e5;
   let out;
-  if (isCrypto(sym) && !TK) {
+  if (isSynth(sym)) {
+    out = await derivCandles(synthCode(sym), tf === '15M' ? 900 : 3600, n);
+  } else if (isCrypto(sym) && !TK) {
     const pair = sym.toUpperCase().replace('/', '').replace(/USD$/, 'USDT');
     const r = await fetch(`https://data-api.binance.vision/api/v3/klines?symbol=${pair}&interval=${tf === '15M' ? '15m' : '1h'}&limit=${n}`);
     if (!r.ok) throw new Error('Binance ' + r.status);
@@ -94,14 +97,14 @@ const doSession = !!(sess && W.sessionScreen !== false && !S.sessions[sessKey]);
 log(`pairs ${pairs.join(', ')}; session ${sess ? sess.name : 'none'}${doSession ? ' (screening)' : ''}`);
 const sent = [];
 for (const sym of pairs) {
-  if (!isCrypto(sym) && !fxOpen(now)) { log(sym, 'market closed'); continue; }
+  if (!isCrypto(sym) && !isSynth(sym) && !fxOpen(now)) { log(sym, 'market closed'); continue; }
   try {
     const a = await bars(sym, '15M', 300), b = await bars(sym, '1H', 300), h4 = D.to4h(b.closed), pxNow = (a.last || b.last).c;
     const sig = freshSignals(a.closed, b.closed, h4, pxNow);
     for (const p of S.sig) { if (p.sym !== sym || p.res) continue; const r = D.scoreSignal(p, p.tf === '15M' ? a.closed : b.closed); if (r) { p.res = r.res; p.mfe = r.mfe; p.mae = r.mae; } else if (now - p.seen > 3 * 864e5) p.res = 'void'; }
     for (const x of sig) if (!S.sig.some(p => p.sym === sym && p.tf === x.tf && p.at === x.at && p.side === x.side)) S.sig.unshift({ sym, tf: x.tf, side: x.side, score: x.score, atr: x.atr, price: x.price, at: x.at, patterns: x.patterns, why: x.why.filter(w => /trend/.test(w)), seen: now });
     const track = [...new Set(sig.map(x => D.sigVerdict(x, S.sig).line).filter(Boolean))];
-    const data = D.brief(sym, a.closed, b.closed, h4) + `\nPRICE NOW ${f2(pxNow)}\nEARLY-MOVE SIGNALS (last hour):\n` + (sig.length ? sig.map(sigText).join('\n') : 'none') + (track.length ? '\nPAST FOLLOW-THROUGH OF THESE SIGNAL TYPES (1 ATR with the signal before 1 ATR against): ' + track.join(' ') : '');
+    const data = (isSynth(sym) ? synthBrief(sym) + '\n' : '') + D.brief(sym, a.closed, b.closed, h4) + `\nPRICE NOW ${f2(pxNow)}\nEARLY-MOVE SIGNALS (last hour):\n` + (sig.length ? sig.map(sigText).join('\n') : 'none') + (track.length ? '\nPAST FOLLOW-THROUGH OF THESE SIGNAL TYPES (1 ATR with the signal before 1 ATR against): ' + track.join(' ') : '');
     if (doSession) {
       const v = await haiku(`${sess.name} session open screen. Current UTC time ${new Date(now).toISOString()}.\n${data}`);
       log(sym, 'session', JSON.stringify(v));

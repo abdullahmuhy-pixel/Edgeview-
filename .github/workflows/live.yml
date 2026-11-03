@@ -1,12 +1,12 @@
 # Edgeview live trader: trades your MetaTrader account through MetaApi under the mandate set in the app (Robot > Live account).
 # Needs repository secrets: METAAPI_TOKEN, METAAPI_ACCOUNT_ID, EDGEVIEW_PASSPHRASE (= your backup passphrase), ANTHROPIC_API_KEY,
 # TWELVE_DATA_KEY, and optionally TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID. Without them each run exits immediately.
-# Runs every 15 minutes on weekdays (GitHub may start scheduled runs a few minutes late). Stops, targets and expiries sit at the broker,
+# Runs every 15 minutes, every day (synthetic indices trade at weekends; forex and gold pairs are skipped while their market is shut) (GitHub may start scheduled runs a few minutes late). Stops, targets and expiries sit at the broker,
 # so a late run never leaves a trade unprotected.
 name: Live trader
 on:
   schedule:
-    - cron: '7,22,37,52 * * * 0-5'
+    - cron: '7,22,37,52 * * * *'
   workflow_dispatch:
 permissions:
   contents: write
@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
       - name: Run the live trader
         run: node scanner/live.mjs
         env:
