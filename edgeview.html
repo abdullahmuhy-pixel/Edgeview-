@@ -204,6 +204,8 @@
     <label>Analysis depth</label>
     <select id="depth"><option value="std">Standard (faster, cheaper)</option><option value="deep">Deep (extended thinking, slower, costs more)</option></select>
     <label>Twelve Data plan</label>
+    <label>Price data</label>
+    <select id="src"><option value="deriv">Deriv first: free and unlimited for forex, metals, BTC, ETH, indices and synthetics (Twelve Data as backup)</option><option value="td">Twelve Data only (Deriv still used for synthetic indices)</option></select>
     <select id="tdplan"><option value="free">Free (skips dollar index and US10Y, saves 2 calls)</option><option value="paid">Paid (also fetches dollar index and US10Y)</option></select>
     <label>Broker (for spreads and commission in plans, paper results and backtests)</label>
     <div class="row"><select id="brk"><option value="xm">XM</option><option value="none">Other / ignore costs</option></select><select id="brkAcc"><option value="standard">Standard or Micro</option><option value="ultralow">Ultra Low</option><option value="zero">Zero ($7 per lot round turn)</option></select></div>
@@ -530,8 +532,114 @@ RULES
 
 const $ = id => document.getElementById(id);
 const store = { get:k=>localStorage.getItem(k)||'', set:(k,v)=>localStorage.setItem(k,v), del:k=>localStorage.removeItem(k) };
+// ---- Deriv synthetic indices (v40): candles from Deriv's free public API, served to the rest of the app in Twelve Data's format
+function synthCode(sym){const s=String(sym||'').trim().toUpperCase().replace(/\s+/g,' ');let m;
+  if(/^R_(10|25|50|75|100)$/.test(s))return s;if((m=s.match(/^1HZ(\d+)V$/)))return '1HZ'+m[1]+'V';if(/^(BOOM|CRASH)\d+N?$/.test(s))return s.replace(/^(BOOM|CRASH)(300|150)$/,'$1$2N');if(/^(RB\d+|RDBULL|RDBEAR|WLD(USD|EUR|GBP|AUD|XAU))$/.test(s))return s;
+  if(/^STPRNG\d*$/.test(s))return 'stpRNG'+s.slice(6);if((m=s.match(/^JD(\d+)$/)))return 'JD'+m[1];
+  if((m=s.match(/^V(?:OL(?:ATILITY)?)? ?(\d+) ?\(1S\)(?: INDEX)?$/))||(m=s.match(/^V(\d+)\(1S\)$/)))return '1HZ'+m[1]+'V';
+  if((m=s.match(/^V(?:OL(?:ATILITY)?)? ?(10|25|50|75|100)(?: INDEX)?$/)))return 'R_'+m[1];if((m=s.match(/^V(?:OL(?:ATILITY)?)? ?(15|30|90)(?: INDEX)?$/)))return '1HZ'+m[1]+'V';
+  if((m=s.match(/^(BOOM|CRASH) ?(\d+)(?: INDEX)?$/)))return m[1]+m[2]+(m[2]==='300'||m[2]==='150'?'N':'');
+  if((m=s.match(/^STEP(?: INDEX)? ?([2-5])00$/)))return 'stpRNG'+m[1];if((m=s.match(/^RANGE ?BREAK ?(100|200)(?: INDEX)?$/)))return 'RB'+m[1];if(/^BULL( MARKET)?( INDEX)?$/.test(s))return 'RDBULL';if(/^BEAR( MARKET)?( INDEX)?$/.test(s))return 'RDBEAR';
+  if((m=s.match(/^(USD|EUR|GBP|AUD|GOLD) BASKET$/)))return 'WLD'+(m[1]==='GOLD'?'XAU':m[1]);
+  if(/^STEP(?: INDEX)?$/.test(s))return 'stpRNG';if((m=s.match(/^JUMP ?(\d+)(?: INDEX)?$/)))return 'JD'+m[1];return null;}
+const isSynth=sym=>!!synthCode(sym)&&!/^WLD/.test(synthCode(sym));
+// real markets that Deriv quotes for free (v42): forex, metals, BTC and ETH, stock indices; Twelve Data stays as the fallback
+const DERIV_IDX={'US500':'OTC_SPC','SPX':'OTC_SPC','SPX500':'OTC_SPC','SPY':'OTC_SPC','US 500':'OTC_SPC','NAS100':'OTC_NDX','NDX':'OTC_NDX','US100':'OTC_NDX','US TECH 100':'OTC_NDX','US30':'OTC_DJI','DJI':'OTC_DJI','WALL STREET 30':'OTC_DJI','GER40':'OTC_GDAXI','DAX':'OTC_GDAXI','GERMANY 40':'OTC_GDAXI','UK100':'OTC_FTSE','FTSE':'OTC_FTSE','UK 100':'OTC_FTSE','JP225':'OTC_N225','NIKKEI':'OTC_N225','JAPAN 225':'OTC_N225','AUS200':'OTC_AS51','AUSTRALIA 200':'OTC_AS51','HK50':'OTC_HSI','HONG KONG 50':'OTC_HSI','FRA40':'OTC_FCHI','FRANCE 40':'OTC_FCHI','EU50':'OTC_SX5E','EURO 50':'OTC_SX5E','NL25':'OTC_AEX','NETHERLANDS 25':'OTC_AEX','SWI20':'OTC_SSMI','SWISS 20':'OTC_SSMI'};
+function derivCode(sym){const s=String(sym||'').trim().toUpperCase();const sc=synthCode(s);if(sc)return sc;let m;
+  if((m=s.match(/^(XAU|XAG|XPT|XPD)\/?USD$/)))return 'frx'+m[1]+'USD';if((m=s.match(/^(BTC|ETH)\/?USDT?$/)))return 'cry'+m[1]+'USD';
+  if((m=s.match(/^([A-Z]{3})\/?([A-Z]{3})$/))&&/^(USD|EUR|GBP|JPY|CHF|AUD|NZD|CAD|ZAR|MXN|PLN)$/.test(m[1])&&/^(USD|EUR|GBP|JPY|CHF|AUD|NZD|CAD|ZAR|MXN|PLN)$/.test(m[2]))return 'frx'+m[1]+m[2];
+  return DERIV_IDX[s]||null;}
+const dataSrc=()=>store.get('ev_src')||'deriv';
+const freeData=sym=>isSynth(sym)||!!(derivCode(sym)&&dataSrc()==='deriv');
+// the short name the app uses: V75, V75(1S), BOOM1000, CRASH500, STEP, JUMP25
+function synthApp(c){let m;return (m=c.match(/^R_(\d+)$/))?'V'+m[1]:(m=c.match(/^1HZ(\d+)V$/))?'V'+m[1]+'(1S)':c==='stpRNG'?'STEP':(m=c.match(/^stpRNG(\d)$/))?'STEP '+m[1]+'00':(m=c.match(/^JD(\d+)$/))?'JUMP'+m[1]:(m=c.match(/^RB(\d+)$/))?'RANGE BREAK '+m[1]:c==='RDBULL'?'BULL MARKET':c==='RDBEAR'?'BEAR MARKET':(m=c.match(/^WLD(\w+)$/))?(m[1]==='XAU'?'GOLD':m[1])+' BASKET':c.replace(/N$/,'');}
+function synthKind(sym){const c=synthCode(sym)||'';return /^BOOM/.test(c)?'boom':/^CRASH/.test(c)?'crash':/^stpRNG/.test(c)?'step':/^JD/.test(c)?'jump':/^RB/.test(c)?'range':/^RD/.test(c)?'trend':/^WLD/.test(c)?'basket':/^1HZ/.test(c)?'vol1s':c?'vol':'';}
+const DERIV_WS=['wss://api.derivws.com/trading/v1/options/ws/public','wss://ws.derivws.com/websockets/v3?app_id=1089'];
+const DV={ws:null,ready:null,i:0,seq:1,wait:new Map(),cache:new Map(),subs:new Map()};
+function derivOpen(){if(DV.ws&&DV.ws.readyState===1)return Promise.resolve(DV.ws);if(DV.ready)return DV.ready;
+  DV.ready=new Promise((res,rej)=>{let tried=0;const go=()=>{const url=DERIV_WS[DV.i%DERIV_WS.length];let ok=false;const ws=new WebSocket(url);
+      const to=setTimeout(()=>{if(!ok){try{ws.close();}catch(e){}}},8000);
+      ws.onopen=()=>{ok=true;clearTimeout(to);DV.ws=ws;DV.ready=null;res(ws);};
+      ws.onmessage=e=>{let j;try{j=JSON.parse(e.data);}catch(_){return;}const w=DV.wait.get(j.req_id);if(w){DV.wait.delete(j.req_id);j.error?w.rej(new Error('Deriv: '+j.error.message)):w.res(j);}const sb=DV.subs.get(j.req_id);if(sb&&j.tick){sb.sid=j.subscription&&j.subscription.id||sb.sid;try{sb.cb(j.tick);}catch(_){}}};
+      ws.onclose=()=>{clearTimeout(to);if(DV.ws===ws){DV.ws=null;DV.subs.clear();if(typeof TS!=='undefined')TS.act.clear();}for(const [k,w] of DV.wait){w.rej(new Error('Deriv connection closed'));DV.wait.delete(k);}
+        if(!ok){DV.i++;if(++tried<DERIV_WS.length)go();else{DV.ready=null;rej(new Error('cannot reach Deriv'));}}};};go();});return DV.ready;}
+async function deriv(req){const ws=await derivOpen(),id=DV.seq++;return new Promise((res,rej)=>{DV.wait.set(id,{res,rej});ws.send(JSON.stringify({...req,req_id:id}));setTimeout(()=>{if(DV.wait.has(id)){DV.wait.delete(id);rej(new Error('Deriv timeout'));}},20000);});}
+// candles oldest first as {t,o,h,l,c}; granularity in seconds; start (ms) optional
+async function derivCandles(code,gran,count,startMs){const k=code+'|'+gran+'|'+count+'|'+(startMs||''),c=DV.cache.get(k);if(c&&Date.now()-c.at<20000)return c.bars;
+  let bars=[],end='latest';count=count||500;
+  for(let pg=0;pg<6&&bars.length<count;pg++){const want=Math.min(1000,count-bars.length),j=await deriv({ticks_history:code,style:'candles',granularity:gran,count:want,end});
+    const got=(j.candles||[]).map(x=>({t:x.epoch*1000,o:+x.open,h:+x.high,l:+x.low,c:+x.close}));if(!got.length)break;
+    bars=got.filter(b=>!bars.length||b.t<bars[0].t).concat(bars);if((startMs&&got[0].t<=startMs)||got.length<want)break;end=Math.floor(got[0].t/1000)-1;}
+  if(startMs)bars=bars.filter(b=>b.t>=startMs);DV.cache.set(k,{at:Date.now(),bars});return bars;}
+const TD_GRAN={'1min':60,'5min':300,'15min':900,'30min':1800,'45min':900,'1h':3600,'2h':7200,'4h':14400,'1day':86400,'1week':86400};
+function aggBars(b,ms,anchor){const out=[];for(const x of b){const k=anchor?anchor(x.t):Math.floor(x.t/ms)*ms,l=out[out.length-1];if(l&&l.t===k){l.h=Math.max(l.h,x.h);l.l=Math.min(l.l,x.l);l.c=x.c;}else out.push({...x,t:k});}return out;}
+const tdDt=(t,daily)=>daily?new Date(t).toISOString().slice(0,10):new Date(t).toISOString().slice(0,19).replace('T',' ');
+// answers a Twelve Data time_series or quote URL for a synthetic index from Deriv
+async function synthTD(url){const u=new URL(url),sym=u.searchParams.get('symbol'),code=derivCode(sym),path=u.pathname;
+  if(/\/quote$/.test(path)){const d=await derivCandles(code,86400,3),h=await derivCandles(code,60,2),px=h.length?h[h.length-1].c:d[d.length-1].c,td=d[d.length-1],y=d[d.length-2]||td;
+    return {symbol:sym,name:sym,close:String(px),open:String(td.o),high:String(Math.max(td.h,px)),low:String(Math.min(td.l,px)),previous_close:String(y.c),percent_change:String((px-y.c)/y.c*100),is_market_open:true};}
+  const iv=u.searchParams.get('interval')||'1h',g=TD_GRAN[iv]||3600,n=+u.searchParams.get('outputsize')||300,sd=u.searchParams.get('start_date');
+  const mult=iv==='1week'?7:iv==='45min'?3:1;let bars=await derivCandles(code,g,Math.min(5000,n*mult+mult),sd?Date.parse(sd.replace(' ','T')+(sd.length>10?'Z':'T00:00:00Z')):0);
+  if(iv==='1week')bars=aggBars(bars,0,t=>{const d=new Date(t),dow=(d.getUTCDay()+6)%7;return Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate()-dow);});
+  if(iv==='45min')bars=aggBars(bars,2700e3);
+  const daily=iv==='1day'||iv==='1week';
+  return {meta:{symbol:sym,interval:iv,exchange:'Deriv'},status:'ok',values:bars.slice(-n).reverse().map(b=>({datetime:tdDt(b.t,daily),open:String(b.o),high:String(b.h),low:String(b.l),close:String(b.c)}))};}
+// live ticks (v42): the chart and the watchlist move with every Deriv tick; the live bid/ask spread is kept for costs and analysis
+const TS={act:new Map(),spr:{},last:{},drawT:0,tickT:0};
+async function derivSub(code,cb){const ws=await derivOpen(),id=DV.seq++;DV.subs.set(id,{cb,sid:null});ws.send(JSON.stringify({ticks:code,subscribe:1,req_id:id}));return id;}
+function derivUnsub(id){const sb=DV.subs.get(id);DV.subs.delete(id);if(sb&&sb.sid&&DV.ws&&DV.ws.readyState===1)DV.ws.send(JSON.stringify({forget:sb.sid}));}
+function onTick(code,t){const syms=(TS.act.get(code)||{}).syms||[],q=+t.quote,now=Date.now();
+  if(t.ask!=null&&t.bid!=null)TS.spr[code]={spr:+(t.ask-t.bid),at:now};
+  for(const S of syms){TS.last[S]={px:q,at:now};
+    if(S===LC.sym&&LC.bars.length&&!$('v-chart').hidden){const ms=TFI[LC.tf][2]*60000,bt=Math.floor(t.epoch*1000/ms)*ms,lb=LC.bars[LC.bars.length-1];
+      if(LC.tf!=='1D'&&LC.tf!=='1W'&&bt>lb.t)LC.bars.push({t:bt,o:q,h:q,l:q,c:q});else{lb.c=q;lb.h=Math.max(lb.h,q);lb.l=Math.min(lb.l,q);}
+      if(now-TS.drawT>400){TS.drawT=now;lcDraw();const ch=dayChange(LC.bars);if(ch){$('lcPx').textContent=f2(ch.px);$('lcChg').textContent=(ch.abs>=0?'+':'−')+Math.abs(ch.abs).toFixed(pxDec(ch.px))+' ('+(ch.pct>=0?'+':'−')+Math.abs(ch.pct).toFixed(2)+'%) today';$('lcChg').className='chg '+(ch.abs>=0?'up':'dn');}
+        const sp=TS.spr[code];$('lcStat').textContent=`${LC.tf} · live from Deriv${sp?' · spread '+f2(sp.spr):''}`;}}}
+  if(now-TS.tickT>1500){TS.tickT=now;for(const S of syms){const old=TK[S];if(old)TK[S]={...old,px:q,pct:old.px?old.pct+(q-old.px)/old.px*100:old.pct,at:now};}renderTicker();}}
+// keeps one subscription per Deriv symbol for the chart and the watchlist while the app is in view
+async function tickSync(){try{const want=new Map();if(!document.hidden){const add=S=>{if(freeData(S)){const c=derivCode(S);(want.get(c)||want.set(c,[]).get(c)).push(S);}};if(!$('v-chart').hidden)add(LC.sym);WL.get().forEach(add);}
+  for(const [c,a] of TS.act)if(!want.has(c)){derivUnsub(a.id);TS.act.delete(c);}
+  for(const [c,syms] of want){const a=TS.act.get(c);if(a){a.syms=[...new Set(syms)];continue;}TS.act.set(c,{id:null,syms:[...new Set(syms)]});try{TS.act.get(c).id=await derivSub(c,t=>onTick(c,t));}catch(e){TS.act.delete(c);}}}catch(e){}}
+const liveSpread=sym=>{const c=derivCode(sym),x=c&&TS.spr[c];return x&&Date.now()-x.at<10*6e4?x.spr:null;};
+const DLIST=[['frxXAUUSD','Gold/USD'],['frxXAGUSD','Silver/USD'],['frxXPTUSD','Platinum/USD'],['frxXPDUSD','Palladium/USD'],['cryBTCUSD','BTC/USD'],['cryETHUSD','ETH/USD'],['OTC_SPC','US 500'],['OTC_NDX','US Tech 100'],['OTC_DJI','Wall Street 30'],['OTC_GDAXI','Germany 40'],['OTC_FTSE','UK 100'],['OTC_N225','Japan 225'],['OTC_AS51','Australia 200'],['OTC_HSI','Hong Kong 50'],['OTC_FCHI','France 40'],['OTC_SX5E','Euro 50'],['OTC_AEX','Netherlands 25'],['OTC_SSMI','Swiss 20']];
+// extra context from Deriv (v42): market hours and holidays, and tick statistics for synthetic indices
+let TT=null;
+async function tradingTimes(){const day=new Date().toISOString().slice(0,10);if(TT&&TT.day===day)return TT.d;const j=await deriv({trading_times:'today'});TT={day,d:j.trading_times};return TT.d;}
+async function hoursText(sym){if(isSynth(sym))return '';const code=derivCode(sym);if(!code)return '';let d;try{d=await tradingTimes();}catch(e){return '';}
+  const nm=(DLIST.find(x=>x[0]===code)||[])[1]||String(sym).toUpperCase();let hit=null;
+  for(const m of d.markets||[])for(const sm of m.submarkets||[])for(const y of sm.symbols||[])if(y.symbol===code||y.underlying_symbol===code||String(y.name).toUpperCase()===nm.toUpperCase())hit=y;
+  if(!hit)return '';const t=hit.times||{},ev=(hit.events||[]).filter(e=>e&&e.descrip).slice(0,4).map(e=>`${e.descrip} (${e.dates})`);
+  return `MARKET HOURS (Deriv, UTC): today opens ${(t.open||[]).join(', ')||'n/a'}, closes ${(t.close||[]).join(', ')||'n/a'}${ev.length?'; schedule notes: '+ev.join('; '):''}. Do not plan entries or targets that need the market after it closes.`;}
+async function tickStats(sym){const k=synthKind(sym);if(!isSynth(sym)||!k)return '';const code=synthCode(sym);let j;try{j=await deriv({ticks_history:code,style:'ticks',count:1000,end:'latest'});}catch(e){return '';}
+  const p=(j.history&&j.history.prices||[]).map(Number),tm=(j.history&&j.history.times||[]).map(Number);if(p.length<100)return '';
+  const d=p.slice(1).map((x,i)=>x-p[i]),ad=d.map(Math.abs).sort((a,b)=>a-b),med=ad[Math.floor(ad.length/2)]||1e-9,secs=(tm[tm.length-1]-tm[0])/(p.length-1);
+  const f=x=>Number(x).toPrecision(4);let out=`TICK STATISTICS (last ${p.length} ticks, about ${Math.round((tm[tm.length-1]-tm[0])/60)} minutes, one tick every ${secs.toFixed(1)} s): median tick move ${f(med)}`;
+  if(k==='boom'||k==='crash'){const dir=k==='boom'?1:-1,sp=[];d.forEach((x,i)=>{if(dir*x>15*med)sp.push(i);});const n=+(code.match(/\d+/)||[1000])[0];
+    const since=sp.length?d.length-1-sp[sp.length-1]:null,between=d.filter((x,i)=>!sp.includes(i)),drift=between.reduce((s,x)=>s+x,0)/Math.max(1,between.length),big=sp.map(i=>Math.abs(d[i])),avgSp=big.length?big.reduce((s,x)=>s+x,0)/big.length:null;
+    out+=`; ${sp.length} ${k==='boom'?'upward':'downward'} spike${sp.length===1?'':'s'} (expected about ${(d.length/n).toFixed(1)} for one every ${n} ticks)${avgSp?`, average spike ${f(avgSp)} (${(avgSp/med).toFixed(0)}× a normal tick)`:''}; drift between spikes ${f(drift)} a tick (${f(drift*60/secs)} a minute); ${since==null?'no spike in this window':since+' ticks since the last spike'}. Spikes are random and memoryless: a long gap does NOT make one more likely, so never size a trade on the idea that a spike is "due".`;}
+  else{const r=d.map((x,i)=>Math.log(p[i+1]/p[i])),sd=Math.sqrt(r.reduce((s,x)=>s+x*x,0)/r.length),ann=sd*Math.sqrt(365*86400/secs)*100,nom=+(code.match(/\d+/)||[0])[0];
+    out+=`; realised volatility ${ann.toFixed(1)}% a year${(k==='vol'||k==='vol1s')&&nom?` (nominal ${nom}%)`:''}; move over the window ${f(p[p.length-1]-p[0])}.`;}
+  return out;}
+const SYNTH_LIST=[['Volatility 10 Index','R_10'],['Volatility 25 Index','R_25'],['Volatility 50 Index','R_50'],['Volatility 75 Index','R_75'],['Volatility 100 Index','R_100'],
+  ['Volatility 10 (1s) Index','1HZ10V'],['Volatility 25 (1s) Index','1HZ25V'],['Volatility 50 (1s) Index','1HZ50V'],['Volatility 75 (1s) Index','1HZ75V'],['Volatility 100 (1s) Index','1HZ100V'],
+  ['Boom 1000 Index','BOOM1000'],['Boom 500 Index','BOOM500'],['Boom 300 Index','BOOM300N'],['Crash 1000 Index','CRASH1000'],['Crash 500 Index','CRASH500'],['Crash 300 Index','CRASH300N'],
+  ['Boom 600 Index','BOOM600'],['Boom 900 Index','BOOM900'],['Boom 150 Index','BOOM150N'],['Boom 50 Index','BOOM50'],['Crash 600 Index','CRASH600'],['Crash 900 Index','CRASH900'],['Crash 150 Index','CRASH150N'],['Crash 50 Index','CRASH50'],
+  ['Volatility 15 (1s) Index','1HZ15V'],['Volatility 30 (1s) Index','1HZ30V'],['Volatility 90 (1s) Index','1HZ90V'],
+  ['Step Index','stpRNG'],['Step Index 200','stpRNG2'],['Step Index 300','stpRNG3'],['Step Index 400','stpRNG4'],['Step Index 500','stpRNG5'],['Range Break 100 Index','RB100'],['Range Break 200 Index','RB200'],['Bull Market Index','RDBULL'],['Bear Market Index','RDBEAR'],
+  ['USD Basket','WLDUSD'],['EUR Basket','WLDEUR'],['GBP Basket','WLDGBP'],['AUD Basket','WLDAUD'],['Gold Basket','WLDXAU'],['Jump 10 Index','JD10'],['Jump 25 Index','JD25'],['Jump 50 Index','JD50'],['Jump 75 Index','JD75'],['Jump 100 Index','JD100']];
+function synthBrief(sym){const c=synthCode(sym),k=synthKind(sym);if(!c)return '';const n=(c.match(/\d+/)||[''])[0];
+  const kind={vol:`Volatility ${n} Index: simulates a market with a constant volatility of ${n}% a year, one tick every 2 seconds.`,
+    vol1s:`Volatility ${n} (1s) Index: constant volatility of ${n}% a year, one tick every second (same behaviour, twice the ticks of the standard version).`,
+    boom:`Boom ${n} Index: on average one sharp UPWARD spike every ${n} ticks; between spikes it drifts lower in small ticks. Selling it means riding the drift while carrying the risk of a spike against you; buying it means waiting for spikes. Stops on sells must allow for a spike.`,
+    crash:`Crash ${n} Index: on average one sharp DOWNWARD spike every ${n} ticks; between spikes it drifts higher in small ticks. Buying it rides the drift with the risk of a crash spike against you; selling it waits for spikes. Stops on buys must allow for a spike.`,
+    step:`Step Index${/\d$/.test(c)?' '+c.slice(-1)+'00':''}: moves up or down by a fixed step each tick with equal probability, so its volatility is steady.`,
+    range:`Range Break ${n} Index: trades inside a range and breaks out of it after, on average, ${n} touches of the range edges.`,
+    trend:`${c==='RDBULL'?'Bull':'Bear'} Market Index: a simulated market with a built-in ${c==='RDBULL'?'upward':'downward'} drift and occasional sharp moves against it.`,
+    basket:`${c==='WLDXAU'?'Gold Basket: gold priced against a basket of major currencies':(c.slice(3)+' Basket: '+c.slice(3)+' against an equally weighted basket of the other major currencies')}. Unlike other synthetics this one IS driven by real markets and news for its currency.`,
+    jump:`Jump ${n} Index: volatility ${n}% a year with sudden large jumps, on average about three an hour, equally likely up or down.`}[k];
+  return `INSTRUMENT BACKGROUND (Deriv synthetic index, Deriv code ${c}): ${kind} Synthetic indices are generated by Deriv's audited random number generator. They trade 24/7 including weekends, and they are NOT moved by economic news, central banks, sessions, positioning, correlations or any other market: ignore the economic calendar, headlines, COT, currency strength and session opens for this instrument, and do not mention them as reasons. Volatility is statistically constant, so ATR-based stops and targets are reliable; chart structure (swings, ranges, liquidity sweeps, trend legs) is the only edge, and it is weaker than on real markets, so be strict about reward to risk, size small and say so when there is no clear setup. Trade on Deriv (MT5 or Deriv options/multipliers); costs are the spread only.`;}
 // ---- cloud memory (v37): settings that follow you to every device, with the time each was last changed
-const SYNC_KEYS=['ca_wl','ca_wlset','ca_bot','ev_brk','ev_bt','ca_alerts','ca_cBal','ca_cRisk','ca_symbol','ca_market','ca_spread','ca_depth','ca_model','ca_mHaiku','ca_tdplan','ca_ghRepo','ev_fxOn','ev_pmOff','ev_chat','ev_chatCur','ev_goals','ev_style','ev_live'];
+const SYNC_KEYS=['ca_wl','ca_wlset','ca_bot','ev_brk','ev_bt','ca_alerts','ca_cBal','ca_cRisk','ca_symbol','ca_market','ca_spread','ca_depth','ca_model','ca_mHaiku','ca_tdplan','ca_ghRepo','ev_fxOn','ev_pmOff','ev_chat','ev_chatCur','ev_goals','ev_style','ev_live','ev_src'];
 let syncApplying=false;
 const KMT=()=>{try{return JSON.parse(localStorage.getItem('ev_kmt')||'{}');}catch(e){return {};}};
 {const _set=store.set;store.set=(k,v)=>{_set(k,v);if(!syncApplying&&SYNC_KEYS.includes(k)){const m=KMT();m[k]=Date.now();localStorage.setItem('ev_kmt',JSON.stringify(m));}};}
@@ -567,6 +675,7 @@ function brkInfo(){const b=BRK.get();if(b.broker!=='xm'&&!b.ov.trim()){$('brkInf
   const ex=['XAU/USD','EUR/USD','GBP/USD','USD/JPY','GBP/JPY'].map(s=>{const c=costFor(s);return `${s} ${c.spr}${c.com?' + '+c.com+' commission':''}${c.rough?'*':''}`;}).join(', ');
   $('brkInfo').textContent=`Spreads used (price units): ${ex}. * rough estimate: enter your own from MT5 for accuracy. XM spreads widen around news and the daily rollover; these are typical values.`;}
 (()=>{const b=BRK.get();$('brk').value=b.broker;$('brkAcc').value=b.acc;$('brkOv').value=b.ov;$('acct').value=b.ccy||'ZAR';$('usdzar').value=b.usdzar||'';const sv=()=>{BRK.set({broker:$('brk').value,acc:$('brkAcc').value,ov:$('brkOv').value.trim(),ccy:$('acct').value,usdzar:$('usdzar').value.trim()});brkInfo();ccyLabels();try{renderBot();}catch(e){}};['brk','brkAcc','brkOv','acct','usdzar'].forEach(id=>$(id).onchange=sv);setTimeout(brkInfo,0);setTimeout(()=>refreshUsdZar(false).then(()=>{try{renderBot();}catch(e){}}),3000);})();
+$('src').value=dataSrc();$('src').onchange=()=>{store.set('ev_src',$('src').value);DV.cache.clear();setTimeout(tickSync,300);};
 $('tdplan').value=store.get('ca_tdplan')||'free';$('tdplan').onchange=()=>store.set('ca_tdplan',$('tdplan').value);
 $('depth').value=store.get('ca_depth')||'std';$('depth').onchange=()=>store.set('ca_depth',$('depth').value);
 const KEY_IDS=['kAnthropic','kTwelve','kFinnhub','kFred','kOpenAI','kMetaApi','kMetaAcc','kDerivTok','kDerivApp','model','mHaiku','kGh','ghRepo','kSync'];
@@ -649,58 +758,11 @@ function renderThumbs(name){
 }
 
 // ---- live data
-async function getJSON(url){ if(/api\.twelvedata\.com\/(time_series|quote)\?/.test(url)){const sy=new URL(url).searchParams.get('symbol');if(sy&&!sy.includes(',')&&isSynth(sy))return synthTD(url);} if(/api\.twelvedata\.com\/(?!symbol_search)/.test(url)&&typeof tdCount==='function')tdCount(); const r=await fetch(url); if(!r.ok) throw new Error(r.status); return r.json(); }
-// ---- Deriv synthetic indices (v40): candles from Deriv's free public API, served to the rest of the app in Twelve Data's format
-function synthCode(sym){const s=String(sym||'').trim().toUpperCase().replace(/\s+/g,' ');let m;
-  if(/^R_(10|25|50|75|100)$/.test(s))return s;if((m=s.match(/^1HZ(\d+)V$/)))return '1HZ'+m[1]+'V';if(/^(BOOM|CRASH)\d+N?$/.test(s))return s.replace(/^(BOOM|CRASH)300$/,'$1300N');
-  if(/^STPRNG\d*$/.test(s))return 'stpRNG'+s.slice(6);if((m=s.match(/^JD(\d+)$/)))return 'JD'+m[1];
-  if((m=s.match(/^V(?:OL(?:ATILITY)?)? ?(\d+) ?\(1S\)(?: INDEX)?$/))||(m=s.match(/^V(\d+)\(1S\)$/)))return '1HZ'+m[1]+'V';
-  if((m=s.match(/^V(?:OL(?:ATILITY)?)? ?(10|25|50|75|100)(?: INDEX)?$/)))return 'R_'+m[1];
-  if((m=s.match(/^(BOOM|CRASH) ?(\d+)(?: INDEX)?$/)))return m[1]+m[2]+(m[2]==='300'?'N':'');
-  if(/^STEP(?: INDEX)?$/.test(s))return 'stpRNG';if((m=s.match(/^JUMP ?(\d+)(?: INDEX)?$/)))return 'JD'+m[1];return null;}
-const isSynth=sym=>!!synthCode(sym);
-// the short name the app uses: V75, V75(1S), BOOM1000, CRASH500, STEP, JUMP25
-function synthApp(c){let m;return (m=c.match(/^R_(\d+)$/))?'V'+m[1]:(m=c.match(/^1HZ(\d+)V$/))?'V'+m[1]+'(1S)':c==='stpRNG'?'STEP':(m=c.match(/^JD(\d+)$/))?'JUMP'+m[1]:c.replace(/N$/,'');}
-function synthKind(sym){const c=synthCode(sym)||'';return /^BOOM/.test(c)?'boom':/^CRASH/.test(c)?'crash':/^stpRNG/.test(c)?'step':/^JD/.test(c)?'jump':/^1HZ/.test(c)?'vol1s':c?'vol':'';}
-const DERIV_WS=['wss://api.derivws.com/trading/v1/options/ws/public','wss://ws.derivws.com/websockets/v3?app_id=1089'];
-const DV={ws:null,ready:null,i:0,seq:1,wait:new Map(),cache:new Map()};
-function derivOpen(){if(DV.ws&&DV.ws.readyState===1)return Promise.resolve(DV.ws);if(DV.ready)return DV.ready;
-  DV.ready=new Promise((res,rej)=>{let tried=0;const go=()=>{const url=DERIV_WS[DV.i%DERIV_WS.length];let ok=false;const ws=new WebSocket(url);
-      const to=setTimeout(()=>{if(!ok){try{ws.close();}catch(e){}}},8000);
-      ws.onopen=()=>{ok=true;clearTimeout(to);DV.ws=ws;DV.ready=null;res(ws);};
-      ws.onmessage=e=>{let j;try{j=JSON.parse(e.data);}catch(_){return;}const w=DV.wait.get(j.req_id);if(w){DV.wait.delete(j.req_id);j.error?w.rej(new Error('Deriv: '+j.error.message)):w.res(j);}};
-      ws.onclose=()=>{clearTimeout(to);if(DV.ws===ws)DV.ws=null;for(const [k,w] of DV.wait){w.rej(new Error('Deriv connection closed'));DV.wait.delete(k);}
-        if(!ok){DV.i++;if(++tried<DERIV_WS.length)go();else{DV.ready=null;rej(new Error('cannot reach Deriv'));}}};};go();});return DV.ready;}
-async function deriv(req){const ws=await derivOpen(),id=DV.seq++;return new Promise((res,rej)=>{DV.wait.set(id,{res,rej});ws.send(JSON.stringify({...req,req_id:id}));setTimeout(()=>{if(DV.wait.has(id)){DV.wait.delete(id);rej(new Error('Deriv timeout'));}},20000);});}
-// candles oldest first as {t,o,h,l,c}; granularity in seconds; start (ms) optional
-async function derivCandles(code,gran,count,startMs){const k=code+'|'+gran+'|'+count+'|'+(startMs||''),c=DV.cache.get(k);if(c&&Date.now()-c.at<20000)return c.bars;
-  const j=await deriv({ticks_history:code,style:'candles',granularity:gran,count:Math.min(5000,count||500),end:'latest',...(startMs?{start:Math.floor(startMs/1000)}:{})});
-  const bars=(j.candles||[]).map(x=>({t:x.epoch*1000,o:+x.open,h:+x.high,l:+x.low,c:+x.close}));DV.cache.set(k,{at:Date.now(),bars});return bars;}
-const TD_GRAN={'1min':60,'5min':300,'15min':900,'30min':1800,'45min':900,'1h':3600,'2h':7200,'4h':14400,'1day':86400,'1week':86400};
-function aggBars(b,ms,anchor){const out=[];for(const x of b){const k=anchor?anchor(x.t):Math.floor(x.t/ms)*ms,l=out[out.length-1];if(l&&l.t===k){l.h=Math.max(l.h,x.h);l.l=Math.min(l.l,x.l);l.c=x.c;}else out.push({...x,t:k});}return out;}
-const tdDt=(t,daily)=>daily?new Date(t).toISOString().slice(0,10):new Date(t).toISOString().slice(0,19).replace('T',' ');
-// answers a Twelve Data time_series or quote URL for a synthetic index from Deriv
-async function synthTD(url){const u=new URL(url),sym=u.searchParams.get('symbol'),code=synthCode(sym),path=u.pathname;
-  if(/\/quote$/.test(path)){const d=await derivCandles(code,86400,3),h=await derivCandles(code,60,2),px=h.length?h[h.length-1].c:d[d.length-1].c,td=d[d.length-1],y=d[d.length-2]||td;
-    return {symbol:sym,name:sym,close:String(px),open:String(td.o),high:String(Math.max(td.h,px)),low:String(Math.min(td.l,px)),previous_close:String(y.c),percent_change:String((px-y.c)/y.c*100),is_market_open:true};}
-  const iv=u.searchParams.get('interval')||'1h',g=TD_GRAN[iv]||3600,n=+u.searchParams.get('outputsize')||300,sd=u.searchParams.get('start_date');
-  const mult=iv==='1week'?7:iv==='45min'?3:1;let bars=await derivCandles(code,g,Math.min(5000,n*mult+mult),sd?Date.parse(sd.replace(' ','T')+(sd.length>10?'Z':'T00:00:00Z')):0);
-  if(iv==='1week')bars=aggBars(bars,0,t=>{const d=new Date(t),dow=(d.getUTCDay()+6)%7;return Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate()-dow);});
-  if(iv==='45min')bars=aggBars(bars,2700e3);
-  const daily=iv==='1day'||iv==='1week';
-  return {meta:{symbol:sym,interval:iv,exchange:'Deriv'},status:'ok',values:bars.slice(-n).reverse().map(b=>({datetime:tdDt(b.t,daily),open:String(b.o),high:String(b.h),low:String(b.l),close:String(b.c)}))};}
-const SYNTH_LIST=[['Volatility 10 Index','R_10'],['Volatility 25 Index','R_25'],['Volatility 50 Index','R_50'],['Volatility 75 Index','R_75'],['Volatility 100 Index','R_100'],
-  ['Volatility 10 (1s) Index','1HZ10V'],['Volatility 25 (1s) Index','1HZ25V'],['Volatility 50 (1s) Index','1HZ50V'],['Volatility 75 (1s) Index','1HZ75V'],['Volatility 100 (1s) Index','1HZ100V'],
-  ['Boom 1000 Index','BOOM1000'],['Boom 500 Index','BOOM500'],['Boom 300 Index','BOOM300N'],['Crash 1000 Index','CRASH1000'],['Crash 500 Index','CRASH500'],['Crash 300 Index','CRASH300N'],
-  ['Step Index','stpRNG'],['Jump 10 Index','JD10'],['Jump 25 Index','JD25'],['Jump 50 Index','JD50'],['Jump 75 Index','JD75'],['Jump 100 Index','JD100']];
-function synthBrief(sym){const c=synthCode(sym),k=synthKind(sym);if(!c)return '';const n=(c.match(/\d+/)||[''])[0];
-  const kind={vol:`Volatility ${n} Index: simulates a market with a constant volatility of ${n}% a year, one tick every 2 seconds.`,
-    vol1s:`Volatility ${n} (1s) Index: constant volatility of ${n}% a year, one tick every second (same behaviour, twice the ticks of the standard version).`,
-    boom:`Boom ${n} Index: on average one sharp UPWARD spike every ${n} ticks; between spikes it drifts lower in small ticks. Selling it means riding the drift while carrying the risk of a spike against you; buying it means waiting for spikes. Stops on sells must allow for a spike.`,
-    crash:`Crash ${n} Index: on average one sharp DOWNWARD spike every ${n} ticks; between spikes it drifts higher in small ticks. Buying it rides the drift with the risk of a crash spike against you; selling it waits for spikes. Stops on buys must allow for a spike.`,
-    step:'Step Index: moves up or down by exactly 0.1 each tick with equal probability, so its volatility is steady and small.',
-    jump:`Jump ${n} Index: volatility ${n}% a year with sudden large jumps, on average about three an hour, equally likely up or down.`}[k];
-  return `INSTRUMENT BACKGROUND (Deriv synthetic index, Deriv code ${c}): ${kind} Synthetic indices are generated by Deriv's audited random number generator. They trade 24/7 including weekends, and they are NOT moved by economic news, central banks, sessions, positioning, correlations or any other market: ignore the economic calendar, headlines, COT, currency strength and session opens for this instrument, and do not mention them as reasons. Volatility is statistically constant, so ATR-based stops and targets are reliable; chart structure (swings, ranges, liquidity sweeps, trend legs) is the only edge, and it is weaker than on real markets, so be strict about reward to risk, size small and say so when there is no clear setup. Trade on Deriv (MT5 or Deriv options/multipliers); costs are the spread only.`;}
+async function getJSON(url){ if(/api\.twelvedata\.com\/(time_series|quote)\?/.test(url)){const U=new URL(url),sy=U.searchParams.get('symbol')||'';
+    if(sy.includes(',')){const list=sy.split(','),free=list.filter(freeData);if(free.length){const out={};for(const x of free){try{const q=new URL(url);q.searchParams.set('symbol',x);out[x]=await synthTD(q.toString());}catch(e){}}
+        const rest=list.filter(x=>!out[x]),tk=U.searchParams.get('apikey');if(rest.length&&tk){const q=new URL(url);q.searchParams.set('symbol',rest.join(','));try{const j=await getJSON(q.toString());if(rest.length===1)out[rest[0]]=j;else Object.assign(out,j);}catch(e){}}
+        if(Object.keys(out).length)return out;}}
+    else if(freeData(sy)){try{return await synthTD(url);}catch(e){if(isSynth(sy)||!U.searchParams.get('apikey')||U.searchParams.get('apikey')==='-')throw e;srcLog.push('Deriv failed for '+sy+' ('+e.message+'); used Twelve Data');}}} if(/api\.twelvedata\.com\/(?!symbol_search)/.test(url)&&typeof tdCount==='function')tdCount(); const r=await fetch(url); if(!r.ok) throw new Error(r.status); return r.json(); }
 
 // ---- indicator maths (computed locally from candles; 1 API call per timeframe)
 // decimals by magnitude so FX keeps 5 decimals, JPY pairs 3, gold/indices/BTC 2, small coins 6-8
@@ -917,7 +979,7 @@ function activePairs(){
   const fillSp=x=>{if(!x.sp&&x.sym){try{const c=costFor(aliasSym(x.sym));if(c.spr>0){x.sp=String(+(c.spr+c.com).toPrecision(6));x.spSrc=c.src+(c.com?' (spread + commission)':'');}}catch(e){}}return x;};
   for(const n of [2,3])P.push({n,sym:$('symbol'+n).value.trim(),market:$('market'+n).value,px:$('manualPx'+n).value.trim(),sp:$('spread'+n).value.trim(),key:'charts'+n});
   P.forEach(p=>{p.sym=aliasSym(p.sym);});
-  const liveOK=p=>!!$('kTwelve').value.trim()||p.market==='crypto'||isCrypto(p.sym)||isSynth(p.sym);
+  const liveOK=p=>!!$('kTwelve').value.trim()||p.market==='crypto'||isCrypto(p.sym)||freeData(p.sym);
   return P.filter(p=>p.sym&&(lists[p.key].length||liveOK(p))).map(fillSp);
 }
 function updSummary(){const P=activePairs(),im=P.reduce((t,p)=>t+lists[p.key].length,0),nn=lists.news.length;
@@ -954,23 +1016,27 @@ function taBlock(sym,cd,px){if(!cd||!window.EVTA||px==null)return '';const A=EVT
 // add the toolkit numbers to a setup fingerprint
 function augF(f,sym,entry,L){try{if(!f||!f.side||!window.EVTA)return f;const tx=TAX[String(sym).toUpperCase()];if(!tx)return f;Object.assign(f,EVTA.fingerprint(tx.h1,tx.h4,L&&L.px,f.side));
   const en=_num(entry),a=L&&L.atr1h;if(en!=null&&a&&tx.levels.length)f.liq=tx.levels.some(l=>Math.abs(l.p-en)<=0.5*a)?1:0;}catch(e){}return f;}
-const FXM=['EUR/USD','GBP/USD','AUD/USD','NZD/USD','USD/JPY','USD/CAD','USD/CHF'],IMK=['XAU/USD','XAG/USD','WTI/USD','SPY'];
+const FXM=['EUR/USD','GBP/USD','AUD/USD','NZD/USD','USD/JPY','USD/CAD','USD/CHF'],IMK=['XAU/USD','XAG/USD','WTI/USD','SPY'],BASKETS=['USD BASKET','EUR BASKET','GBP BASKET','AUD BASKET','GOLD BASKET'];
 async function tdBatch(syms,tk){const j=await getJSON(`https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(syms.join(','))}&interval=1h&outputsize=130&timezone=UTC&apikey=${tk}`);
-  for(let i=1;i<syms.length;i++)tdCount();if(j&&j.status==='error')throw new Error(j.message||'error');const out={};for(const sy of syms){const v=j&&j[sy];if(v&&v.status!=='error'&&v.values)out[sy]=EVTA.fromVals(v.values).map(b=>b.c);}
+  for(let i=1;i<syms.filter(x=>!freeData(x)).length;i++)tdCount();if(j&&j.status==='error')throw new Error(j.message||'error');const out={};for(const sy of syms){const v=j&&j[sy];if(v&&v.status!=='error'&&v.values)out[sy]=EVTA.fromVals(v.values).map(b=>b.c);}
   if(!Object.keys(out).length)throw new Error('no data');return out;}
 const fxGet=k=>{try{return JSON.parse(store.get(k)||'null');}catch(e){return null;}};
 let fxBusy=false;
 // Refreshes the strength and intermarket data in the background, spaced so the free plan's 8 credits a minute are not exceeded.
-async function fxRefresh(){if(fxBusy||!$('fxOn').checked)return;const tk=$('kTwelve').value.trim();if(!tk)return;fxBusy=true;
-  try{const now=Date.now(),paid=$('tdplan').value!=='free',fx=fxGet('ev_fx'),im=fxGet('ev_im');
-    if((!fx||now-fx.t>55*6e4)&&tdUse()<700){if(!paid)await sleep(65000);try{store.set('ev_fx',JSON.stringify({t:Date.now(),s:await tdBatch(FXM,tk)}));}catch(e){}}
-    if((!im||now-im.t>55*6e4)&&tdUse()<700){if(!paid)await sleep(65000);try{store.set('ev_im',JSON.stringify({t:Date.now(),s:await tdBatch(IMK,tk)}));}catch(e){}}}
+async function fxRefresh(){if(fxBusy||!$('fxOn').checked)return;const tk=$('kTwelve').value.trim(),dv=dataSrc()==='deriv';if(!tk&&!dv)return;fxBusy=true;
+  try{const now=Date.now(),paid=dv||$('tdplan').value!=='free',fx=fxGet('ev_fx'),im=fxGet('ev_im'),bk=fxGet('ev_bk');
+    if(dv&&(!bk||now-bk.t>55*6e4)){try{store.set('ev_bk',JSON.stringify({t:Date.now(),s:await tdBatch(BASKETS,tk||'-')}));}catch(e){}}
+    if((!fx||now-fx.t>55*6e4)&&(dv||tdUse()<700)){if(!paid)await sleep(65000);try{store.set('ev_fx',JSON.stringify({t:Date.now(),s:await tdBatch(FXM,tk)}));}catch(e){}}
+    if((!im||now-im.t>55*6e4)&&(dv||tdUse()<700)){if(!paid)await sleep(65000);try{store.set('ev_im',JSON.stringify({t:Date.now(),s:await tdBatch(IMK,tk)}));}catch(e){}}}
   finally{fxBusy=false;}}
 function fxBlock(sym){if(!$('fxOn').checked||!window.EVTA)return '';const fx=fxGet('ev_fx'),im=fxGet('ev_im'),now=Date.now(),out=[];
   if(fx&&now-fx.t<6*36e5){const cols=[4,24,120].map(k=>EVTA.strength(fx.s,k)),by=c=>cols.map(a=>{const x=a.find(y=>y.ccy===c);return x?(x.v>=0?'+':'')+x.v.toFixed(2):'n/a';}).join(' / ');
     const ccys=cols[1].map(x=>x.ccy);out.push(`CURRENCY STRENGTH (average % move of each currency against the other majors, from hourly closes at ${new Date(fx.t).toISOString().slice(11,16)} UTC; 4H / 1D / 5D): `+ccys.map(c=>`${c} ${by(c)}`).join('; ')+`. Strongest on 1D: ${ccys[0]}, weakest: ${ccys[ccys.length-1]}.`);
     const L=legsOf(sym);if(L){const v=c=>{const x=cols[1].find(y=>y.ccy===c);return x?x.v:null;};const a=v(L[0]),b=v(L[1]);if(a!=null&&b!=null)out.push(`For ${String(sym).toUpperCase()}: ${L[0]} ${a>=0?'+':''}${a.toFixed(2)} vs ${L[1]} ${b>=0?'+':''}${b.toFixed(2)} on 1D: the strength gap favours ${a>b?'BUY':'SELL'}.`);else if(b!=null)out.push(`For ${String(sym).toUpperCase()}: ${L[1]} is ${b>=0?'+':''}${b.toFixed(2)} on 1D.`);}}
   else if(fx)out.push('CURRENCY STRENGTH: data is older than 6 hours; refreshing in the background.');
+  const bk=fxGet('ev_bk');if(bk&&now-bk.t<6*36e5){const ch=(c,k)=>c&&c.length>k?(c[c.length-1]/c[c.length-1-k]-1)*100:null,f=x=>x==null?'n/a':(x>=0?'+':'')+x.toFixed(2)+'%';
+    const parts=BASKETS.filter(k=>bk.s[k]).map(k=>`${k.replace(' BASKET','')} ${f(ch(bk.s[k],4))} / ${f(ch(bk.s[k],24))} / ${f(ch(bk.s[k],120))}`);
+    if(parts.length)out.push(`DERIV CURRENCY BASKETS (each currency, and gold, against an equally weighted basket of majors; 4H / 1D / 5D change): ${parts.join('; ')}. A basket rising means that currency is strengthening against all the others, not just one.`);}
   if(im&&now-im.t<6*36e5){const ch=(c,k)=>c&&c.length>k?(c[c.length-1]/c[c.length-1-k]-1)*100:null,f=x=>x==null?'n/a':(x>=0?'+':'')+x.toFixed(2)+'%',N={'XAU/USD':'gold','XAG/USD':'silver','WTI/USD':'WTI oil','SPY':'S&P 500 (SPY)'};
     const parts=IMK.filter(k=>im.s[k]).map(k=>`${N[k]} ${f(ch(im.s[k],24))} / ${f(ch(im.s[k],120))}`);const g=im.s['XAU/USD'],sv=im.s['XAG/USD'];
     if(parts.length)out.push(`INTERMARKET (1D / 5D % change from hourly closes): ${parts.join('; ')}${g&&sv?`; gold/silver ratio ${(g[g.length-1]/sv[sv.length-1]).toFixed(1)}`:''}.`);}
@@ -983,10 +1049,11 @@ async function depthBlock(sym){if(!isCrypto(sym))return '';try{const j=await get
 async function liveFor(p,tk,fk){
   let live='',news='',errs=[];
   const syn=isSynth(p.sym);
-  if(syn){try{live=await twelve(p.sym,tk||'-');}catch(e){errs.push('Deriv: '+e.message);}}
+  if(syn||(!tk&&freeData(p.sym))){try{live=await twelve(p.sym,tk||'-');}catch(e){errs.push('Deriv: '+e.message);}}
   else if(tk){try{live=await twelve(p.sym,tk);}catch(e){errs.push('Twelve Data: '+e.message);}}
   else if(p.market==='crypto'){try{live=await binance(p.sym);}catch(e){errs.push('Binance: '+e.message);}}
-  if(syn){errs.push(...srcLog.splice(0));try{const xt=expoText(HS.get(),Date.now(),p.sym);if(xt)live=(live?live+'\n':'')+xt;}catch(e){}return {live,news:'',errs,cal:null,at:new Date().toISOString()};}
+  if(syn){try{const ts=await tickStats(p.sym);if(ts)live=(live?live+'\n':'')+ts;}catch(e){}try{const sp=liveSpread(p.sym);if(sp!=null)live+=`\nLIVE DERIV SPREAD: ${f2(sp)}`;}catch(e){}errs.push(...srcLog.splice(0));try{const xt=expoText(HS.get(),Date.now(),p.sym);if(xt)live=(live?live+'\n':'')+xt;}catch(e){}return {live,news:'',errs,cal:null,at:new Date().toISOString()};}
+  if(freeData(p.sym)){try{const ht=await hoursText(p.sym);if(ht)live=(live?live+'\n':'')+ht;}catch(e){}}
   if(fk){try{news=await finnhub(p.market,p.sym,fk);}catch(e){errs.push('Finnhub: '+e.message);}}
   try{const ps=await positioning(p.sym,p.market);if(ps)live=(live?live+'\n':'')+ps;}catch(e){}
   try{const mc=await fredMacro($('kFred').value.trim());if(mc)live=(live?live+'\n':'')+mc;}catch(e){}
@@ -1106,7 +1173,7 @@ function parseFinal(raw){const i=raw.search(/^### *Final trade plan/mi);if(i<0)r
 const num=x=>{const m=String(x||'').replace(/,/g,'').match(/-?\d+(\.\d+)?/);return m?+m[0]:null;};
 // ---- history + journal
 const HS={get:()=>{try{return JSON.parse(localStorage.getItem('ca_hist')||'[]')}catch(e){return[]}},set:a=>{keepTexts(a);const now=Date.now(),pack=(n,k)=>JSON.stringify(a.slice(0,n).map((e,i)=>(i<k||(e.ord==='WEEKLY OUTLOOK'&&now-e.id<20*86400000))?e:{...e,text:''}));try{localStorage.setItem('ca_hist',pack(400,40));}catch(e){try{localStorage.setItem('ca_hist',pack(150,12));}catch(e2){}}}};
-const APP_VER='edgeview-v41';
+const APP_VER='edgeview-v42';
 function META(){return {model:$('model').value.trim()||'claude-sonnet-5-5',deep:$('depth').value,ver:APP_VER};}
 
 function addOdds(card,text,sym){
@@ -1171,8 +1238,8 @@ async function fetchTF(sym,tf,force){
   const S=String(sym).toUpperCase(),cd=CND[S],key={'5M':'m5','15M':'m15','1H':'h1','4H':'h4','1D':'d1'}[tf];
   if(!force&&cd&&Date.now()-cd.at<120000){if(key&&cd[key])return toBars(cd[key]);if(tf==='1W'&&cd.d1)return toBars(weeklyFromDaily(cd.d1));}
   const tk=$('kTwelve').value.trim(),[tdI,bnI]=TFI[tf];
-  if(!tk&&isCrypto(S)){const r=await getJSON(`https://data-api.binance.vision/api/v3/klines?symbol=${binPair(S)}&interval=${bnI}&limit=500`);return r.map(k=>({t:k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4]}));}
-  if(!tk&&!isSynth(S)) throw new Error('Charts for gold and forex need a Twelve Data key (Settings). Crypto and Deriv synthetic indices work without one.');
+  if(!tk&&isCrypto(S)&&!freeData(S)){const r=await getJSON(`https://data-api.binance.vision/api/v3/klines?symbol=${binPair(S)}&interval=${bnI}&limit=500`);return r.map(k=>({t:k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4]}));}
+  if(!tk&&!freeData(S)) throw new Error('Charts for gold and forex need a Twelve Data key (Settings). Crypto and Deriv synthetic indices work without one.');
   const j=await getJSON(`https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(S)}&interval=${tdI}&outputsize=500&timezone=UTC&apikey=${tk}`);
   if(!j||j.status==='error'||!j.values) throw new Error(j&&j.message||'no data');
   return toBars(j.values);
@@ -1198,7 +1265,7 @@ async function lcLoad(force){
   catch(e){if(sym===LC.sym){LC.bars=[];lcDraw();$('lcPx').textContent='–';$('lcChg').textContent='';$('lcStat').textContent=String(e.message||e);}}
   renderChartSide();
 }
-function setChartSym(sym){const S=aliasSym(sym).toUpperCase();if(!S)return;LC.sym=S;store.set('ca_lcSym',S);LC.off=0;$('lcPx').textContent='–';$('lcChg').textContent='';lcLoad(false);renderTicker();}
+function setChartSym(sym){const S=aliasSym(sym).toUpperCase();if(!S)return;LC.sym=S;store.set('ca_lcSym',S);LC.off=0;$('lcPx').textContent='–';$('lcChg').textContent='';lcLoad(false);renderTicker();setTimeout(tickSync,1500);}
 function showOnChart(sym){setChartSym(sym);go('chart');}
 function lcStarTxt(){const on=WL.get().includes(LC.sym);$('lcStar').textContent=on?'★ On watchlist':'☆ Watchlist';$('lcStar').style.color=on?'var(--brass2)':'';}
 (function(){
@@ -1210,6 +1277,7 @@ function lcStarTxt(){const on=WL.get().includes(LC.sym);$('lcStar').textContent=
   $('lcStar').onclick=()=>{const a=WL.get(),i=a.indexOf(LC.sym);if(i>=0)a.splice(i,1);else{if(a.length>=12)return alert('The watchlist holds up to 12 pairs.');a.push(LC.sym);}WL.set(a);lcStarTxt();};
   $('lcAnalyze').onclick=()=>{$('symbol').value=LC.sym;store.set('ca_symbol',LC.sym);$('market').value=isCrypto(LC.sym)?'crypto':'forex';store.set('ca_market',$('market').value);updSummary();go('analyze');$('go').click();};
   LC.timer=setInterval(()=>{if(!document.hidden&&!$('v-chart').hidden)lcLoad(true);},90000);
+  setInterval(tickSync,15000);document.addEventListener('visibilitychange',()=>setTimeout(tickSync,500));setTimeout(tickSync,4000);
   let drag=null;const cv=$('lcCv');
   cv.addEventListener('pointerdown',e=>{drag={x:e.clientX,off:LC.off};try{cv.setPointerCapture(e.pointerId);}catch(_){}});
   cv.addEventListener('pointermove',e=>{if(!drag)return;const w=cv.getBoundingClientRect().width/LC.count;LC.off=Math.max(0,Math.min(Math.max(0,LC.bars.length-20),drag.off+Math.round((e.clientX-drag.x)/w)));lcDraw();});
@@ -1241,6 +1309,7 @@ function renderSearch(remote){
     const add=(s,n)=>{if(!s||seen.has(s))return;seen.add(s);rows.push(srow(s,n));};
     POPULAR.filter(p=>p[0]===al||p[0].replace('/','').toLowerCase().includes(ql.replace(/[^a-z]/g,''))||p[1].toLowerCase().includes(ql)).forEach(p=>add(p[0],p[1]));
     if(/^[A-Z]{3,5}\/[A-Z]{3,4}$/.test(al))add(al,'Open this symbol');
+    [['US500','US 500'],['NAS100','US Tech 100'],['US30','Wall Street 30'],['GER40','Germany 40'],['UK100','UK 100'],['JP225','Japan 225'],['AUS200','Australia 200'],['HK50','Hong Kong 50'],['FRA40','France 40'],['EU50','Euro 50'],['XPT/USD','Platinum'],['XPD/USD','Palladium']].filter(([c,n])=>(n+' '+c).toLowerCase().includes(ql)).forEach(([c,n])=>add(c,n+' · Deriv'));
     SYNTH_LIST.filter(([n,c])=>n.toLowerCase().includes(ql)||c.toLowerCase().includes(ql)||synthCode(q)===c||(/^(v|vol|boom|crash|step|jump|synth|deriv)/.test(ql)&&ql.length<4)).slice(0,12).forEach(([n,c])=>add(synthApp(c),n+' · Deriv synthetic'));
     (remote||[]).forEach(r=>add(r.symbol,[r.instrument_name,r.exchange,r.instrument_type].filter(Boolean).join(' · ')));
     h=rows.join('')||'<div class="empty">No match yet.</div>';
@@ -1279,8 +1348,8 @@ async function robotBars(sym,tf,n){
   const S=String(sym).toUpperCase(),ms=TFI[tf][2]*60000,k=S+'|'+tf,now=Date.now(),c=SC[k];
   if(c&&now<c.until)return c.bars;
   const tk=$('kTwelve').value.trim();let bars;
-  if(!tk&&isCrypto(S)){const r=await getJSON(`https://data-api.binance.vision/api/v3/klines?symbol=${binPair(S)}&interval=${TFI[tf][1]}&limit=${n||300}`);bars=r.map(x=>({t:x[0],o:+x[1],h:+x[2],l:+x[3],c:+x[4]}));}
-  else{if(!tk&&!isSynth(S))throw new Error('needs a Twelve Data key');if(!isSynth(S))await tdSlot();
+  if(!tk&&isCrypto(S)&&!freeData(S)){const r=await getJSON(`https://data-api.binance.vision/api/v3/klines?symbol=${binPair(S)}&interval=${TFI[tf][1]}&limit=${n||300}`);bars=r.map(x=>({t:x[0],o:+x[1],h:+x[2],l:+x[3],c:+x[4]}));}
+  else{if(!tk&&!freeData(S))throw new Error('needs a Twelve Data key');if(!freeData(S))await tdSlot();
     const j=await getJSON(`https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(S)}&interval=${TFI[tf][0]}&outputsize=${n||300}&timezone=UTC&apikey=${tk}`);
     if(!j||j.status==='error'||!j.values)throw new Error(j&&j.message||'no data');bars=toBars(j.values);}
   const live=bars[bars.length-1];if(live)tickLive(S,bars);
@@ -1336,8 +1405,8 @@ const BT={get:()=>{try{return JSON.parse(store.get('ev_bt')||'{}');}catch(e){ret
 const btAll=()=>Object.entries(BT.get()).flatMap(([k,v])=>(v.sigs||[]).map(x=>({...x,sym:k.split('|')[0]})));
 const sigList=()=>SG.get().concat(btAll());
 async function btBars(sym,tf){const S=String(sym).toUpperCase(),tk=$('kTwelve').value.trim(),iv={'15M':['15min','15m',9e5],'1H':['1h','1h',36e5],'4H':['4h','4h',144e5]}[tf];
-  if(!tk&&isCrypto(S)){let out=[],end=Date.now();for(let k=0;k<5;k++){const r=await getJSON(`https://data-api.binance.vision/api/v3/klines?symbol=${binPair(S)}&interval=${iv[1]}&endTime=${end}&limit=1000`);const b=r.map(x=>({t:x[0],o:+x[1],h:+x[2],l:+x[3],c:+x[4]}));out=b.concat(out);if(b.length<1000)break;end=b[0].t-1;}return out.filter(b=>b.t+iv[2]<=Date.now());}
-  if(!tk&&!isSynth(S))throw new Error('needs a Twelve Data key (crypto works without one)');if(!isSynth(S))await tdSlot();
+  if(!tk&&isCrypto(S)&&!freeData(S)){let out=[],end=Date.now();for(let k=0;k<5;k++){const r=await getJSON(`https://data-api.binance.vision/api/v3/klines?symbol=${binPair(S)}&interval=${iv[1]}&endTime=${end}&limit=1000`);const b=r.map(x=>({t:x[0],o:+x[1],h:+x[2],l:+x[3],c:+x[4]}));out=b.concat(out);if(b.length<1000)break;end=b[0].t-1;}return out.filter(b=>b.t+iv[2]<=Date.now());}
+  if(!tk&&!freeData(S))throw new Error('needs a Twelve Data key (crypto works without one)');if(!freeData(S))await tdSlot();
   const j=await getJSON(`https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(S)}&interval=${iv[0]}&outputsize=5000&timezone=UTC&apikey=${tk}`);if(!j||j.status==='error'||!j.values)throw new Error(j&&j.message||'no data');
   return toBars(j.values).filter(b=>b.t+iv[2]<=Date.now());}
 let btBusy=false;
@@ -1485,7 +1554,7 @@ const BOTC={get:()=>{try{return {on:true,bal:10000,risk:1,...JSON.parse(store.ge
 const sideOf=e=>/SELL/i.test(e.dec||'')?-1:/BUY/i.test(e.dec||'')?1:0;
 async function barsSince(sym,fromMs,tf){
   const S=String(sym).toUpperCase(),tk=$('kTwelve').value.trim(),[tdI,bnI]=TFI[tf];
-  if(!tk&&isCrypto(S)){let out=[],st=fromMs;for(let k=0;k<5;k++){const r=await getJSON(`https://data-api.binance.vision/api/v3/klines?symbol=${binPair(S)}&interval=${bnI}&startTime=${st}&limit=1000`);const b=r.map(x=>({t:x[0],o:+x[1],h:+x[2],l:+x[3],c:+x[4]}));out=out.concat(b);if(b.length<1000)break;st=b[b.length-1].t+1;}return out;}
+  if(!tk&&isCrypto(S)&&!freeData(S)){let out=[],st=fromMs;for(let k=0;k<5;k++){const r=await getJSON(`https://data-api.binance.vision/api/v3/klines?symbol=${binPair(S)}&interval=${bnI}&startTime=${st}&limit=1000`);const b=r.map(x=>({t:x[0],o:+x[1],h:+x[2],l:+x[3],c:+x[4]}));out=out.concat(b);if(b.length<1000)break;st=b[b.length-1].t+1;}return out;}
   if(!tk)return null;await tdSlot();
   const sd=new Date(fromMs).toISOString().slice(0,19).replace('T',' ');
   const j=await getJSON(`https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(S)}&interval=${tdI}&start_date=${encodeURIComponent(sd)}&outputsize=5000&timezone=UTC&apikey=${tk}`);
@@ -1976,6 +2045,7 @@ function go(v){
   $('viewTitle').textContent=TITLES[v]||'';window.scrollTo(0,0);store.set('ca_view',v);
   if(v==='journal')autoResolve(false);
   if(v==='chart'){if(!LC.bars.length||Date.now()-LC.at>90000)lcLoad(false);else lcDraw();}
+  setTimeout(tickSync,1200);
   if(v==='robot'){renderWL();renderBot();renderAlerts();markAlertsRead();if(typeof liveRender==='function'){liveRender();if(syncOk())liveLoad().then(liveRender);}}
 }
 document.querySelectorAll('#tabs button,#moreSheet [data-v]').forEach(b=>b.onclick=()=>go(b.dataset.v));
@@ -2613,7 +2683,7 @@ function XM_TABLE(){return {
 const VPPX=sy=>isSynth(sy)?1:/XAU/i.test(sy)?100:/XAG/i.test(sy)?5000:/BTC|ETH|SOL|XRP|BNB/i.test(sy)?1:/ZAR/i.test(sy)?5500:/JPY/i.test(sy)?650:/CAD/i.test(sy)?72000:/CHF/i.test(sy)?110000:100000;
 function parseOv(t){const o={};String(t||'').split(/[,;\n]/).forEach(x=>{const m=x.match(/([A-Za-z\/]{6,8}|[A-Za-z_ ]{1,12}\d{1,4}N?(?:\(1S\))?|STEP)\s*[=:]\s*(\d*\.?\d+)/i);if(m)o[normSym(m[1])]=+m[2];});return o;}
 // prof: {broker:'xm'|'none', acc:'standard'|'ultralow'|'zero', ov:'XAU/USD=0.30, GBPJPY=0.035'}. Overrides are in price units.
-function brokerCost(sym,prof){prof=prof||{};if(isSynth(sym)){const ov0=parseOv(prof.ov),k=normSym(sym);return {spr:ov0[k]!=null?ov0[k]:0,com:0,rough:true,src:'Deriv (spread not modelled; add it under Your spreads)'};}const S=normSym(sym).replace(/USDT$/,'USD'),ov=parseOv(prof.ov);
+function brokerCost(sym,prof){prof=prof||{};if(isSynth(sym)){const ov0=parseOv(prof.ov),k=normSym(sym),ls=liveSpread(sym);return ov0[k]!=null?{spr:ov0[k],com:0,rough:false,src:'your spread'}:ls!=null?{spr:+ls.toPrecision(6),com:0,rough:false,src:'Deriv live spread'}:{spr:0,com:0,rough:true,src:'Deriv (open the chart once to measure the live spread)'};}const S=normSym(sym).replace(/USDT$/,'USD'),ov=parseOv(prof.ov);
   if(ov[S]!=null)return {spr:ov[S],com:0,rough:false,src:'your spread'};
   if(prof.broker!=='xm')return {spr:0,com:0,rough:false,src:'none'};
   const T=XM_TABLE(),st=T.standard,acc=T[prof.acc]||st,pip=pipOf(S);

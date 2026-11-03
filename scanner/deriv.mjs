@@ -1,12 +1,20 @@
 // Deriv synthetic indices for the Node robots (v40): same symbol rules and briefing as the app, candles over Deriv's public WebSocket.
 export function synthCode(sym){const s=String(sym||'').trim().toUpperCase().replace(/\s+/g,' ');let m;
-  if(/^R_(10|25|50|75|100)$/.test(s))return s;if((m=s.match(/^1HZ(\d+)V$/)))return '1HZ'+m[1]+'V';if(/^(BOOM|CRASH)\d+N?$/.test(s))return s.replace(/^(BOOM|CRASH)300$/,'$1300N');
+  if(/^R_(10|25|50|75|100)$/.test(s))return s;if((m=s.match(/^1HZ(\d+)V$/)))return '1HZ'+m[1]+'V';if(/^(BOOM|CRASH)\d+N?$/.test(s))return s.replace(/^(BOOM|CRASH)(300|150)$/,'$1$2N');if(/^(RB\d+|RDBULL|RDBEAR|WLD(USD|EUR|GBP|AUD|XAU))$/.test(s))return s;
   if(/^STPRNG\d*$/.test(s))return 'stpRNG'+s.slice(6);if((m=s.match(/^JD(\d+)$/)))return 'JD'+m[1];
   if((m=s.match(/^V(?:OL(?:ATILITY)?)? ?(\d+) ?\(1S\)(?: INDEX)?$/))||(m=s.match(/^V(\d+)\(1S\)$/)))return '1HZ'+m[1]+'V';
-  if((m=s.match(/^V(?:OL(?:ATILITY)?)? ?(10|25|50|75|100)(?: INDEX)?$/)))return 'R_'+m[1];
-  if((m=s.match(/^(BOOM|CRASH) ?(\d+)(?: INDEX)?$/)))return m[1]+m[2]+(m[2]==='300'?'N':'');
+  if((m=s.match(/^V(?:OL(?:ATILITY)?)? ?(10|25|50|75|100)(?: INDEX)?$/)))return 'R_'+m[1];if((m=s.match(/^V(?:OL(?:ATILITY)?)? ?(15|30|90)(?: INDEX)?$/)))return '1HZ'+m[1]+'V';
+  if((m=s.match(/^(BOOM|CRASH) ?(\d+)(?: INDEX)?$/)))return m[1]+m[2]+(m[2]==='300'||m[2]==='150'?'N':'');
+  if((m=s.match(/^STEP(?: INDEX)? ?([2-5])00$/)))return 'stpRNG'+m[1];if((m=s.match(/^RANGE ?BREAK ?(100|200)(?: INDEX)?$/)))return 'RB'+m[1];if(/^BULL( MARKET)?( INDEX)?$/.test(s))return 'RDBULL';if(/^BEAR( MARKET)?( INDEX)?$/.test(s))return 'RDBEAR';
+  if((m=s.match(/^(USD|EUR|GBP|AUD|GOLD) BASKET$/)))return 'WLD'+(m[1]==='GOLD'?'XAU':m[1]);
   if(/^STEP(?: INDEX)?$/.test(s))return 'stpRNG';if((m=s.match(/^JUMP ?(\d+)(?: INDEX)?$/)))return 'JD'+m[1];return null;}
-export const isSynth = sym => !!synthCode(sym);
+export const isSynth = sym => !!synthCode(sym) && !/^WLD/.test(synthCode(sym));
+export const DERIV_IDX = {'US500':'OTC_SPC','SPX':'OTC_SPC','SPX500':'OTC_SPC','SPY':'OTC_SPC','US 500':'OTC_SPC','NAS100':'OTC_NDX','NDX':'OTC_NDX','US100':'OTC_NDX','US TECH 100':'OTC_NDX','US30':'OTC_DJI','DJI':'OTC_DJI','WALL STREET 30':'OTC_DJI','GER40':'OTC_GDAXI','DAX':'OTC_GDAXI','GERMANY 40':'OTC_GDAXI','UK100':'OTC_FTSE','FTSE':'OTC_FTSE','UK 100':'OTC_FTSE','JP225':'OTC_N225','NIKKEI':'OTC_N225','JAPAN 225':'OTC_N225','AUS200':'OTC_AS51','AUSTRALIA 200':'OTC_AS51','HK50':'OTC_HSI','HONG KONG 50':'OTC_HSI','FRA40':'OTC_FCHI','FRANCE 40':'OTC_FCHI','EU50':'OTC_SX5E','EURO 50':'OTC_SX5E','NL25':'OTC_AEX','NETHERLANDS 25':'OTC_AEX','SWI20':'OTC_SSMI','SWISS 20':'OTC_SSMI'};
+export function derivCode(sym){const s=String(sym||'').trim().toUpperCase();const sc=synthCode(s);if(sc)return sc;let m;
+  if((m=s.match(/^(XAU|XAG|XPT|XPD)\/?USD$/)))return 'frx'+m[1]+'USD';if((m=s.match(/^(BTC|ETH)\/?USDT?$/)))return 'cry'+m[1]+'USD';
+  if((m=s.match(/^([A-Z]{3})\/?([A-Z]{3})$/))&&/^(USD|EUR|GBP|JPY|CHF|AUD|NZD|CAD|ZAR|MXN|PLN)$/.test(m[1])&&/^(USD|EUR|GBP|JPY|CHF|AUD|NZD|CAD|ZAR|MXN|PLN)$/.test(m[2]))return 'frx'+m[1]+m[2];
+  return DERIV_IDX[s]||null;}
+
 export function synthKind(sym){const c=synthCode(sym)||'';return /^BOOM/.test(c)?'boom':/^CRASH/.test(c)?'crash':/^stpRNG/.test(c)?'step':/^JD/.test(c)?'jump':/^1HZ/.test(c)?'vol1s':c?'vol':'';}
 export function synthBrief(sym){const c=synthCode(sym),k=synthKind(sym);if(!c)return '';const n=(c.match(/\d+/)||[''])[0];
   const kind={vol:`Volatility ${n} Index: simulates a market with a constant volatility of ${n}% a year, one tick every 2 seconds.`,
@@ -24,7 +32,7 @@ export async function derivCandles(code, gran, count) {
     try {
       return await new Promise((res, rej) => {
         const ws = new WebSocket(url), to = setTimeout(() => { try { ws.close(); } catch (e) { } rej(new Error('Deriv timeout')); }, 20000);
-        ws.onopen = () => ws.send(JSON.stringify({ ticks_history: code, style: 'candles', granularity: gran, count: Math.min(5000, count || 300), end: 'latest', req_id: 1 }));
+        ws.onopen = () => ws.send(JSON.stringify({ ticks_history: code, style: 'candles', granularity: gran, count: Math.min(1000, count || 300), end: 'latest', req_id: 1 }));
         ws.onmessage = e => { let j; try { j = JSON.parse(e.data); } catch (_) { return; } if (j.req_id !== 1) return; clearTimeout(to); try { ws.close(); } catch (_) { }
           if (j.error) rej(new Error('Deriv: ' + j.error.message)); else res((j.candles || []).map(x => ({ t: x.epoch * 1000, o: +x.open, h: +x.high, l: +x.low, c: +x.close }))); };
         ws.onerror = () => { clearTimeout(to); rej(new Error('cannot reach ' + url)); };

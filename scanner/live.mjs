@@ -13,7 +13,7 @@ import { gzipSync, gunzipSync } from 'node:zlib';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const D = require('../detect.js'), TA = require('../ta.js');
-import { isSynth, synthCode, synthBrief, derivCandles, SYNTH_LIST } from './deriv.mjs';
+import { derivCode, isSynth, synthCode, synthBrief, derivCandles, SYNTH_LIST } from './deriv.mjs';
 import { derivBroker, sizeMult, tpMoney } from './deriv-trade.mjs';
 const crypto = globalThis.crypto || wc;
 
@@ -79,7 +79,7 @@ let lastTd = 0;
 async function bars(sym, tf, n) {
   const ms = tf === '15M' ? 9e5 : 36e5; let out;
   if (env.BARS_FILE) { const B = JSON.parse(require('node:fs').readFileSync(env.BARS_FILE, 'utf8')); out = B[sym + '|' + tf]; if (!out) throw new Error('no test bars'); }
-  else if (isSynth(sym)) out = await derivCandles(synthCode(sym), tf === '15M' ? 900 : 3600, n);
+  else if (derivCode(sym) && await derivCandles(derivCode(sym), tf === '15M' ? 900 : 3600, n).then(b => (out = b), e => { if (isSynth(sym) || !TK) throw e; return null; })) { }
   else if (isCrypto(sym) && !TK) {
     const r = await fetch(`https://data-api.binance.vision/api/v3/klines?symbol=${sym.toUpperCase().replace('/', '').replace(/USD$/, 'USDT')}&interval=${tf === '15M' ? '15m' : '1h'}&limit=${n}`);
     if (!r.ok) throw new Error('Binance ' + r.status); out = (await r.json()).map(k => ({ t: k[0], o: +k[1], h: +k[2], l: +k[3], c: +k[4] }));

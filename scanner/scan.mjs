@@ -9,7 +9,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const D = require('../detect.js');
-import { isSynth, synthCode, synthBrief, derivCandles } from './deriv.mjs';
+import { derivCode, isSynth, synthCode, synthBrief, derivCandles } from './deriv.mjs';
 
 const env = process.env, now = +env.SCAN_NOW || Date.now();   // SCAN_NOW only for tests
 const AK = env.ANTHROPIC_API_KEY || '', TK = env.TWELVE_DATA_KEY || '', TG = env.TELEGRAM_BOT_TOKEN || '', CHAT = env.TELEGRAM_CHAT_ID || '';
@@ -34,10 +34,10 @@ function fxOpen(t) { const d = new Date(t), w = d.getUTCDay(), h = d.getUTCHours
 let lastTd = 0;
 async function bars(sym, tf, n) {
   const ms = tf === '15M' ? 9e5 : 36e5;
-  let out;
-  if (isSynth(sym)) {
-    out = await derivCandles(synthCode(sym), tf === '15M' ? 900 : 3600, n);
-  } else if (isCrypto(sym) && !TK) {
+  let out = null;
+  if (derivCode(sym)) { try { out = await derivCandles(derivCode(sym), tf === '15M' ? 900 : 3600, n); } catch (e) { if (isSynth(sym) || !TK) throw e; log(sym, 'Deriv failed, using Twelve Data'); } }
+  if (out) { }
+  else if (isCrypto(sym) && !TK) {
     const pair = sym.toUpperCase().replace('/', '').replace(/USD$/, 'USDT');
     const r = await fetch(`https://data-api.binance.vision/api/v3/klines?symbol=${pair}&interval=${tf === '15M' ? '15m' : '1h'}&limit=${n}`);
     if (!r.ok) throw new Error('Binance ' + r.status);
