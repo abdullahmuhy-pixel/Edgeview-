@@ -161,7 +161,7 @@ export async function run() {
   const sync = await ghGet('edgeview-sync.json'); if (!sync) { log('no cloud memory yet: turn on sync in the app'); return; }
   let mem; try { mem = await openBox(sync.box, PASS); } catch (e) { log('cannot decrypt the cloud memory: EDGEVIEW_PASSPHRASE must equal the backup passphrase'); return; }
   const kv = k => { try { return JSON.parse((mem.kv && mem.kv[k] && mem.kv[k][0]) || 'null'); } catch (e) { return (mem.kv && mem.kv[k] && mem.kv[k][0]) || null; } };
-  const M = { ...defaults(kv('ev_live')), ...(kv('ev_blind') === 0 ? { blind: false } : {}) }, style = (mem.kv && mem.kv.ev_style && mem.kv.ev_style[0]) || '', goals = kv('ev_goals') || {};
+  const M = { ...defaults(kv('ev_live')), ...(kv('ev_blind') === 0 ? { blind: false } : {}), ...(kv('ev_nudge') === 0 ? { nudge: false } : {}) }, style = (mem.kv && mem.kv.ev_style && mem.kv.ev_style[0]) || '', goals = kv('ev_goals') || {};
   BASE = env.METAAPI_BASE || `https://mt-client-api-v1.${M.region || 'london'}.agiliumtrade.ai`;
   const prev = await ghGet('edgeview-live-state.json').catch(() => null);
   let S = { log: [], trades: [], calls: {}, sessDone: {}, sym: {} };
@@ -228,8 +228,16 @@ export async function run() {
           `MANDATE: minimum reward to risk ${M.minRR}. ${M.notes ? 'TRADER\'S INSTRUCTIONS FOR THIS ACCOUNT: ' + M.notes : ''}\nTRADER'S STYLE:\n${style || '(not described)'}\nGOALS: today ${goals.day || 'none'}; week ${goals.week || 'none'}`;
         S.calls.n++;
         const p = await claude(M.model, LIVE_SYS, `${ctx}\n\nINSTRUMENT ${sym}\n${data}`);
+        let adj = '';
+        if (p && p.decision === 'TRADE' && p.order !== 'MARKET' && atrN > 0) {        // pending orders: put the plan on the broker's own prices, then make limits fill-friendly
+          const sd = p.side === 'BUY' ? 1 : -1, mid = (+price.bid + +price.ask) / 2, spr = Math.max(0, +price.ask - +price.bid), off = mid - px0;
+          const sh = Math.abs(off) <= 0.5 * atrN ? off : 0;                                   // the analysis read feed candles; the broker quotes a little differently
+          if (sh) { p.entry = +p.entry + sh; p.sl = +p.sl + sh; p.tp = (p.tp || []).map(t => +t + sh); adj += `levels moved ${sh > 0 ? '+' : ''}${f2(sh)} onto ${bsym} prices; `; }
+          if (p.order === 'LIMIT' && M.nudge !== false) { const n = spr / 2 + 0.05 * atrN; p.entry = +p.entry + sd * n; adj += `limit moved ${f2(n)} in front of the level so it fills; `; }
+        }
         const v = validPlan(p, price, M.minRR, atrN);
         if (typeof v === 'string') { await note(`${sym}: no trade (${v}${p && p.why ? ': ' + p.why : ''})`); continue; }
+        if (adj) log(sym, adj.trim());
         const BVV = M.blind === false ? null : verdict(await blindCheck({ ak: AK, base: ANTH, m15: a.closed, h1: b.closed, h4, px: px0 }).catch(e => { log(sym, 'blind check failed', e.message); return null; }), v.side);
         if (BVV) log(sym, verdictLine(BVV));
         if (BVV && BVV.v === 'disagree') { await note(`${sym}: no trade (the blind second opinion disagreed: it sees ${BVV.side > 0 ? 'BUY' : 'SELL'} from the candles alone${BVV.reason ? ': ' + BVV.reason : ''})`); continue; }
