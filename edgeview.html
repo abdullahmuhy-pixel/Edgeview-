@@ -405,6 +405,7 @@
     <textarea id="note" placeholder="e.g. CPI today 13:30 GMT. Account ZAR 50,000."></textarea>
     <label style="display:flex;gap:8px;align-items:center;font-size:13px;color:var(--text);margin-top:12px"><input type="checkbox" id="fxOn" style="width:auto" checked> Currency strength and intermarket (gold, silver, oil, S&amp;P 500). Refreshed hourly in the background: about 11 Twelve Data credits an hour, only while you use the app</label>
     <label style="display:flex;gap:8px;align-items:center;font-size:13px;color:var(--text);margin-top:12px"><input type="checkbox" id="autoImg" style="width:auto" checked> Also send Claude the charts the app draws from live candles (better pattern reading, slightly higher cost)</label>
+    <label style="display:flex;gap:8px;align-items:center;font-size:13px;color:var(--text);margin-top:12px"><input type="checkbox" id="blindOn" style="width:auto" checked> Blind second opinion: a second, cheaper analyst sees only the candles (no name, no news, no note) and also a mirrored copy of the chart, to catch a direction bias before you trade (two small Haiku calls per pair)</label>
     <div style="margin-top:12px"><button id="go">Analyze</button></div>
     <div class="hint" id="runSummary"></div>
   </div>
@@ -485,6 +486,7 @@
   <div class="card"><b>Calibration: is Edgeview's % honest?</b><div id="calib"></div></div>
   <div class="card"><b>History &amp; journal</b>
     <div id="stats" class="hint"></div>
+    <div id="biasBox"></div>
     <div class="row" style="margin:8px 0;flex-wrap:wrap"><button class="sec" id="recapW">Copy 7-day recap</button><button class="sec" id="recapM">Copy 30-day recap</button><button class="sec" id="expCsv">Export CSV</button><button class="sec" id="expJson">Backup (JSON)</button><button class="sec" id="impJson">Restore backup</button></div>
     <input id="impFile" type="file" accept=".json,application/json" hidden>
     <div class="row" style="margin:4px 0 8px;align-items:center;gap:8px"><button class="sec" id="resolveNow">Check results now</button><span id="autoStat" class="hint">Open plans are checked against hourly candles when you open this page (Twelve Data key, or crypto without one).</span></div>
@@ -574,6 +576,7 @@ TP1: exact price | R:R (measured from Entry)
 TP2: exact price | R:R (measured from Entry)
 Probability: X% TP1 before stop | Y% TP2 | Expected value: +/-Z R (= p x R:R of TP1 - (1-p))  [for GOLD use the ladder format in the GOLD LADDER rule instead]
 Built from: which styles agree (e.g. Intraday + Swing) and the 2-3 strongest confluence factors
+Bull vs bear: bull X/10 | bear Y/10 | the 2 strongest points for each side (score both sides before you choose the Decision)
 Setup type: exactly one of TREND PULLBACK, BREAKOUT RETEST, RANGE FADE, LIQUIDITY SWEEP REVERSAL, MOMENTUM CONTINUATION, NEWS REACTION, OTHER (for NO TRADE, the setup you are waiting for)
 Edge factors: how the probability was built from the no-edge baseline, e.g. base 40 | +10 higher timeframes agree | +5 4H demand zone | -5 CPI in 3h | learning -5 (range fades in high volatility)
 Trigger: what must happen before placing or activating the order, and the best time or session to watch
@@ -595,6 +598,8 @@ RULES
 - Minimum R:R 1:1.5 for every order, or mark that order SKIP.
 - Place stops beyond structure, not at random distances.
 - Counter-trend trades must be labeled and the probability lowered by 10-15 points.
+- BOTH SIDES: before the Decision, score the bull case and the bear case from 0 to 10 with the same checklist (higher-timeframe structure, price against key levels, momentum, news). A BUY needs the bull score at least 3 points above the bear score and a SELL the reverse; if the scores are within 2 points, the Decision is NO TRADE. Hold buys and sells to the same standard: do not lean one way because of the user note, open positions, the last move or the instrument's usual direction.
+- CODE TREND: if a code trend line is given, it is computed from closed candles and is not an opinion. If the Decision goes against both the 1D and the 4H trend, label it counter-trend, say in Reason exactly what breaks that trend, and keep the probability at or below 45%.
 - INSTRUMENT BACKGROUND: if a background block is given, use it as general knowledge about what drives the instrument and its sessions. Name the 1 or 2 drivers that matter most right now in the Market snapshot, and verify them against the live data and news; never present the background as current news or a current central-bank stance. For JPY pairs, say whether there is any intervention or BoJ risk in the data. For USDZAR, allow for wide spreads and thin liquidity in stops and timing.
 - LIVE CALENDAR: if a live calendar block is given, use it for event times and forecasts (it is in the user's local time and more reliable than reading times from screenshots), and use screenshots or headlines for actual results. End every order's validity before a high-impact event for its currencies, or say clearly that the order spans the release and lower the probability by 10 points.
 - OPEN EXPOSURE: if an open positions block is given, treat it as the trader's existing risk. If the new plan adds to a currency the trader is already 2 or more units long or short, say so in the Risk line and halve the suggested risk; at 3 or more units in the same direction, prefer NO TRADE or a plan that reduces the exposure. A plan in the opposite direction to an open position on the same symbol must be flagged as a conflict.
@@ -1185,6 +1190,8 @@ $('go').onclick=async()=>{
       else if(lists.news.length) content.push({type:'text',text:'NEWS / ECONOMIC CALENDAR SCREENSHOTS (read every event and headline in them):'},...lists.news.map(imgBlock));
       const others=pairs.filter(x=>x!==p).map(x=>x.sym).join(', ');
       const LV=LIVE[String(p.sym).toUpperCase()]||{},MS=cd?marketState(cd,LV.px,Date.now()):null;let learn='';try{learn=learnText(allLearn(),LS.get(),p.sym,MS);}catch(e){}try{const rs=riskText(riskState(HS.get(),Date.now(),BOTC.get()));learn=(learn?learn+'\n\n':'')+rs;}catch(e){}try{const sb=styleBlock();if(sb)learn=(learn?learn+'\n\n':'')+sb;}catch(e){}
+      if(MS){const w=x=>x>0?'up':x<0?'down':'flat';content.push({type:'text',text:`CODE TREND (computed from closed candles, not an opinion): 1D ${w(MS.trD)}, 4H ${w(MS.tr4)}, 1H ${w(MS.tr1)}, 4H EMA stack ${MS.ema4>0?'bullish':MS.ema4<0?'bearish':'mixed'}${MS.rsi!=null?`, 1H RSI ${MS.rsi}`:''}${MS.reg?`, volatility ${MS.reg}`:''}.`});}
+      const BV=cd&&$('blindOn').checked?blindCheck(cd).catch(e=>({err:e.message})):null;
       content.push({type:'text',text:`Instrument: ${p.sym}.${lists[p.key].length>6?` There are ${lists[p.key].length} charts: read them all but keep every section brief so the answer finishes through the Final trade plan.`:''}${pairBrief(p.sym,true)}${learn?learn+'\n\n':''}${others?` Also being analyzed in this session: ${others}. In the Risk line of the Final trade plan, mention correlated exposure with them if relevant (for example both are USD-driven, so they are not independent bets).`:''}\n\nLIVE DATA (fetched ${ztT(Date.parse(L.at))}; current time ${ztNow()}; active sessions: ${sessions()}):\n${L.live||('none. '+(p.px?('User-provided current price: '+p.px+'. Treat it as approximate.'):'No live price; read price from the charts and say levels are approximate.'))}\n\n${(()=>{try{const v=lotVal(p.sym),rz=fxRates()['USD/ZAR'];return `ACCOUNT CURRENCY: ${ACCT()}${ACCT()==='ZAR'&&rz?` (USD/ZAR ${rz.toFixed(4)})`:''}. ${v!=null?`One standard lot of ${p.sym} gains or loses about ${ACCT()} ${Math.round(v).toLocaleString('en-US')} per 1.0 price move.`:''} In the Risk line, give the risk and lot size for a ${ACCT()} account.\n\n`;}catch(e){return '';}})()}${p.sp&&+p.sp>0?`BROKER COSTS${p.spSrc?' ('+p.spSrc+')':''}: about ${p.sp} in price per round trip. Buys fill at the ask and sells at the bid: keep stops and targets clear of it, and check that every R:R still meets 1:1.5 after the spread.\n\n`:''}RECENT HEADLINES:\n${L.news||'none'}\n\nUSER NOTE: ${$('note').value.trim()||'none'}`});
       const card=cards[i];
       const co=await claudeStream(ak,SYSTEM,content,t=>{ q(i).innerHTML=md(t); card.dataset.raw=t; if(!scrolled&&t){scrolled=true;card.scrollIntoView({behavior:'smooth'});} btn.textContent=tag(i)+'analyzing… ('+t.length+' chars)'; },deep);
@@ -1192,6 +1199,8 @@ $('go').onclick=async()=>{
       if(stop==='max_tokens') q(i).innerHTML+='<p class="err">The answer was cut off. Run this pair again.</p>';
       if(!text.trim()) throw new Error(emptyMsg(co));
       const G=parseFinal(text);PLAN[String(p.sym).toUpperCase()]=G;let F=null,LP=null;try{F=augF(featuresOf(G,{ms:MS||{},L:LIVE[String(p.sym).toUpperCase()]||{},cal:L.cal,now:Date.now()}),p.sym,G.entry,LIVE[String(p.sym).toUpperCase()]);if(F.side)LP=learnedProb({...F,sym:p.sym},learnPool(allLearn()));}catch(e){} const CO=(()=>{try{const c=costFor(p.sym);return c.spr>0||c.com>0?{spr:c.spr,com:c.com}:null;}catch(e){return null;}})();saveHistory(text,p.sym,{f:F,...(LP?{lp:LP.p}:{}),...(CO?{cost:CO}:{})});try{const id=HS.get()[0].id,LVx=LIVE[String(p.sym).toUpperCase()]||{},sh=shadowEntries(text,p.sym,G,id,LVx.tol?LVx.tol/2:null).map(o=>({...o,...(CO?{cost:CO}:{}),f:{...augF(featuresOf({decision:o.dec,order:o.ord,entry:o.entry,'stop loss':o.sl,tp1:o.tp1,'valid until':o.valid,'setup type':F&&F.side===(o.dec==='BUY'?1:-1)?G['setup type']:''},{ms:MS||{},L:LVx,cal:L.cal,now:Date.now()}),p.sym,o.entry,LVx),style:o.style}}));if(sh.length)SH.set(sh.concat(SH.get()));}catch(e){} addOdds(card,text,p.sym); addCheck(card,text,{...p,cal:L.cal,f:F,lp:LP}); if(N===1) fillCalc(text,p.sym); renderHist();
+      if(BV){const hid=HS.get()[0].id,bx=document.createElement('div');bx.className='rc-blind';bx.style.cssText='margin-top:10px;padding:10px 12px;border:1px solid var(--line,#2a303c);border-radius:10px;font-size:13px';bx.innerHTML='<b>Blind second opinion</b> <span class="hint">checking the candles without the name, news or your note…</span>';card.appendChild(bx);
+        try{const b=await BV;showBlind(bx,b,G,hid);}catch(e){bx.innerHTML='<b>Blind second opinion</b> <span class="hint">failed: '+esc(e.message)+'</span>';}}
       return text;
     }
   });
@@ -1256,7 +1265,7 @@ function parseFinal(raw){const i=raw.search(/^### *Final trade plan/mi);if(i<0)r
 const num=x=>{const m=String(x||'').replace(/,/g,'').match(/-?\d+(\.\d+)?/);return m?+m[0]:null;};
 // ---- history + journal
 const HS={get:()=>{try{return JSON.parse(localStorage.getItem('ca_hist')||'[]')}catch(e){return[]}},set:a=>{keepTexts(a);const now=Date.now(),pack=(n,k)=>JSON.stringify(a.slice(0,n).map((e,i)=>(i<k||(e.ord==='WEEKLY OUTLOOK'&&now-e.id<20*86400000))?e:{...e,text:''}));try{localStorage.setItem('ca_hist',pack(400,40));}catch(e){try{localStorage.setItem('ca_hist',pack(150,12));}catch(e2){}}}};
-const APP_VER='edgeview-v43.4';
+const APP_VER='edgeview-v43.5';
 function META(){return {model:$('model').value.trim()||'claude-sonnet-5-5',deep:$('depth').value,ver:APP_VER};}
 
 function addOdds(card,text,sym){
@@ -1370,6 +1379,8 @@ function lcStarTxt(){const on=WL.get().includes(LC.sym);$('lcStar').textContent=
   $('symbol').addEventListener('change',()=>{const v=aliasSym($('symbol').value);if(v&&v!==$('symbol').value){$('symbol').value=v;store.set('ca_symbol',v);}});
   try{$('autoImg').checked=store.get('ca_autoImg')!=='0';}catch(e){}
   $('autoImg').onchange=()=>store.set('ca_autoImg',$('autoImg').checked?'1':'0');
+  try{$('blindOn').checked=store.get('ev_blind')!=='0';}catch(e){}
+  $('blindOn').onchange=()=>store.set('ev_blind',$('blindOn').checked?'1':'0');
   try{$('fxOn').checked=store.get('ev_fxOn')!=='0';}catch(e){}$('fxOn').onchange=()=>{store.set('ev_fxOn',$('fxOn').checked?'1':'0');if($('fxOn').checked)fxRefresh();};setTimeout(fxRefresh,75000);
 })();
 
@@ -1477,6 +1488,42 @@ async function haiku(system,user){
   const t=(j.content||[]).filter(c=>c.type==='text').map(c=>c.text).join('');const m=t.match(/\{[\s\S]*\}/);
   try{return m?JSON.parse(m[0]):null;}catch(e){return null;}
 }
+// ---- blind second opinion and mirror test (v43.5)
+const BLIND_SYS=`You are an independent price-action analyst. You get only candle tables and a structure summary for an unnamed instrument: no name, no news, no opinions. Judge direction from the data alone.
+Score the bull case and the bear case separately from 0 to 10 with the same checklist: 1D and 4H trend structure (higher highs and lows or lower ones), price against the swing levels, momentum, and where the latest candles closed.
+bias is BUY if bull is at least 3 points above bear, SELL if bear is at least 3 points above bull, otherwise NONE.
+Answer with JSON only, no other text:
+{"bull":0-10,"bear":0-10,"bias":"BUY|SELL|NONE","confidence":0-100,"support":[up to 2 prices],"resistance":[up to 2 prices],"invalidation":price,"reason":"one short line"}`;
+// Mirror a candle list around K: an up-trend becomes a down-trend with the same shape. Highs and lows swap.
+function mirrorVals(v,K){if(!v)return v;const m=a=>+(K-(+a)).toFixed(8);return v.map(x=>({...x,open:m(x.open),high:m(x.low),low:m(x.high),close:m(x.close)}));}
+function mirrorCd(cd){const K=2*(+cd.px),o={px:+cd.px,at:cd.at};for(const k of ['h1','h4','d1','m15','m5'])if(cd[k])o[k]=mirrorVals(cd[k],K);return o;}
+const sideOfBias=x=>x&&/BUY/i.test(x.bias||'')?1:x&&/SELL/i.test(x.bias||'')?-1:0;
+async function blindCheck(cd){
+  const ask=c=>haiku(BLIND_SYS,`Instrument: unnamed. Current price ${f2(c.px)}.\n`+structureBlock(c));
+  const [r,m]=await Promise.all([ask(cd),ask(mirrorCd(cd)).catch(()=>null)]);
+  if(!r)throw new Error('no answer');
+  return {r,m,side:sideOfBias(r),mside:m?-sideOfBias(m):null};}
+// Compares the blind view with the main plan. side: main plan +1 buy, -1 sell, 0 no trade.
+function blindVerdict(b,side){
+  if(!b||b.err||!b.r)return null;
+  const mirrorOk=b.mside==null?null:b.mside===b.side;
+  let v;if(mirrorOk===false)v='unclear';else if(!b.side)v='neutral';else if(!side)v='info';else v=b.side===side?'agree':'disagree';
+  return {v,mirrorOk,side:b.side,bull:+b.r.bull,bear:+b.r.bear,conf:+b.r.confidence||null};}
+function showBlind(box,b,G,id){
+  const dec=String(G.decision||'').toUpperCase(),side=/NO\s*TRADE/.test(dec)?0:dec.includes('BUY')?1:dec.includes('SELL')?-1:0;
+  if(b&&b.err){box.innerHTML='<b>Blind second opinion</b> <span class="hint">failed: '+esc(b.err)+'</span>';return;}
+  const V=blindVerdict(b,side);if(!V){box.innerHTML='<b>Blind second opinion</b> <span class="hint">no usable answer this time.</span>';return;}
+  if(!side&&V.v!=='unclear')V.v='info';
+  const nm=x=>x>0?'BUY':x<0?'SELL':'no clear direction',r=b.r,m=b.m,prob=num(G.probability);
+  const cut={unclear:10,neutral:10}[V.v],np=prob!=null&&cut&&side?Math.max(0,prob-cut):null;
+  const head={agree:'✅ Agrees with the plan.',disagree:'⛔ Disagrees with the plan: treat it as NO TRADE, or wait until the candles confirm the direction.',unclear:'⚠️ The mirror test failed: the blind analyst did not give opposite answers on the real and the mirrored chart, so price action alone does not settle the direction.',neutral:'⚠️ Price action alone shows no clear direction.',info:'ℹ️ The plan is NO TRADE.'}[V.v];
+  box.innerHTML=`<b>Blind second opinion</b> <span class="hint">(Haiku, candles only: no name, news, note or open positions)</span><div style="margin:4px 0 6px">${head}${np!=null?` Probability after the check: <b>${np}%</b> instead of ${prob}%.`:''}</div>`+
+    `<div style="margin:3px 0">Main plan: <b>${esc(dec||'?')}</b>${prob!=null?' '+prob+'%':''}</div>`+
+    `<div style="margin:3px 0">Blind view: <b>${nm(V.side)}</b> | bull ${isFinite(V.bull)?V.bull:'?'}/10, bear ${isFinite(V.bear)?V.bear:'?'}/10${V.conf?' | confidence '+V.conf+'%':''}${r.invalidation!=null&&isFinite(+r.invalidation)?' | invalid at '+esc(f2(+r.invalidation)):''}${r.reason?'<br><small>'+esc(String(r.reason).slice(0,220))+'</small>':''}</div>`+
+    (m?`<div style="margin:3px 0">Mirror test (the same chart turned upside down): <b>${nm(-sideOfBias(m))}</b> once turned back${V.mirrorOk?' ✓ consistent':' ✗ not consistent'}</div>`:'');
+  try{HS.set(HS.get().map(e=>{if(e.id!=id)return e;const o={...e,bv:{v:V.v,b:V.side,mok:V.mirrorOk,bull:V.bull,bear:V.bear,...(np!=null?{p:np}:{})}};
+    if(V.v==='disagree'&&o.bot&&!o.botSkip){delete o.bot;delete o.rm;o.botSkip='the blind second opinion disagreed with the direction';setTimeout(()=>pushAlert({kind:'info',sym:o.sym,title:'Robot did not take this plan',body:'The blind second opinion disagreed with the direction. The plan is saved in the journal as usual.'}),0);}
+    return o;}));renderHist();renderBot();}catch(e){}}
 const sigText=s=>`${s.tf} ${s.side} score ${s.score}: ${s.patterns.join(' + ')}; ${s.why.join('; ')}; origin ${f2(s.origin)}, price ${f2(s.price)}, ATR ${f2(s.atr)}`;
 
 // ---- the scanner (v33)
@@ -1736,6 +1783,12 @@ function addCheck(card,text,p){
       const opp=pl.filter(x=>normSym(x.e.sym)===normSym(p.sym)&&(/SELL/i.test(x.e.dec)?-1:1)!==c.side);if(opp.length)c.items.push({lvl:'warn',msg:`You have ${opp.length} open ${opp.length>1?'plans':'plan'} on ${String(p.sym).toUpperCase()} in the other direction.`});}catch(e){}
     try{const cal=p.cal||null;if(cal){const vm=String(g['valid until']||'').match(/(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})/),until=vm?planTime(g['valid until']):null;
       const cl=calClash(cal,now,until);if(cl.length)c.items.push({lvl:'warn',msg:`High-impact news before this order expires: ${cl.slice(0,3).map(x=>`${x.country} ${x.title} at ${ztHM(x.t)} ${zlab()}${x.t-now>864e5?' on '+zt(x.t).slice(5,10):''}`).join('; ')}. Avoid holding through it or tighten the plan.`});}}catch(e){}
+    try{const bb=String(g['bull vs bear']||''),bu=bb.match(/bull\D{0,12}?(\d+(?:\.\d+)?)/i),be=bb.match(/bear\D{0,12}?(\d+(?:\.\d+)?)/i);
+      if(bu&&be){const B=+bu[1],S=+be[1],gap=(B-S)*c.side;if(gap<0)c.items.push({lvl:'bad',msg:`The plan is a ${c.side>0?'BUY':'SELL'} but its own scores favour the other side (bull ${B}, bear ${S}).`});else if(gap<3)c.items.push({lvl:'bad',msg:`Bull ${B} and bear ${S} are within 2 points: by the rules this should be NO TRADE.`});else c.items.push({lvl:'ok',msg:`Both sides scored: bull ${B}, bear ${S}.`});}}catch(e){}
+    try{const f=p.f;if(f&&f.side){const a=[f.trD,f.tr4].filter(x=>x===-f.side).length;
+      if(a===2)c.items.push({lvl:c.prob!=null&&c.prob>45?'bad':'warn',msg:`Against both the 1D and 4H trend computed from the candles.${c.prob!=null&&c.prob>45?` ${c.prob}% is too high for a counter-trend trade: count it as 45% or less.`:''} Take it only if the Reason names what breaks the trend.`});
+      else if(f.trD===-f.side)c.items.push({lvl:'warn',msg:'Against the 1D trend computed from the candles (the 4H agrees with the trade).'});
+      else if(f.trD===f.side&&f.tr4===f.side)c.items.push({lvl:'ok',msg:'With the 1D and 4H trend computed from the candles.'});}}catch(e){}
     const d=document.createElement('div'); d.className='rc-check';
     d.style.cssText='margin-top:12px;padding:10px 12px;border:1px solid var(--line,#2a303c);border-radius:10px;font-size:13px';
     const ic={bad:'⛔',warn:'⚠️',ok:'✅'};
@@ -1793,7 +1846,27 @@ async function autoResolve(force){
 function renderHist(){const a=HS.get(),cl=a.filter(e=>e.st=='win'||e.st=='loss'),w=cl.filter(e=>e.st=='win').length,pr=cl.filter(e=>e.prob!=null);
 $('stats').textContent=cl.length?`Closed ${cl.length}: ${w} wins, ${cl.length-w} losses, win rate ${(w/cl.length*100).toFixed(0)}%`+(pr.length?` | Edgeview's stated average probability ${(pr.reduce((t,e)=>t+e.prob,0)/pr.length).toFixed(0)}%`:''):'No closed trades yet. Open plans are checked against the candles automatically; you can also mark Win or Loss yourself.';
 $('hist').innerHTML=a.map(e=>`<div class="hi"><b>${esc(e.sym)} ${esc(e.dec)}</b> ${esc(e.ord)}${e.ord==='WEEKLY OUTLOOK'?'':' @ '+esc(e.entry)}<br><small>${zt(e.id)} ${zlab()}${e.ord==='WEEKLY OUTLOOK'?'':' | SL '+esc(e.sl)+' | TP1 '+esc(e.tp1)}${e.prob!=null?' | '+e.prob+'%':''} | <b>${e.st.toUpperCase()}</b>${isLad(e)&&e.hit!=null?' | '+(e.hit?'TP'+e.hit+' of '+e.tps.length+' hit':'stopped')+' | '+fR(rOf(e)):''}${tagOf(e)}${e.auto==='candles'?' | <i>auto: '+esc(e.autoNote||'from candles')+'</i>':''}${e.st==='open'&&e.run?' | <i>'+esc(String(e.run.note||(e.run.filled?'Filled, still running.':'Not filled yet.')))+'</i>':''}</small><div class="row" style="margin-top:6px;flex-wrap:wrap"><button class="sec" onclick="viewH(${e.id})">View</button><button class="sec" onclick="discussH(${e.id})">Discuss</button>${hitBtns(e)}<button class="sec" onclick="setSt(${e.id},'skip')">Skipped</button>${e.ord!=='WEEKLY OUTLOOK'&&e.st!=='open'?`<button class="sec" onclick="copyResult(this,${e.id})">Post result</button>`:''}<button class="sec" onclick="delH(${e.id})">Delete</button></div></div>`).join('')||'<small>Nothing saved yet. Every analysis is saved here automatically.</small>';
-$('calib').innerHTML=calibHTML(a);renderLearn();}
+$('calib').innerHTML=calibHTML(a);try{$('biasBox').innerHTML=biasHTML(a);}catch(e){}renderLearn();}
+// Direction bias from the journal: buy/sell share per pair, win rate and stated vs actual % per side, blind check agreement.
+function biasStats(entries){const by={};
+  for(const e of entries||[]){if(!e||e.ord==='WEEKLY OUTLOOK')continue;const sd=/NO\s*TRADE/i.test(e.dec||'')?0:/BUY/i.test(e.dec||'')?1:/SELL/i.test(e.dec||'')?-1:0;if(!sd)continue;
+    const k=normSym(e.sym);(by[k]=by[k]||[]).push({...e,sd});}
+  const out=[];
+  for(const [k,all] of Object.entries(by)){const a=all.slice(0,30),n=a.length,buys=a.filter(e=>e.sd>0).length,wt=a.filter(e=>e.f&&e.f.trD!=null),wtr=wt.length?wt.filter(e=>e.f.trD===e.sd).length/wt.length:null;
+    const side=sd=>{const g=a.filter(e=>e.sd===sd),cl=g.filter(e=>e.st==='win'||e.st==='loss'),w=cl.filter(e=>e.st==='win').length,pr=cl.filter(e=>e.prob!=null);
+      return {n:g.length,cl:cl.length,wr:cl.length?Math.round(w/cl.length*100):null,said:pr.length?Math.round(pr.reduce((t,e)=>t+e.prob,0)/pr.length):null};};
+    const bv=a.filter(e=>e.bv&&(e.bv.v==='agree'||e.bv.v==='disagree'));
+    out.push({sym:all[0].sym,k,n,buy:Math.round(buys/n*100),withTrend:wtr==null?null:Math.round(wtr*100),B:side(1),S:side(-1),bvN:bv.length,bvAgree:bv.length?Math.round(bv.filter(e=>e.bv.v==='agree').length/bv.length*100):null});}
+  return out.sort((x,y)=>y.n-x.n);}
+function biasWarn(r){const w=[],sk=Math.max(r.buy,100-r.buy),lean=r.buy>=50?'buys':'sells';
+  if(r.n>=8&&sk>=75)w.push(r.withTrend!=null&&r.withTrend<60?`${sk}% of plans are ${lean} while only ${r.withTrend}% went with the daily trend: this looks like a direction bias.`:`${sk}% of plans are ${lean}${r.withTrend!=null?` (${r.withTrend}% with the daily trend, so the trend may explain it)`:''}.`);
+  for(const [nm,x] of [['Buys',r.B],['Sells',r.S]])if(x.cl>=8&&x.said!=null&&x.wr!=null&&x.said-x.wr>=15)w.push(`${nm}: stated ${x.said}% but won ${x.wr}%: overconfident on this side.`);
+  if(r.bvN>=5&&r.bvAgree<50)w.push(`The blind second opinion agreed with only ${r.bvAgree}% of ${r.bvN} plans.`);
+  return w;}
+function biasHTML(entries){const R=biasStats(entries).filter(r=>r.n>=4);if(!R.length)return '';
+  const sx=x=>x.n?`${x.n}${x.cl?` | won ${x.wr}% of ${x.cl}${x.said!=null?`, said ${x.said}%`:''}`:''}`:'0';
+  return `<div style="margin:10px 0;padding:10px 12px;border:1px solid var(--line,#2a303c);border-radius:10px;font-size:13px"><b>Direction bias check</b> <span class="hint">(last 30 buy or sell plans per pair)</span>`+
+    R.slice(0,8).map(r=>{const w=biasWarn(r);return `<div style="margin-top:6px"><b>${esc(r.sym)}</b>: ${r.buy}% buys, ${100-r.buy}% sells of ${r.n}${r.withTrend!=null?` | ${r.withTrend}% with the daily trend`:''}${r.bvN?` | blind check agreed ${r.bvAgree}% of ${r.bvN}`:''}<br><small>Buys ${sx(r.B)}; Sells ${sx(r.S)}</small>${w.map(x=>`<div>⚠️ ${esc(x)}</div>`).join('')}</div>`;}).join('')+`</div>`;}
 $('resolveNow').onclick=()=>autoResolve(true);$('learnRev').onclick=reviewBacklog;renderSigStats();$('pmOn').checked=store.get('ev_pmOff')!=='1';$('pmOn').onchange=()=>store.set('ev_pmOff',$('pmOn').checked?'0':'1');setTimeout(()=>autoResolve(false),4000);
 $('recapW').onclick=function(){copyRecap(this,7);};$('recapM').onclick=function(){copyRecap(this,30);};
 renderHist();

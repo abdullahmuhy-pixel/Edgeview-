@@ -226,3 +226,10 @@ The Coach is now a full chat app.
 - **Each chat knows its pair.** With every message the coach gets the pair's live candles and structure, the price now, every saved analysis and robot trade of that pair, and the latest full plan; synthetic chats also get the index briefing.
 - **Discuss** under an analysis opens that pair's chat (or starts one) with the analysis attached.
 - Goals and "How I trade" are under the chat list.
+
+## Direction bias controls (v43.5)
+- **Blind second opinion.** While the main analysis runs, a second, cheaper analyst (Haiku) gets only the candle tables and structure: no instrument name, no news, no user note, no open positions. It scores the bull and the bear case and gives its own direction. A box under each plan shows both views: if the blind view disagrees, the plan is marked "treat as NO TRADE" and the robot does not take it. Turn it off in the Analyze settings.
+- **Mirror test.** The same analyst also gets the chart turned upside down (every price mirrored around the current price, highs and lows swapped). A neutral analyst must then give the opposite direction. If it does not, the direction is "unclear" and the plan's probability is cut by 10 points.
+- **Both sides scored.** The Final trade plan now has a "Bull vs bear" line with a 0-10 score for each side. A BUY needs the bull score at least 3 points higher, a SELL the reverse; closer than that must be NO TRADE. The plan check flags plans that break this.
+- **Code trend anchor.** Claude gets a code-computed trend line (1D, 4H, 1H, 4H EMA stack). A plan against both the 1D and the 4H trend must be labelled counter-trend and is flagged if it claims more than 45%.
+- **Direction bias check in the journal.** Per pair: the share of buy and sell plans, how many went with the daily trend, win rate and stated probability per side, and how often the blind opinion agreed, with a warning when one side dominates without the trend to explain it or when one side is overconfident.
