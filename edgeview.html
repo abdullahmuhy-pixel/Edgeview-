@@ -227,6 +227,9 @@
     <input id="kFinnhub" type="password" autocomplete="off">
     <label>FRED API key (optional, macro data: real yields, breakevens, fed funds, VIX)</label>
     <input id="kFred" type="password" autocomplete="off">
+    <label>OANDA API token (optional, free with an OANDA demo account: OANDA's order book and position book for the majors, gold and silver)</label>
+    <input id="kOanda" type="password" autocomplete="off">
+    <select id="oandaEnv"><option value="practice">The token is from an OANDA demo (practice) account</option><option value="live">The token is from an OANDA live account</option></select>
     <label>OpenAI API key (optional, for voice notes: Whisper understands accents best and works on every phone)</label>
     <input id="kOpenAI" type="password" autocomplete="off" placeholder="sk-... (without it, the phone's own speech recognition is used)">
     <label>Analysis depth</label>
@@ -234,6 +237,7 @@
     <label>Twelve Data plan</label>
     <label>Price data</label>
     <select id="src"><option value="deriv">Deriv first: free and unlimited for forex, metals, BTC, ETH, indices and synthetics (Twelve Data as backup)</option><option value="td">Twelve Data only (Deriv still used for synthetic indices)</option></select>
+    <label style="display:flex;gap:8px;align-items:center;font-size:13px;color:var(--text);margin-top:8px"><input type="checkbox" id="brkFeed" style="width:auto" checked> Use my broker's own candles and price for forex, gold and indices (XM or any MetaTrader account through MetaApi: needs the MetaApi token and account ID under Robot, Live account). Levels then match the prices your orders fill at; the source above is the backup</label>
     <select id="tdplan"><option value="free">Free (skips dollar index and US10Y, saves 2 calls)</option><option value="paid">Paid (also fetches dollar index and US10Y)</option></select>
     <label>Broker (for spreads and commission in plans, paper results and backtests)</label>
     <div class="row"><select id="brk"><option value="xm">XM</option><option value="none">Other / ignore costs</option></select><select id="brkAcc"><option value="standard">Standard or Micro</option><option value="ultralow">Ultra Low</option><option value="zero">Zero ($7 per lot round turn)</option></select></div>
@@ -596,6 +600,7 @@ RULES
 - TWO ENTRIES (scaling in): when a real second level exists, split the plan into Entry and Entry 2 (a deeper limit in the same direction), with ONE shared stop beyond Entry 2's structure. Entry 2 must be at least 0.5 x ATR from Entry. The total risk with both entries filled and the stop hit must stay inside the 0.5-1% risk budget (the risk is split across the two entries, not doubled). The R:R from the Average entry must still be at least 1:1.5, or write Entry 2 as NONE. Never add a third entry, never move the stop further away, never add after the stop level is breached, and cancel Entry 2 if the Cancel / invalidated condition happens first. Entry 2 only adds size at a better price; it is not averaging down without a stop. The limit orders in the Scalp, Intraday and Swing blocks may also carry a second limit: write it on the same line as "LIMIT 2: price (share %)" with the same stop loss. If only Entry fills, the risk taken is only its share. Say in the Management line what to do if only one entry fills.
 - Give limit orders even when an immediate entry exists, as a better-price alternative. If there is no immediate entry, the limit orders are the main plan.
 - Place limit entries at real levels (support/resistance, demand/supply zone, EMA, Fibonacci, pivot, Bollinger band), not at random prices.
+- OANDA BOOKS: if an OANDA order book or position book is given, treat large clusters of resting orders as liquidity and likely reaction points. Place limit entries just in front of a large resting-order cluster on the side you want to buy or sell, and put stops beyond clusters of stop orders (those are the levels stop hunts run), not inside them. Retail position skew of 60% or more is contrarian evidence worth at most 5 points of probability. The books show OANDA's clients only and are up to 20 minutes old.
 - FILL-FRIENDLY ENTRIES: price often turns a few points before an obvious level, because other orders sit in front of it. Put a limit entry on the near edge of the zone (the side price is coming from), not on the exact swing high or low: a BUY LIMIT a little above the support or demand line, a SELL LIMIT a little below the resistance or supply line, by at least half the spread plus about 0.05 x the 1H ATR. Keep the stop beyond the far side of the structure. If a FILL HISTORY line is given, use its suggested buffer instead.
 - Minimum R:R 1:1.5 for every order, or mark that order SKIP.
 - Place stops beyond structure, not at random distances.
@@ -727,7 +732,7 @@ function synthBrief(sym){const c=synthCode(sym),k=synthKind(sym);if(!c)return ''
     jump:`Jump ${n} Index: volatility ${n}% a year with sudden large jumps, on average about three an hour, equally likely up or down.`}[k];
   return `INSTRUMENT BACKGROUND (Deriv synthetic index, Deriv code ${c}): ${kind} Synthetic indices are generated by Deriv's audited random number generator. They trade 24/7 including weekends, and they are NOT moved by economic news, central banks, sessions, positioning, correlations or any other market: ignore the economic calendar, headlines, COT, currency strength and session opens for this instrument, and do not mention them as reasons. Volatility is statistically constant, so ATR-based stops and targets are reliable; chart structure (swings, ranges, liquidity sweeps, trend legs) is the only edge, and it is weaker than on real markets, so be strict about reward to risk, size small and say so when there is no clear setup. Trade on Deriv (MT5 or Deriv options/multipliers); costs are the spread only.`;}
 // ---- cloud memory (v37): settings that follow you to every device, with the time each was last changed
-const SYNC_KEYS=['ev_tz','ev_blind','ev_nudge','ca_wl','ca_wlset','ca_bot','ev_brk','ev_bt','ca_alerts','ca_cBal','ca_cRisk','ca_symbol','ca_market','ca_spread','ca_depth','ca_model','ca_mHaiku','ca_tdplan','ca_ghRepo','ev_fxOn','ev_pmOff','ev_chat','ev_chats','ev_goals','ev_style','ev_live','ev_src'];
+const SYNC_KEYS=['ev_tz','ev_blind','ev_nudge','ev_brkfeed','ev_oenv','ca_wl','ca_wlset','ca_bot','ev_brk','ev_bt','ca_alerts','ca_cBal','ca_cRisk','ca_symbol','ca_market','ca_spread','ca_depth','ca_model','ca_mHaiku','ca_tdplan','ca_ghRepo','ev_fxOn','ev_pmOff','ev_chat','ev_chats','ev_goals','ev_style','ev_live','ev_src'];
 let syncApplying=false;
 const KMT=()=>{try{return JSON.parse(localStorage.getItem('ev_kmt')||'{}');}catch(e){return {};}};
 {const _set=store.set;store.set=(k,v)=>{_set(k,v);if(!syncApplying&&SYNC_KEYS.includes(k)){const m=KMT();m[k]=Date.now();localStorage.setItem('ev_kmt',JSON.stringify(m));}};}
@@ -740,7 +745,7 @@ const IDB=(()=>{let dbp;const db=()=>dbp||(dbp=new Promise((res,rej)=>{const r=i
 const TXseen=new Set();
 function keepTexts(a){for(const e of a||[])if(e&&e.text&&e.id!=null&&!TXseen.has(e.id)){TXseen.add(e.id);IDB.texts.put(+e.id,e.text);}}
 // ---- keys
-['kAnthropic','kTwelve','kFinnhub','kFred','kOpenAI','kMetaApi','kMetaAcc','kDerivTok','kDerivApp','model','mHaiku','kGh','ghRepo','kSync','symbol','market'].forEach(id=>{ const v=store.get('ca_'+id); if(v) $(id).value=v; });
+['kAnthropic','kTwelve','kFinnhub','kFred','kOanda','kOpenAI','kMetaApi','kMetaAcc','kDerivTok','kDerivApp','model','mHaiku','kGh','ghRepo','kSync','symbol','market'].forEach(id=>{ const v=store.get('ca_'+id); if(v) $(id).value=v; });
 
 const BRK={get:()=>{try{return {broker:'xm',acc:'standard',ov:'',...JSON.parse(store.get('ev_brk')||'{}')};}catch(e){return {broker:'xm',acc:'standard',ov:''};}},set:o=>store.set('ev_brk',JSON.stringify(o))};
 const costFor=sym=>brokerCost(sym,BRK.get());
@@ -766,7 +771,7 @@ function brkInfo(){const b=BRK.get();if(b.broker!=='xm'&&!b.ov.trim()){$('brkInf
 $('src').value=dataSrc();$('src').onchange=()=>{store.set('ev_src',$('src').value);DV.cache.clear();setTimeout(tickSync,300);};
 $('tdplan').value=store.get('ca_tdplan')||'free';$('tdplan').onchange=()=>store.set('ca_tdplan',$('tdplan').value);
 $('depth').value=store.get('ca_depth')||'std';$('depth').onchange=()=>store.set('ca_depth',$('depth').value);
-const KEY_IDS=['kAnthropic','kTwelve','kFinnhub','kFred','kOpenAI','kMetaApi','kMetaAcc','kDerivTok','kDerivApp','model','mHaiku','kGh','ghRepo','kSync'];
+const KEY_IDS=['kAnthropic','kTwelve','kFinnhub','kFred','kOanda','kOpenAI','kMetaApi','kMetaAcc','kDerivTok','kDerivApp','model','mHaiku','kGh','ghRepo','kSync'];
 function saveAll(msg){
   KEY_IDS.forEach(id=>store.set('ca_'+id,$(id).value.trim()));
   const el=$('saveStatus'); el.textContent=msg||'Saved on this device ✓';
@@ -938,20 +943,45 @@ function liveBlock(sym,px,src){
   LIVE[String(sym).toUpperCase()]={px,atr1h:h1a?h1a.atr:null,atrD,at:now,zones:keep.map(z=>({lo:z.lo,hi:z.hi,score:z.score})),tol};
   return t;
 }
+// ---- the broker's own candles through MetaApi (v43.8) ----
+const BSYM={get:()=>{try{return JSON.parse(store.get('ev_bsym')||'{}');}catch(e){return {};}},set:o=>{try{store.set('ev_bsym',JSON.stringify(o));}catch(e){}}};
+function mtCfg(){const tok=$('kMetaApi').value.trim(),acc=$('kMetaAcc').value.trim();if(!tok||!acc)return null;const rg=(MANDATE.get().region||'london');
+  return {cl:`https://mt-client-api-v1.${rg}.agiliumtrade.ai/users/current/accounts/${acc}`,md:`https://mt-market-data-client-api-v1.${rg}.agiliumtrade.ai/users/current/accounts/${acc}`,H:{'auth-token':tok,accept:'application/json'}};}
+async function mtJSON(u,H){const r=await fetch(u,{headers:H});if(r.status===404)return null;const j=await r.json().catch(()=>null);if(!r.ok)throw new Error((j&&(j.message||j.error))||('HTTP '+r.status));return j;}
+async function brokerSymbol(c,sym){const S=String(sym).toUpperCase(),m=BSYM.get();if(m[S])return m[S];
+  const map=Object.fromEntries(String(MANDATE.get().symMap||'').split(',').map(x=>x.split('=').map(y=>y.trim())).filter(x=>x[0]&&x[1]));if(map[S])return map[S];
+  const base=S.replace('/',''),c0=/^XAU/.test(base)?['GOLD','XAUUSD']:/^XAG/.test(base)?['SILVER','XAGUSD']:[base];
+  for(const k of c0.flatMap(x=>[x,x+'#',x+'.',x+'m',x+'.a',x+'-'])){const pr=await mtJSON(c.cl+'/symbols/'+encodeURIComponent(k)+'/current-price',c.H).catch(()=>null);if(pr&&pr.bid){m[S]=k;BSYM.set(m);return k;}}
+  return null;}
+// Candles newest first in the same shape as Twelve Data (MetaTrader candles are bid prices).
+async function brokerCandles(sym){if(!$('brkFeed')||!$('brkFeed').checked||isSynth(sym))return null;const c=mtCfg();if(!c)return null;
+  const bs=await brokerSymbol(c,sym);if(!bs)throw new Error('no matching symbol for '+sym+' at the broker; add it to the symbol map under Live account');
+  const pr=await mtJSON(c.cl+'/symbols/'+encodeURIComponent(bs)+'/current-price',c.H);if(!pr||!(+pr.bid>0))throw new Error('no price for '+bs);
+  const p2=n=>String(n).padStart(2,'0'),dt=t=>{const d=new Date(t);return `${d.getUTCFullYear()}-${p2(d.getUTCMonth()+1)}-${p2(d.getUTCDate())} ${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())}:00`;};
+  const out={bsym:bs,bid:+pr.bid,ask:+pr.ask,px:+pr.bid};
+  await Promise.all([['m5','5m',300],['m15','15m',1000],['h1','1h',1000],['h4','4h',1000],['d1','1d',1000]].map(async([k,tf,n])=>{try{
+    const a=await mtJSON(`${c.md}/historical-market-data/symbols/${encodeURIComponent(bs)}/timeframes/${tf}/candles?limit=${n}`,c.H);if(!Array.isArray(a)||a.length<31)return;
+    out[k]=a.map(x=>({t:Date.parse(x.time),x})).filter(o=>isFinite(o.t)).sort((p,q)=>q.t-p.t).map(({t,x})=>({datetime:k==='d1'?(x.brokerTime?String(x.brokerTime).slice(0,10):dt(t+6*36e5).slice(0,10)):dt(t),open:+x.open,high:+x.high,low:+x.low,close:+x.close,volume:+x.tickVolume||0}));}catch(e){}}));
+  if(!out.h1)throw new Error('the broker returned no candles');return out;}
 async function twelve(sym,key){
   const q=encodeURIComponent(sym), base='https://api.twelvedata.com';
   const ts=iv=>`${base}/time_series?symbol=${q}&interval=${iv}&outputsize=1000&timezone=UTC&apikey=${key}`;
   const calls={quote:`${base}/quote?symbol=${q}&apikey=${key}`,h1:ts('1h'),h4:ts('4h'),d1:ts('1day'),m15:ts('15min'),m5:`${base}/time_series?symbol=${q}&interval=5min&outputsize=300&timezone=UTC&apikey=${key}`};
-  const out={};
-  await Promise.all(Object.entries(calls).map(async([k,u])=>{ try{ out[k]=await getJSON(u); }catch(e){ out[k]=null; } }));
+  const out={};let BK=null;try{BK=await brokerCandles(sym);}catch(e){srcFail('Broker candles (MetaApi): '+e.message);}
+  const full=BK&&['h1','h4','d1','m15','m5'].every(k=>BK[k]);
+  if(!full)await Promise.all(Object.entries(calls).filter(([k])=>!(BK&&BK[k])||k==='quote').map(async([k,u])=>{ try{ out[k]=await getJSON(u); }catch(e){ out[k]=null; } }));
+  if(BK){for(const k of ['h1','h4','d1','m15','m5'])if(BK[k])out[k]={values:BK[k]};const d=BK.d1||[],c=BK.px;
+    out.quote={symbol:`${sym} (${BK.bsym} at your broker)`,close:c,percent_change:d[1]?((c/+d[1].close-1)*100):0,low:d[0]?d[0].low:c,high:d[0]?d[0].high:c,previous_close:d[1]?d[1].close:c};}
   const bad=o=>!o||o.status==='error';
   if(!bad(out.h1)&&out.h1.values) HC[sym.toUpperCase()]=out.h1.values.slice(0,300);
   if(bad(out.quote)) throw new Error(out.quote?.message||'Twelve Data failed');
   const qt=out.quote, px=+qt.close;
   let t=`Symbol ${qt.symbol}: price ${f2(qt.close)}, day change ${Number(qt.percent_change).toFixed(2)}%, day range ${f2(qt.low)}-${f2(qt.high)}, previous close ${f2(qt.previous_close)}`;
   const src={err:{}};for(const k of ['h1','h4','d1','m15','m5']){if(!bad(out[k])&&out[k].values)src[k]=out[k].values;else src.err[k]=out[k]?.message||'no data';}
-  CND[sym.toUpperCase()]={...src,at:Date.now(),px};
+  CND[sym.toUpperCase()]={...src,at:Date.now(),px,...(BK?{feed:'bid'}:{})};
   t+=liveBlock(sym,px,src);
+  if(BK){const S=sym.toUpperCase();if(LIVE[S]){LIVE[S].feed='bid';LIVE[S].bspr=Math.max(0,BK.ask-BK.bid);}
+    t+=`\nBROKER PRICE (${BK.bsym} through MetaApi): bid ${f2(BK.bid)}, ask ${f2(BK.ask)}, spread ${fq(BK.ask-BK.bid,BK.bid)}. Every candle above is the broker's own (bid prices, as on the user's MetaTrader chart), so give entries, stops and targets on these prices. A buy limit fills when the ask reaches it, so it must sit at least one spread above the bid-chart level it is meant to catch.`;}
   if(!bad(out.d1)&&out.d1.values?.length>1){ const y=out.d1.values[1], H=+y.high,L=+y.low,C=+y.close, P=(H+L+C)/3; t+=`\nYesterday: high ${f2(H)}, low ${f2(L)}, close ${f2(C)}. Daily pivots: P ${f2(P)}, R1 ${f2(2*P-L)}, R2 ${f2(P+H-L)}, S1 ${f2(2*P-H)}, S2 ${f2(P-(H-L))}`; }
   const cm=await corrMarkets(base,key); t+=cm.v;
   try{ if(!bad(out.d1)&&out.d1.values&&out.d1.values.length>40) t+='\n'+volContext(out.d1.values,(!bad(out.h1)&&out.h1.values)||null,[{name:'DXY',vals:cm.dx},{name:'US10Y',vals:cm.ty}]); }catch(e){}
@@ -1134,6 +1164,27 @@ async function depthBlock(sym){if(!isCrypto(sym))return '';try{const j=await get
   const walls=(a,dir)=>{const m={};for(const [p,q] of a){if(Math.abs(p-mid)>mid*0.02)continue;const k=Math.round(p/w);m[k]=(m[k]||0)+p*q;}return Object.entries(m).map(([k,v])=>({p:+k*w,v})).sort((x,y)=>y.v-x.v).slice(0,3);};
   const nb=bids.filter(x=>x[0]>=mid*0.99).reduce((s,x)=>s+x[0]*x[1],0),na=asks.filter(x=>x[0]<=mid*1.01).reduce((s,x)=>s+x[0]*x[1],0),fm=v=>v>=1e6?(v/1e6).toFixed(1)+'M':(v/1e3).toFixed(0)+'k';
   return `ORDER BOOK (Binance spot, within 2% of ${f2(mid)}): biggest bid walls ${walls(bids).map(x=>f2(x.p)+' ($'+fm(x.v)+')').join(', ')}; biggest ask walls ${walls(asks).map(x=>f2(x.p)+' ($'+fm(x.v)+')').join(', ')}; within 1%: bids $${fm(nb)} vs asks $${fm(na)} (${nb>na?'more resting buyers':'more resting sellers'}). Walls can be pulled at any time.`;}catch(e){srcFail('Binance order book');return '';}}
+// ---- OANDA order book and position book (v43.8) ----
+const OA_OK=/^(EUR|GBP|AUD|NZD|USD|XAU|XAG)_(USD|JPY|CHF|CAD|GBP|AUD|NZD)$/;
+async function oandaRaw(inst){const tok=$('kOanda').value.trim();if(!tok)return null;const host=$('oandaEnv').value==='live'?'api-fxtrade.oanda.com':'api-fxpractice.oanda.com',H={Authorization:'Bearer '+tok};
+  try{const [o,q]=await Promise.all(['orderBook','positionBook'].map(b=>fetch(`https://${host}/v3/instruments/${inst}/${b}`,{headers:H}).then(r=>r.ok?r.json():r.json().then(j=>{throw new Error(j.errorMessage||('HTTP '+r.status));}))));
+    return {ob:o.orderBook,pb:q.positionBook,via:'OANDA'};}
+  catch(e){if(!(e instanceof TypeError))throw e;} // TypeError = blocked by the browser: use the copy the hourly GitHub job saves
+  try{const c=syncCfg(),r=await fetch(`https://api.github.com/repos/${c.repo}/contents/edgeview-books.json?ref=${SYNC_BR}`,{headers:{...c.H,Accept:'application/vnd.github.raw+json'}});
+    if(!r.ok)return null;const j=await r.json(),b=j.books&&j.books[inst];return b?{ob:b.ob,pb:b.pb,via:'the hourly GitHub copy'}:null;}catch(e){return null;}}
+// Summarise the books around the price: clusters of resting orders and where open positions sit.
+function bookText(sym,raw,atr){const ob=raw.ob,pb=raw.pb;if(!ob||!ob.buckets)return '';const px=+ob.price,w=Math.max(atr?3*atr:0,px*0.01);
+  const near=B=>(B||[]).map(b=>({p:+b.price,l:+b.longCountPercent,s:+b.shortCountPercent})).filter(b=>Math.abs(b.p-px)<=w);
+  const med=a=>{const v=a.filter(x=>x>0).sort((x,y)=>x-y);return v.length?v[Math.floor(v.length/2)]:0;};let cut=0;
+  const top=(a,f)=>a.filter(b=>f(b)>0&&f(b)>=cut).sort((x,y)=>f(y)-f(x)).slice(0,3).map(b=>`${f2(b.p)} (${f(b).toFixed(2)}%)`).join(', ')||'no standout cluster';
+  const O=near(ob.buckets);cut=2*med(O.flatMap(b=>[b.l,b.s]));const below=O.filter(b=>b.p<px),above=O.filter(b=>b.p>px);
+  let t=`OANDA ORDER BOOK for ${String(sym).toUpperCase()} (OANDA clients' pending orders, snapshot ${ztT(Date.parse(ob.time))}, price then ${f2(px)}, bucket ${ob.bucketWidth}, via ${raw.via}): below the price, buy-limit clusters at ${top(below,b=>b.l)} and sell-stop clusters (stop losses of longs) at ${top(below,b=>b.s)}; above the price, sell-limit clusters at ${top(above,b=>b.s)} and buy-stop clusters (stop losses of shorts, breakout buys) at ${top(above,b=>b.l)}.`;
+  if(pb&&pb.buckets){const P=(pb.buckets||[]).map(b=>({p:+b.price,l:+b.longCountPercent,s:+b.shortCountPercent})),L=P.reduce((a,b)=>a+b.l,0),Sh=P.reduce((a,b)=>a+b.s,0),lp=L+Sh>0?Math.round(L/(L+Sh)*100):null;
+    const N=P.filter(b=>Math.abs(b.p-px)<=w);cut=2*med(N.flatMap(b=>[b.l,b.s]));const trL=top(N.filter(b=>b.p>px),b=>b.l),trS=top(N.filter(b=>b.p<px),b=>b.s);
+    if(lp!=null)t+=`\nOANDA POSITION BOOK: ${lp}% of OANDA clients' open positions are long and ${100-lp}% short${lp>=60?' (retail is crowded long, usually a contrarian bearish sign)':lp<=40?' (retail is crowded short, usually a contrarian bullish sign)':' (no strong skew)'}; longs losing money (opened above the price) cluster at ${trL}; shorts losing money (opened below the price) cluster at ${trS}.`;}
+  return t;}
+async function oandaBlock(sym){const inst=String(sym).toUpperCase().replace('/','_');if(!OA_OK.test(inst)||!$('kOanda').value.trim())return '';
+  try{const raw=await oandaRaw(inst);if(!raw)return '';const L=LIVE[String(sym).toUpperCase()]||{};return bookText(sym,raw,L.atr1h);}catch(e){srcFail('OANDA order book: '+e.message);return '';}}
 async function liveFor(p,tk,fk){
   let live='',news='',errs=[];
   const syn=isSynth(p.sym);
@@ -1148,6 +1199,7 @@ async function liveFor(p,tk,fk){
   let cal=null;try{const ev=await liveCalendar();if(ev){cal=calendarFor(ev,p.sym,Date.now());const ct=calText(cal,Date.now());live=(live?live+'\n':'')+(ct||'LIVE ECONOMIC CALENDAR: no medium or high impact events for '+calCcys(p.sym).join('/')+' in the next 7 days in the feed.');}}catch(e){}
   try{const xt=expoText(HS.get(),Date.now(),p.sym);if(xt)live=(live?live+'\n':'')+xt;}catch(e){}
   try{const db=await depthBlock(p.sym);if(db)live=(live?live+'\n':'')+db;}catch(e){}
+  try{const oa=await oandaBlock(p.sym);if(oa)live=(live?live+'\n':'')+oa;}catch(e){}
   try{const fb=fxBlock(p.sym);if(fb)live=(live?live+'\n':'')+fb;}catch(e){}
   errs.push(...srcLog.splice(0));
   return {live,news,errs,cal,at:new Date().toISOString()};
@@ -1201,7 +1253,7 @@ $('go').onclick=async()=>{
       const text=co.text,stop=co.stop;
       if(stop==='max_tokens') q(i).innerHTML+='<p class="err">The answer was cut off. Run this pair again.</p>';
       if(!text.trim()) throw new Error(emptyMsg(co));
-      const G=parseFinal(text);PLAN[String(p.sym).toUpperCase()]=G;let F=null,LP=null;try{F=augF(featuresOf(G,{ms:MS||{},L:LIVE[String(p.sym).toUpperCase()]||{},cal:L.cal,now:Date.now()}),p.sym,G.entry,LIVE[String(p.sym).toUpperCase()]);if(F.side)LP=learnedProb({...F,sym:p.sym},learnPool(allLearn()));}catch(e){} const CO=(()=>{try{const c=costFor(p.sym);return c.spr>0||c.com>0?{spr:c.spr,com:c.com}:null;}catch(e){return null;}})();let NU=null;try{if($('nudgeOn').checked){const LVn=LIVE[String(p.sym).toUpperCase()]||{};NU=nudgeEntry(G,{px:LVn.px,atr:LVn.atr1h,spread:CO?CO.spr:_num(p.sp),learned:fillBuffer(HS.get(),p.sym).buf});}}catch(e){NU=null;}saveHistory(text,p.sym,{f:F,...(LP?{lp:LP.p}:{}),...(CO?{cost:CO}:{}),...(NU&&NU.ok?{nudge:NU}:{})});try{const id=HS.get()[0].id,LVx=LIVE[String(p.sym).toUpperCase()]||{},sh=shadowEntries(text,p.sym,G,id,LVx.tol?LVx.tol/2:null).map(o=>({...o,...(CO?{cost:CO}:{}),f:{...augF(featuresOf({decision:o.dec,order:o.ord,entry:o.entry,'stop loss':o.sl,tp1:o.tp1,'valid until':o.valid,'setup type':F&&F.side===(o.dec==='BUY'?1:-1)?G['setup type']:''},{ms:MS||{},L:LVx,cal:L.cal,now:Date.now()}),p.sym,o.entry,LVx),style:o.style}}));if(sh.length)SH.set(sh.concat(SH.get()));}catch(e){} addOdds(card,text,p.sym); addCheck(card,text,{...p,cal:L.cal,f:F,lp:LP,nudge:NU}); if(N===1) fillCalc(text,p.sym); renderHist();
+      const G=parseFinal(text);PLAN[String(p.sym).toUpperCase()]=G;let F=null,LP=null;try{F=augF(featuresOf(G,{ms:MS||{},L:LIVE[String(p.sym).toUpperCase()]||{},cal:L.cal,now:Date.now()}),p.sym,G.entry,LIVE[String(p.sym).toUpperCase()]);if(F.side)LP=learnedProb({...F,sym:p.sym},learnPool(allLearn()));}catch(e){} const CO=(()=>{try{const c=costFor(p.sym);return c.spr>0||c.com>0?{spr:c.spr,com:c.com}:null;}catch(e){return null;}})();let NU=null;try{if($('nudgeOn').checked){const LVn=LIVE[String(p.sym).toUpperCase()]||{};NU=nudgeEntry(G,{px:LVn.px,atr:LVn.atr1h,spread:LVn.bspr!=null?LVn.bspr:CO?CO.spr:_num(p.sp),bid:LVn.feed==='bid',learned:fillBuffer(HS.get(),p.sym).buf});}}catch(e){NU=null;}saveHistory(text,p.sym,{f:F,...(LP?{lp:LP.p}:{}),...(CO?{cost:CO}:{}),...(NU&&NU.ok?{nudge:NU}:{})});try{const id=HS.get()[0].id,LVx=LIVE[String(p.sym).toUpperCase()]||{},sh=shadowEntries(text,p.sym,G,id,LVx.tol?LVx.tol/2:null).map(o=>({...o,...(CO?{cost:CO}:{}),f:{...augF(featuresOf({decision:o.dec,order:o.ord,entry:o.entry,'stop loss':o.sl,tp1:o.tp1,'valid until':o.valid,'setup type':F&&F.side===(o.dec==='BUY'?1:-1)?G['setup type']:''},{ms:MS||{},L:LVx,cal:L.cal,now:Date.now()}),p.sym,o.entry,LVx),style:o.style}}));if(sh.length)SH.set(sh.concat(SH.get()));}catch(e){} addOdds(card,text,p.sym); addCheck(card,text,{...p,cal:L.cal,f:F,lp:LP,nudge:NU}); if(N===1) fillCalc(text,p.sym); renderHist();
       if(BV){const hid=HS.get()[0].id,bx=document.createElement('div');bx.className='rc-blind';bx.style.cssText='margin-top:10px;padding:10px 12px;border:1px solid var(--line,#2a303c);border-radius:10px;font-size:13px';bx.innerHTML='<b>Blind second opinion</b> <span class="hint">checking the candles without the name, news or your note…</span>';card.appendChild(bx);
         try{const b=await BV;showBlind(bx,b,G,hid);}catch(e){bx.innerHTML='<b>Blind second opinion</b> <span class="hint">failed: '+esc(e.message)+'</span>';}}
       return text;
@@ -1268,7 +1320,7 @@ function parseFinal(raw){const i=raw.search(/^### *Final trade plan/mi);if(i<0)r
 const num=x=>{const m=String(x||'').replace(/,/g,'').match(/-?\d+(\.\d+)?/);return m?+m[0]:null;};
 // ---- history + journal
 const HS={get:()=>{try{return JSON.parse(localStorage.getItem('ca_hist')||'[]')}catch(e){return[]}},set:a=>{keepTexts(a);const now=Date.now(),pack=(n,k)=>JSON.stringify(a.slice(0,n).map((e,i)=>(i<k||(e.ord==='WEEKLY OUTLOOK'&&now-e.id<20*86400000))?e:{...e,text:''}));try{localStorage.setItem('ca_hist',pack(400,40));}catch(e){try{localStorage.setItem('ca_hist',pack(150,12));}catch(e2){}}}};
-const APP_VER='edgeview-v43.7';
+const APP_VER='edgeview-v43.8';
 function META(){return {model:$('model').value.trim()||'claude-sonnet-5-5',deep:$('depth').value,ver:APP_VER};}
 
 function addOdds(card,text,sym){
@@ -1386,6 +1438,8 @@ function lcStarTxt(){const on=WL.get().includes(LC.sym);$('lcStar').textContent=
   $('blindOn').onchange=()=>store.set('ev_blind',$('blindOn').checked?'1':'0');
   try{$('nudgeOn').checked=store.get('ev_nudge')!=='0';}catch(e){}
   $('nudgeOn').onchange=()=>store.set('ev_nudge',$('nudgeOn').checked?'1':'0');
+  try{$('brkFeed').checked=store.get('ev_brkfeed')!=='0';$('oandaEnv').value=store.get('ev_oenv')||'practice';}catch(e){}
+  $('brkFeed').onchange=()=>store.set('ev_brkfeed',$('brkFeed').checked?'1':'0');$('oandaEnv').onchange=()=>store.set('ev_oenv',$('oandaEnv').value);
   try{$('fxOn').checked=store.get('ev_fxOn')!=='0';}catch(e){}$('fxOn').onchange=()=>{store.set('ev_fxOn',$('fxOn').checked?'1':'0');if($('fxOn').checked)fxRefresh();};setTimeout(fxRefresh,75000);
 })();
 
@@ -1789,11 +1843,11 @@ function fillText(sym){try{const b=fillBuffer(HS.get(),sym);if(!b.tot)return '';
 // Moves a LIMIT entry towards the market by half the spread plus a buffer. Returns null when nothing changes.
 function nudgeEntry(g,ctx){const dec=String(g.decision||'').toUpperCase(),side=/NO\s*TRADE/.test(dec)?0:dec.includes('BUY')?1:dec.includes('SELL')?-1:0;
   if(!side||!/LIMIT/i.test(g.order||''))return null;const en=_num(g.entry),sl=_num(g['stop loss']),tp1=_num(g.tp1);if(en==null||sl==null||tp1==null)return null;
-  const px=ctx.px,atr=ctx.atr||0,sp=Math.max(0,+ctx.spread||0),lb=ctx.learned||null,buf=Math.min(Math.max(lb||0,0.05*atr),atr?0.3*atr:Infinity),shift=sp/2+buf;if(!(shift>0))return null;
+  const px=ctx.px,atr=ctx.atr||0,sp=Math.max(0,+ctx.spread||0),lb=ctx.learned||null,buf=Math.min(Math.max(lb||0,0.05*atr),atr?0.3*atr:Infinity),half=ctx.bid?(side>0?sp:0):sp/2,shift=half+buf;if(!(shift>0))return null;
   let ne=en+side*shift;if(px!=null&&isFinite(px)&&side*(ne-px)>=0)return null; // would reach or cross the live price: leave it
   const rr0=Math.abs(tp1-en)/Math.abs(en-sl),rr=Math.abs(tp1-ne)/Math.abs(ne-sl);
   const dp=Math.max(0,(String(g.entry).match(/\.(\d+)/)||['',''])[1].length);ne=+ne.toFixed(Math.min(5,Math.max(dp,pxDec(en))));
-  return {entry:ne,orig:en,shift,half:sp/2,buf,learned:!!(lb&&lb>=0.05*atr),rr0,rr,ok:rr>=1.5};}
+  return {entry:ne,orig:en,shift,half,bid:!!ctx.bid,buf,learned:!!(lb&&lb>=0.05*atr),rr0,rr,ok:rr>=1.5};}
 function addCheck(card,text,p){
   try{
     const old=card.querySelector('.rc-check'); if(old) old.remove();
@@ -1812,7 +1866,7 @@ function addCheck(card,text,p){
       if(a===2)c.items.push({lvl:c.prob!=null&&c.prob>45?'bad':'warn',msg:`Against both the 1D and 4H trend computed from the candles.${c.prob!=null&&c.prob>45?` ${c.prob}% is too high for a counter-trend trade: count it as 45% or less.`:''} Take it only if the Reason names what breaks the trend.`});
       else if(f.trD===-f.side)c.items.push({lvl:'warn',msg:'Against the 1D trend computed from the candles (the 4H agrees with the trade).'});
       else if(f.trD===f.side&&f.tr4===f.side)c.items.push({lvl:'ok',msg:'With the 1D and 4H trend computed from the candles.'});}}catch(e){}
-    try{if(p.nudge){const n=p.nudge;c.items.push({lvl:n.ok?'ok':'warn',msg:`Limit entry moved from ${f2(n.orig)} to ${f2(n.entry)} so it fills when price reaches the level: ${n.half>0?'half the spread '+fq(n.half,n.orig)+' + ':''}buffer ${fq(n.buf,n.orig)} (${n.learned?'learned from your near misses':'0.05 x 1H ATR'}). R:R to TP1 is now 1:${n.rr.toFixed(2)} (was 1:${n.rr0.toFixed(2)}).${n.ok?'':' That is below 1:1.5, so the moved entry was not used.'}`});}}catch(e){}
+    try{if(p.nudge){const n=p.nudge;c.items.push({lvl:n.ok?'ok':'warn',msg:`Limit entry moved from ${f2(n.orig)} to ${f2(n.entry)} so it fills when price reaches the level: ${n.half>0?(n.bid?'the spread ':'half the spread ')+fq(n.half,n.orig)+' + ':''}buffer ${fq(n.buf,n.orig)} (${n.learned?'learned from your near misses':'0.05 x 1H ATR'}). R:R to TP1 is now 1:${n.rr.toFixed(2)} (was 1:${n.rr0.toFixed(2)}).${n.ok?'':' That is below 1:1.5, so the moved entry was not used.'}`});}}catch(e){}
     const d=document.createElement('div'); d.className='rc-check';
     d.style.cssText='margin-top:12px;padding:10px 12px;border:1px solid var(--line,#2a303c);border-radius:10px;font-size:13px';
     const ic={bad:'⛔',warn:'⚠️',ok:'✅'};
@@ -1986,7 +2040,7 @@ setInterval(()=>{if(syncOk()&&!document.hidden&&syncSig()!==store.get('ev_syncSi
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&syncOk()&&syncSig()!==store.get('ev_syncSig'))syncRun('push');else if(!document.hidden&&syncOk()&&Date.now()-(+store.get('ev_syncAt')||0)>5*6e4)syncRun('push');});
 setTimeout(()=>{keepTexts(HS.get());if(syncOk())syncRun('push');},3000);
 // link code: moves the keys, token and repository to a new phone, encrypted with the backup passphrase
-const LINK_IDS=['kAnthropic','kTwelve','kFinnhub','kFred','kGh','ghRepo','model','mHaiku','kOpenAI','kMetaApi','kMetaAcc','kDerivTok','kDerivApp'];
+const LINK_IDS=['kAnthropic','kTwelve','kFinnhub','kFred','kOanda','kGh','ghRepo','model','mHaiku','kOpenAI','kMetaApi','kMetaAcc','kDerivTok','kDerivApp'];
 $('linkMake').onclick=async()=>{const out=$('linkOut');try{const pass=$('kSync').value;if(pass.length<10)throw new Error('set your backup passphrase first');if(!$('kGh').value.trim())throw new Error('add your GitHub token first');
     const keys={};for(const id of LINK_IDS)if($(id)&&$(id).value.trim())keys[id]=$(id).value.trim();keys.ghRepo=keys.ghRepo||ghRepo();
     const code='EVLINK1.'+btoa(JSON.stringify(await sealData({keys,at:Date.now()},pass)));out.hidden=false;out.value=code;out.select();$('linkShare').hidden=!navigator.share;
@@ -2285,7 +2339,7 @@ async function putSecrets(vals){const c=syncCfg();await loadNacl();const r=await
     const p=await fetch(`https://api.github.com/repos/${c.repo}/actions/secrets/${name}`,{method:'PUT',headers:c.H,body:JSON.stringify({encrypted_value:enc,key_id:k.key_id})});if(!p.ok){const j=await p.json().catch(()=>({}));throw new Error(name+': '+(j.message||p.status));}n++;}
   return n;}
 $('liveSecrets').onclick=async()=>{const st=$('liveSecStat');try{const dv=$('kDerivTok').value.trim()&&$('kDerivApp').value.trim(),mt=$('kMetaApi').value.trim()&&$('kMetaAcc').value.trim();if(!dv&&!mt)throw new Error('paste the Deriv token and app ID (or the MetaApi token and account ID) first');st.textContent='Encrypting and sending…';
-    const n=await putSecrets({DERIV_TOKEN:$('kDerivTok').value.trim(),DERIV_APP_ID:$('kDerivApp').value.trim(),METAAPI_TOKEN:$('kMetaApi').value.trim(),METAAPI_ACCOUNT_ID:$('kMetaAcc').value.trim(),EDGEVIEW_PASSPHRASE:$('kSync').value,ANTHROPIC_API_KEY:$('kAnthropic').value.trim(),TWELVE_DATA_KEY:$('kTwelve').value.trim()});
+    const n=await putSecrets({DERIV_TOKEN:$('kDerivTok').value.trim(),DERIV_APP_ID:$('kDerivApp').value.trim(),METAAPI_TOKEN:$('kMetaApi').value.trim(),METAAPI_ACCOUNT_ID:$('kMetaAcc').value.trim(),OANDA_TOKEN:$('kOanda').value.trim(),OANDA_ENV:$('kOanda').value.trim()?$('oandaEnv').value:'',EDGEVIEW_PASSPHRASE:$('kSync').value,ANTHROPIC_API_KEY:$('kAnthropic').value.trim(),TWELVE_DATA_KEY:$('kTwelve').value.trim()});
     st.textContent=`Done: ${n} secrets saved in ${syncCfg().repo}. Now choose the broker in the mandate, save it and start a challenge (demo account first).`;}
   catch(e){st.textContent='Could not send: '+(e.message||e);}};
 liveForm();IDB.kv.get('liveState').then(v=>{if(v&&!LST){LST=v;liveRender();}});setTimeout(async()=>{if(syncOk()){await liveLoad();liveRender();}},6000);

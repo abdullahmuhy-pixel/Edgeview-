@@ -1,5 +1,6 @@
 # Edgeview background scanner: screens the watchlist at each session open and looks for early moves every hour,
 # then sends alerts to Telegram. Needs repository secrets: ANTHROPIC_API_KEY, TWELVE_DATA_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID.
+# Optional OANDA_TOKEN (and OANDA_ENV) saves OANDA's order and position books to the edgeview-data branch for the app.
 # Free on public repositories. GitHub may start scheduled runs a few minutes late.
 name: Watchlist scanner
 on:
@@ -7,7 +8,7 @@ on:
     - cron: '5 * * * *'
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 concurrency:
   group: watchlist-scanner
   cancel-in-progress: false
@@ -32,6 +33,13 @@ jobs:
           TWELVE_DATA_KEY: ${{ secrets.TWELVE_DATA_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      - name: Save OANDA order books for the app
+        if: always()
+        run: node scanner/books.mjs
+        env:
+          OANDA_TOKEN: ${{ secrets.OANDA_TOKEN }}
+          OANDA_ENV: ${{ secrets.OANDA_ENV }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/cache/save@v4
         if: always()
         with:

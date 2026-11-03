@@ -60,7 +60,16 @@ async function ghPut(path, box, sha) {
 }
 
 // ---------- MetaApi (REST)
-let BASE = '';
+let BASE = '', MDBASE = '';
+// Candles from the broker itself (MetaApi historical market data), oldest first, so levels match the prices orders are filled at.
+async function mtBars(bsym, tf, n) {
+  const ms = tf === '15m' ? 9e5 : 36e5;
+  const r = await fetch(`${MDBASE}/users/current/accounts/${ACC}/historical-market-data/symbols/${encodeURIComponent(bsym)}/timeframes/${tf}/candles?limit=${n}`, { headers: { 'auth-token': MT, accept: 'application/json' } });
+  if (!r.ok) throw new Error('MetaApi candles ' + r.status);
+  const out = (await r.json() || []).map(k => ({ t: Date.parse(k.time), o: +k.open, h: +k.high, l: +k.low, c: +k.close })).filter(b => isFinite(b.t) && b.c > 0).sort((x, y) => x.t - y.t);
+  if (out.length < 60) throw new Error('MetaApi returned too few candles');
+  return { closed: out.filter(b => b.t + ms <= now), last: out[out.length - 1], src: 'broker' };
+}
 async function mt(method, path, body) {
   for (let i = 0; i < 3; i++) {
     const r = await fetch(`${BASE}/users/current/accounts/${ACC}${path}`, { method, headers: { 'auth-token': MT, 'content-type': 'application/json', accept: 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
@@ -163,6 +172,7 @@ export async function run() {
   const kv = k => { try { return JSON.parse((mem.kv && mem.kv[k] && mem.kv[k][0]) || 'null'); } catch (e) { return (mem.kv && mem.kv[k] && mem.kv[k][0]) || null; } };
   const M = { ...defaults(kv('ev_live')), ...(kv('ev_blind') === 0 ? { blind: false } : {}), ...(kv('ev_nudge') === 0 ? { nudge: false } : {}) }, style = (mem.kv && mem.kv.ev_style && mem.kv.ev_style[0]) || '', goals = kv('ev_goals') || {};
   BASE = env.METAAPI_BASE || `https://mt-client-api-v1.${M.region || 'london'}.agiliumtrade.ai`;
+  MDBASE = env.METAAPI_MD_BASE || `https://mt-market-data-client-api-v1.${M.region || 'london'}.agiliumtrade.ai`;
   const prev = await ghGet('edgeview-live-state.json').catch(() => null);
   let S = { log: [], trades: [], calls: {}, sessDone: {}, sym: {} };
   if (prev && prev.box && prev.box.ct) { try { S = { ...S, ...(await openBox(prev.box, PASS)) }; } catch (e) { log('previous state unreadable, starting fresh'); } }
@@ -213,7 +223,8 @@ export async function run() {
       if (S.pos.some(p => p.sym === bsym && p.mine) || S.ord.some(o => o.sym === bsym && o.mine)) continue;
       if (S.pos.filter(p => p.mine).length + S.ord.filter(o => o.mine).length >= M.maxOpen || S.day.trades >= M.maxDay) break;
       try {
-        const a = await bars(sym, '15M', 300), b = await bars(sym, '1H', 300), h4 = D.to4h(b.closed), px0 = (a.last || b.last).c;
+        const viaBroker = async (tf, TF) => { try { return await mtBars(bsym, tf, 300); } catch (e) { log(sym, 'broker candles unavailable, using the data feed:', e.message); return await bars(sym, TF, 300); } };
+        const a = await viaBroker('15m', '15M'), b = await viaBroker('1h', '1H'), h4 = D.to4h(b.closed), px0 = (a.last || b.last).c;
         const sess = D.justOpened(now, 20), sk = sess ? sym + sess.name + sess.t : '';
         const sig = D.detect(a.closed, b.closed, { tf: '15M' }).concat(D.detect(b.closed, h4, { tf: '1H' })).filter(s => now - s.at < 45 * 60000 && s.score >= 60).sort((x, y) => y.score - x.score);
         if (!(sk && !S.sessDone[sk]) && !sig.length && !env.LIVE_FORCE) { log(sym, 'nothing new'); continue; }
