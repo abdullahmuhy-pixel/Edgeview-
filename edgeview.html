@@ -237,6 +237,8 @@
     <select id="tdplan"><option value="free">Free (skips dollar index and US10Y, saves 2 calls)</option><option value="paid">Paid (also fetches dollar index and US10Y)</option></select>
     <label>Broker (for spreads and commission in plans, paper results and backtests)</label>
     <div class="row"><select id="brk"><option value="xm">XM</option><option value="none">Other / ignore costs</option></select><select id="brkAcc"><option value="standard">Standard or Micro</option><option value="ultralow">Ultra Low</option><option value="zero">Zero ($7 per lot round turn)</option></select></div>
+    <label>Country you are in (all times in the app follow its time zone)</label>
+    <div class="row"><select id="tzCountry"></select><div class="hint" id="tzNow" style="margin:0;align-self:center"></div></div>
     <div class="row"><div><label>Account currency</label><select id="acct"><option value="ZAR">South African rand (ZAR)</option><option value="USD">US dollar (USD)</option><option value="EUR">Euro (EUR)</option><option value="GBP">British pound (GBP)</option></select></div><div><label>USD/ZAR rate (optional, filled in live)</label><input id="usdzar" inputmode="decimal" placeholder="live"></div></div>
     <label>Your spreads, in price (optional, overrides the defaults: read them from the Spread column in MT5)</label>
     <input id="brkOv" placeholder="e.g. XAU/USD=0.30, GBP/JPY=0.035, USD/ZAR=0.0150">
@@ -310,7 +312,7 @@
       <label>Sessions <span class="hint">(MetaTrader pairs; the Deriv robot trades synthetics around the clock)</span></label><div class="row" style="gap:14px;flex-wrap:wrap"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="lvAsia"> Asia</label><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="lvLon"> London</label><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="lvNY"> New York</label></div>
       <div class="row"><div><label>Take profit</label><select id="lvTp"><option value="split">Half at TP1, half at TP2</option><option value="tp1">All at TP1</option><option value="tp2">All at TP2</option></select></div><div><label>End date (optional)</label><input id="lvEnd" type="date"></div></div>
       <label class="switch"><span>Break-even at +1R<small>Moves the stop to entry once the trade is 1R in profit (MetaTrader only; Deriv multipliers keep their stop)</small></span><input type="checkbox" class="tgl" id="lvBe"></label>
-      <label>Your instructions for this account</label><textarea id="lvNotes" rows="4" placeholder="e.g. Treat it like a funded account. Only A+ setups that match my style, no trades 30 minutes either side of red-folder news, no trades on Friday after 16:00 SAST, gold only in the New York session."></textarea>
+      <label>Your instructions for this account</label><textarea id="lvNotes" rows="4" placeholder="e.g. Treat it like a funded account. Only A+ setups that match my style, no trades 30 minutes either side of red-folder news, no trades on Friday afternoon, gold only in the New York session."></textarea>
       <div class="row"><div><label>Broker symbols (optional)</label><input id="lvMap" placeholder="XAU/USD=GOLD, GBP/JPY=GBPJPY#"></div><div><label>MetaApi region</label><select id="lvRegion"><option value="london">London</option><option value="new-york">New York</option><option value="singapore">Singapore</option></select></div></div>
       <label style="display:flex;gap:8px;align-items:flex-start;margin-top:10px"><input type="checkbox" id="lvReal"> <span>Allow a <b>real-money</b> account. Leave this off while you test on a demo account. The robot refuses to trade a real account unless this is on.</span></label>
       <div class="row" style="margin-top:10px"><button id="lvSave">Save mandate</button><button class="sec" id="lvStart">Start a new challenge</button></div>
@@ -495,16 +497,42 @@
 <script src="detect.js"></script>
 <script src="ta.js"></script>
 <script>
-// ---- South African time (SAST = UTC+2, no daylight saving). Everything the user reads is in SAST; the maths stays in UTC.
-const TZ='Africa/Johannesburg',TZL='SAST',TZO=2;
-const sast=(ms,len)=>new Date((ms==null?Date.now():+ms)+TZO*36e5).toISOString().slice(0,len||16).replace('T',' ');   // 'YYYY-MM-DD HH:MM' in SAST
-const sastHM=ms=>sast(ms).slice(11,16);
-const sastNow=()=>`${sast()} SAST (South Africa, UTC+2; ${new Date().toISOString().slice(11,16)} UTC)`;
-const locT=(ms,o)=>new Date(+ms).toLocaleString([],{...(o||{}),timeZone:TZ});
-const hmUTC2SAST=x=>{const m=String(x||'').match(/^(\d{1,2}):(\d{2})/);return m?String((+m[1]+TZO)%24).padStart(2,'0')+':'+m[2]:x;};
-// a "YYYY-MM-DD HH:MM" time written in a plan: SAST unless it says UTC/GMT/Z (older plans were written in UTC)
+// ---- Local time: every time the user reads is shown in the time zone of the country chosen in Settings (default South Africa).
+// The maths, data feeds and stored values stay in UTC; only what is shown or written for the user is converted.
+// [country, IANA zone, fixed label or '' (then the label comes from the browser, e.g. GMT/BST, EST/EDT), locale for that label]
+const ZONES=[['South Africa','Africa/Johannesburg','SAST'],['Nigeria','Africa/Lagos','WAT'],['Ghana','Africa/Accra','GMT'],['Kenya','Africa/Nairobi','EAT'],['Uganda','Africa/Kampala','EAT'],['Tanzania','Africa/Dar_es_Salaam','EAT'],
+ ['Zambia','Africa/Lusaka','CAT'],['Zimbabwe','Africa/Harare','CAT'],['Botswana','Africa/Gaborone','CAT'],['Namibia','Africa/Windhoek','CAT'],['Malawi','Africa/Blantyre','CAT'],['Mozambique','Africa/Maputo','CAT'],['Rwanda','Africa/Kigali','CAT'],
+ ['Lesotho','Africa/Maseru','SAST'],['Eswatini','Africa/Mbabane','SAST'],['Ethiopia','Africa/Addis_Ababa','EAT'],['Egypt','Africa/Cairo','','en-GB'],['Morocco','Africa/Casablanca','','en-GB'],['Cameroon','Africa/Douala','WAT'],['DR Congo (Kinshasa)','Africa/Kinshasa','WAT'],['Angola','Africa/Luanda','WAT'],
+ ['Senegal','Africa/Dakar','GMT'],['Sierra Leone','Africa/Freetown','GMT'],['Liberia','Africa/Monrovia','GMT'],['The Gambia','Africa/Banjul','GMT'],["Côte d'Ivoire",'Africa/Abidjan','GMT'],['Mauritius','Indian/Mauritius','MUT'],
+ ['United Kingdom','Europe/London','','en-GB'],['Ireland','Europe/Dublin','','en-GB'],['Portugal','Europe/Lisbon','','en-GB'],['Spain','Europe/Madrid','','en-GB'],['France','Europe/Paris','','en-GB'],['Germany','Europe/Berlin','','en-GB'],['Italy','Europe/Rome','','en-GB'],['Netherlands','Europe/Amsterdam','','en-GB'],['Malta','Europe/Malta','','en-GB'],['Turkey','Europe/Istanbul','TRT'],
+ ['United Arab Emirates','Asia/Dubai','GST'],['Saudi Arabia','Asia/Riyadh','AST'],['Qatar','Asia/Qatar','AST'],['India','Asia/Kolkata','IST'],['Pakistan','Asia/Karachi','PKT'],['Malaysia','Asia/Kuala_Lumpur','MYT'],['Singapore','Asia/Singapore','SGT'],['China','Asia/Shanghai','CST'],['Hong Kong','Asia/Hong_Kong','HKT'],['Japan','Asia/Tokyo','JST'],
+ ['Australia (Sydney)','Australia/Sydney','','en-AU'],['Australia (Perth)','Australia/Perth','AWST'],['New Zealand','Pacific/Auckland','','en-NZ'],['USA (New York, Eastern)','America/New_York','','en-US'],['USA (Chicago, Central)','America/Chicago','','en-US'],['USA (Los Angeles, Pacific)','America/Los_Angeles','','en-US'],
+ ['Canada (Toronto)','America/Toronto','','en-US'],['Brazil (São Paulo)','America/Sao_Paulo','BRT'],['UTC (no country)','UTC','UTC']];
+const zone=()=>{const c=(typeof store!=='undefined'&&store.get('ev_tz'))||'South Africa';return ZONES.find(z=>z[0]===c)||ZONES[0];};
+const TZname=()=>zone()[1];
+// minutes the zone is ahead of UTC at instant ms (handles daylight saving)
+function zOff(ms,tz){tz=tz||TZname();if(tz==='UTC')return 0;try{const p={};for(const x of new Intl.DateTimeFormat('en-US',{timeZone:tz,hourCycle:'h23',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).formatToParts(new Date(ms)))p[x.type]=x.value;
+  return Math.round((Date.UTC(+p.year,+p.month-1,+p.day,+p.hour%24,+p.minute)-Math.floor(ms/6e4)*6e4)/6e4);}catch(e){return 0;}}
+// short label such as SAST, WAT, GMT, BST, CEST, EDT, or UTC+3 as a fallback
+function zlab(ms){const z=zone();if(z[2])return z[2];ms=ms==null?Date.now():+ms;try{const n=new Intl.DateTimeFormat(z[3]||'en-GB',{timeZone:z[1],timeZoneName:'short'}).formatToParts(new Date(ms)).find(x=>x.type==='timeZoneName');if(n&&!/^(GMT|UTC)[+-]/.test(n.value))return n.value;}catch(e){}
+  const o=zOff(ms);return 'UTC'+(o>=0?'+':'-')+Math.floor(Math.abs(o)/60)+(Math.abs(o)%60?':'+String(Math.abs(o)%60).padStart(2,'0'):'');}
+const offTxt=ms=>{const o=zOff(ms==null?Date.now():ms);return 'UTC'+(o>=0?'+':'-')+Math.floor(Math.abs(o)/60)+(Math.abs(o)%60?':'+String(Math.abs(o)%60).padStart(2,'0'):'');};
+const zt=(ms,len)=>{ms=ms==null?Date.now():+ms;return new Date(ms+zOff(ms)*6e4).toISOString().slice(0,len||16).replace('T',' ');};   // 'YYYY-MM-DD HH:MM' in local time
+const ztHM=ms=>zt(ms).slice(11,16);
+const ztT=ms=>`${zt(ms)} ${zlab(ms)}`;
+const ztNow=()=>{const z=zone();return `${zt()} ${zlab()} (the user's local time in ${z[0]}, ${offTxt()}; ${new Date().toISOString().slice(11,16)} UTC). Write every time the user reads in this time zone, labelled ${zlab()}`;};
+const locT=(ms,o)=>new Date(+ms).toLocaleString([],{...(o||{}),timeZone:TZname()});
+// an "HH:MM" UTC time of day (today) shown as local time
+const hmLocal=x=>{const m=String(x||'').match(/^(\d{1,2}):(\d{2})/);if(!m)return x;const d=new Date(),t=Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate(),+m[1],+m[2]);return ztHM(t);};
+const hLocal=h=>{const d=new Date();return +ztHM(Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate(),h)).slice(0,2);};
+// a "YYYY-MM-DD HH:MM" time written in a plan: local time unless it carries another label (older plans said UTC or SAST)
 function planTime(v){const s=String(v||''),m=s.match(/(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})/);if(!m)return null;const t=Date.parse(m[1]+'T'+m[2].padStart(2,'0')+':'+m[3]+':00Z');if(isNaN(t))return null;
-  const tail=s.slice(m.index+m[0].length,m.index+m[0].length+10);return /^\s*(UTC|GMT(?![+-]\s*\d)|Z\b)/i.test(tail)?t:t-TZO*36e5;}
+  const tail=s.slice(m.index+m[0].length,m.index+m[0].length+12).trim();
+  if(/^(UTC|Z\b)/i.test(tail)&&!/^UTC\s*[+-]\s*\d/i.test(tail))return t;
+  const uo=tail.match(/^(?:UTC|GMT)\s*([+-])\s*(\d{1,2})(?::(\d{2}))?/i);if(uo)return t-(uo[1]==='-'?-1:1)*((+uo[2])*60+(+uo[3]||0))*6e4;
+  const lb=(tail.match(/^[A-Z]{2,5}\b/)||[''])[0];let tz=TZname();
+  if(lb&&lb!==zlab(t)){const z=ZONES.find(z=>z[2]===lb);if(z)tz=z[1];else if(lb==='GMT')tz='UTC';}
+  let u=t-zOff(t,tz)*6e4;u=t-zOff(u,tz)*6e4;return u;}
 const SYSTEM = `You are a multi-timeframe trading analyst for forex, metals and crypto. You receive exact candle tables and a market-structure summary for 1W, 1D, 4H, 1H, 15M and 5M computed from live candles, charts drawn by the app from those same candles, live market data, the live economic calendar and recent headlines fetched from data providers, plus an optional note. Analyze only what is visible or provided. Never invent price levels you cannot read from the charts.
 
 PROCESS
@@ -528,8 +556,8 @@ Key events from the live calendar and headlines, each with its bullish/bearish e
 For each style give this block, with exact prices:
 Bias: Buy / Sell / No trade | Win probability: X% (TP1 hit before stop loss)
 Execute now: YES or NO. If YES: BUY NOW or SELL NOW at the current price, with Stop loss, TP1, TP2 and Risk:Reward. If NO: say in one line why price is not at a good entry yet.
-BUY LIMIT: price below the current price at a support, demand zone, EMA or Fib level | Stop loss | TP1 | TP2 | R:R | Win prob % | Valid until (SAST date and time) | Cancel if...
-SELL LIMIT: price above the current price at a resistance, supply zone, EMA or Fib level | Stop loss | TP1 | TP2 | R:R | Win prob % | Valid until (SAST date and time) | Cancel if...
+BUY LIMIT: price below the current price at a support, demand zone, EMA or Fib level | Stop loss | TP1 | TP2 | R:R | Win prob % | Valid until (date and time in my local time zone) | Cancel if...
+SELL LIMIT: price above the current price at a resistance, supply zone, EMA or Fib level | Stop loss | TP1 | TP2 | R:R | Win prob % | Valid until (date and time in my local time zone) | Cancel if...
 Preferred: which order fits the bias (with-trend order first; the other is labeled counter-trend with a lower probability, or marked "skip").
 Reason (2 lines) | Invalidated if...
 ### Scenario
@@ -549,8 +577,8 @@ Built from: which styles agree (e.g. Intraday + Swing) and the 2-3 strongest con
 Setup type: exactly one of TREND PULLBACK, BREAKOUT RETEST, RANGE FADE, LIQUIDITY SWEEP REVERSAL, MOMENTUM CONTINUATION, NEWS REACTION, OTHER (for NO TRADE, the setup you are waiting for)
 Edge factors: how the probability was built from the no-edge baseline, e.g. base 40 | +10 higher timeframes agree | +5 4H demand zone | -5 CPI in 3h | learning -5 (range fades in high volatility)
 Trigger: what must happen before placing or activating the order, and the best time or session to watch
-Valid until: exact date and time in South African time, e.g. 2026-10-08 18:00 SAST. If the order is not filled by then, cancel it and do not chase
-Time stop: if the trade is filled but TP1 is not hit by this SAST time, reassess or close
+Valid until: exact date and time in the user's local time zone with its label, as given in the data (for example 2026-10-08 18:00 SAST if the user is in South Africa). If the order is not filled by then, cancel it and do not chase
+Time stop: if the trade is filled but TP1 is not hit by this local time, reassess or close
 Cancel / invalidated if: exact price or event
 Management: partial profit at TP1, move stop to break-even, and when to stand aside (news times)
 Risk: suggested % of account and how to size from the stop distance
@@ -568,16 +596,16 @@ RULES
 - Place stops beyond structure, not at random distances.
 - Counter-trend trades must be labeled and the probability lowered by 10-15 points.
 - INSTRUMENT BACKGROUND: if a background block is given, use it as general knowledge about what drives the instrument and its sessions. Name the 1 or 2 drivers that matter most right now in the Market snapshot, and verify them against the live data and news; never present the background as current news or a current central-bank stance. For JPY pairs, say whether there is any intervention or BoJ risk in the data. For USDZAR, allow for wide spreads and thin liquidity in stops and timing.
-- LIVE CALENDAR: if a live calendar block is given, use it for event times and forecasts (it is in SAST and more reliable than reading times from screenshots), and use screenshots or headlines for actual results. End every order's validity before a high-impact event for its currencies, or say clearly that the order spans the release and lower the probability by 10 points.
+- LIVE CALENDAR: if a live calendar block is given, use it for event times and forecasts (it is in the user's local time and more reliable than reading times from screenshots), and use screenshots or headlines for actual results. End every order's validity before a high-impact event for its currencies, or say clearly that the order spans the release and lower the probability by 10 points.
 - OPEN EXPOSURE: if an open positions block is given, treat it as the trader's existing risk. If the new plan adds to a currency the trader is already 2 or more units long or short, say so in the Risk line and halve the suggested risk; at 3 or more units in the same direction, prefer NO TRADE or a plan that reduces the exposure. A plan in the opposite direction to an open position on the same symbol must be flagged as a conflict.
 - LEARNING FROM PAPER TRADES: if a learning block is given, it comes from this trader's own resolved paper trades and was computed in code. Treat it as evidence about what has and has not worked, not as a rule. (a) A condition or setup matching this plan with 20 or more trades and a shrunk edge of -8 points or worse: lower the probability by about that amount, or prefer NO TRADE or a different setup. A shrunk edge of +8 or better with 20 or more trades may add up to 5 points. (b) Conditions with fewer than 20 trades are weak evidence: never move the probability more than 3 points for them. (c) Use the trade-behaviour lines: if many losers were +1R in profit first, set Management to take partial profit or move the stop to break-even earlier; if most limit orders never filled, place entries nearer the price or use a trigger instead; if winners rarely went far against the entry, the stop may be wider than needed. (d) If a listed lesson applies to this plan, follow it and add a line under Built from: "Lesson applied: ...". Put every learning adjustment in Edge factors. Never let the learning block override clear structure or news: it adjusts, it does not decide.
 - TOOLKIT: if a trader's toolkit block is given, its levels are exact; use them instead of estimating. (a) Liquidity: put stops beyond the Asia range, opening ranges, previous day/week extremes and untouched equal highs/lows, never on them; those levels are natural targets and sweep zones. A sweep of one of them that closes back inside is a LIQUIDITY SWEEP REVERSAL. (b) Dealing range: prefer buys in discount and sells in premium, and say which in Built from. (c) Trend strength: TRENDING (ADX 25+) favours pullbacks and continuation and argues against range fades (-5 to -10 for a fade); RANGING favours fades at the range edges and argues against breakouts without a squeeze; TRANSITION: -5. (d) Unmitigated order blocks and fair value gaps are entry zones; regular divergence at a level supports a reversal, hidden divergence supports continuation; count each in Edge factors. (e) Use Fibonacci extensions (1.272, 1.618) and liquidity levels for TP2 and the gold ladder. (f) Intraday buys above the session VWAP or TWAP and sells below it are with the flow. (g) Volume profile (crypto): the point of control and the value-area edges are reaction levels. (h) Order book (crypto): large resting bid or ask walls near an entry or target are reaction levels, but they can be pulled; never rely on them alone.
 - CURRENCY STRENGTH AND INTERMARKET: if given, prefer trades that pair a strong currency against a weak one on the 1D and 5D columns. If the trade goes against the 1D strength gap of its two currencies, lower the probability by 5 and say so. Falling equities (SPY) mean risk-off: supportive for JPY, CHF and gold. Rising oil supports CAD. For gold, mention the dollar's strength and the gold/silver ratio when they matter.
 - RISK STATE: if a risk state block is given, follow it in the Risk line: half the usual risk after the losing-streak rule fires, and say that the robot will not take new trades while the daily loss limit or the open-trade limit is reached.
 - USER TRACK RECORD: if a track record block is given, use it only as context. With 15 or more closed trades on that instrument you may move the probability by up to 5 points toward the real hit rate and say so in one line; with fewer, say the sample is too small to adjust. Never let it override the chart or the news.
-- WEEKEND AND TIME RULE: the data states the weekday and any weekend/Friday warning. Forex and gold close about 23:00 SAST Friday and reopen about 00:00 SAST Monday (midnight Sunday night). On Friday after 14:00 SAST, intraday plans must expire before 22:00 SAST Friday, swing plans must be flagged as carrying weekend gap risk (lower the probability by 5 to 10 points or advise waiting for the Sunday/Monday open), and no new scalps in the last hour before the close. When the market is closed, say so, give plans for the reopen only, and make validity start at the reopen. Avoid the 23:00-01:00 SAST rollover spread widening.
-- TIME ZONE: the user is in South Africa. Write every time the user reads (valid until, time stops, sessions, news, reviews) in SAST = UTC+2, with no daylight saving, and label it SAST. Data marked UTC must be converted by adding 2 hours.
-- VALIDITY: every pending order and the final plan must have a "Valid until" in SAST (South African time, UTC+2), worked out from the current SAST time given in the data. Scalp: 1 to 3 hours (max 4). Intraday: until the end of the session that suits the setup, within the same trading day (max about 12 hours). Swing: 2 to 5 days. End the validity BEFORE a high-impact news event or session close that would change the picture. Setups go stale: if price has not reached the entry by then, the order is cancelled and the analysis must be re-run. Also give a Time stop for filled trades.
+- WEEKEND AND TIME RULE: the data states the weekday and any weekend/Friday warning. Forex and gold close about 21:00 UTC Friday and reopen about 22:00 UTC Sunday. On Friday after 12:00 UTC, intraday plans must expire before 20:00 UTC Friday, swing plans must be flagged as carrying weekend gap risk (lower the probability by 5 to 10 points or advise waiting for the Sunday/Monday open), and no new scalps in the last hour before the close. When the market is closed, say so, give plans for the reopen only, and make validity start at the reopen. Avoid the 21:00-23:00 UTC rollover spread widening.
+- TIME ZONE: the data states the current time in the user's local time zone, its label and its offset from UTC. Write every time the user reads (valid until, time stops, sessions, news, reviews) in that local time with that label. Times in these rules and any data marked UTC must be converted using the stated offset.
+- VALIDITY: every pending order and the final plan must have a "Valid until" in the user's local time, worked out from the current local time given in the data. Scalp: 1 to 3 hours (max 4). Intraday: until the end of the session that suits the setup, within the same trading day (max about 12 hours). Swing: 2 to 5 days. End the validity BEFORE a high-impact news event or session close that would change the picture. Setups go stale: if price has not reached the entry by then, the order is cancelled and the analysis must be re-run. Also give a Time stop for filled trades.
 - PROBABILITY: always show it as a percentage, never as Low/Med/High. It is the estimated chance that TP1 is hit before the stop loss. Method: start from the no-edge baseline for that order's TP1 R:R, which is 100 / (1 + R:R): 1:1 is 50%, 1:1.5 is 40%, 1:2 is 33%, 1:3 is 25%. That is what price does with no edge at all (TP1 further away than the stop is less likely to be hit first), so every point above the baseline is edge you are claiming and must come from the factors below. Then add or subtract for higher-timeframe agreement (up to +/-10), quality of the entry level (+/-5), agreement of RSI/MACD/EMAs/Bollinger (up to +/-10), news alignment (+/-5), a high-impact event within 2 hours (-10), counter-trend (-10 to -15), and a far TP1 relative to ATR (-5). Clamp between 15% and 75% and round to the nearest 5%. A probability more than 20 points above its baseline needs strong, named reasons. Never give 80%+ or claim certainty. After the Final trade plan add one short line: "Probabilities are estimates from confluence, not guarantees." If the expected value is zero or negative, mark that order SKIP, or the final decision NO TRADE.
 - Suggest risking 0.5-1% per trade and position size from stop distance. Never suggest all-in or martingale.
 - Be concise, plain language, honest about uncertainty. Write each order on ONE line, keep Market snapshot and News short (max 8 lines each), and always finish every section through the Final trade plan and the risk reminder. The Final trade plan must reuse prices from the earlier sections, not invent new unrelated levels, and must be consistent with them.
@@ -662,7 +690,7 @@ async function hoursText(sym){if(isSynth(sym))return '';const code=derivCode(sym
   const nm=(DLIST.find(x=>x[0]===code)||[])[1]||String(sym).toUpperCase();let hit=null;
   for(const m of d.markets||[])for(const sm of m.submarkets||[])for(const y of sm.symbols||[])if(y.symbol===code||y.underlying_symbol===code||String(y.name).toUpperCase()===nm.toUpperCase())hit=y;
   if(!hit)return '';const t=hit.times||{},ev=(hit.events||[]).filter(e=>e&&e.descrip).slice(0,4).map(e=>`${e.descrip} (${e.dates})`);
-  return `MARKET HOURS (Deriv, SAST): today opens ${(t.open||[]).map(hmUTC2SAST).join(', ')||'n/a'}, closes ${(t.close||[]).map(hmUTC2SAST).join(', ')||'n/a'}${ev.length?'; schedule notes: '+ev.join('; '):''}. Do not plan entries or targets that need the market after it closes.`;}
+  return `MARKET HOURS (Deriv, ${zlab()}): today opens ${(t.open||[]).map(hmLocal).join(', ')||'n/a'}, closes ${(t.close||[]).map(hmLocal).join(', ')||'n/a'}${ev.length?'; schedule notes: '+ev.join('; '):''}. Do not plan entries or targets that need the market after it closes.`;}
 async function tickStats(sym){const k=synthKind(sym);if(!isSynth(sym)||!k)return '';const code=synthCode(sym);let j;try{j=await deriv({ticks_history:code,style:'ticks',count:1000,end:'latest'});}catch(e){return '';}
   const p=(j.history&&j.history.prices||[]).map(Number),tm=(j.history&&j.history.times||[]).map(Number);if(p.length<100)return '';
   const d=p.slice(1).map((x,i)=>x-p[i]),ad=d.map(Math.abs).sort((a,b)=>a-b),med=ad[Math.floor(ad.length/2)]||1e-9,secs=(tm[tm.length-1]-tm[0])/(p.length-1);
@@ -692,7 +720,7 @@ function synthBrief(sym){const c=synthCode(sym),k=synthKind(sym);if(!c)return ''
     jump:`Jump ${n} Index: volatility ${n}% a year with sudden large jumps, on average about three an hour, equally likely up or down.`}[k];
   return `INSTRUMENT BACKGROUND (Deriv synthetic index, Deriv code ${c}): ${kind} Synthetic indices are generated by Deriv's audited random number generator. They trade 24/7 including weekends, and they are NOT moved by economic news, central banks, sessions, positioning, correlations or any other market: ignore the economic calendar, headlines, COT, currency strength and session opens for this instrument, and do not mention them as reasons. Volatility is statistically constant, so ATR-based stops and targets are reliable; chart structure (swings, ranges, liquidity sweeps, trend legs) is the only edge, and it is weaker than on real markets, so be strict about reward to risk, size small and say so when there is no clear setup. Trade on Deriv (MT5 or Deriv options/multipliers); costs are the spread only.`;}
 // ---- cloud memory (v37): settings that follow you to every device, with the time each was last changed
-const SYNC_KEYS=['ca_wl','ca_wlset','ca_bot','ev_brk','ev_bt','ca_alerts','ca_cBal','ca_cRisk','ca_symbol','ca_market','ca_spread','ca_depth','ca_model','ca_mHaiku','ca_tdplan','ca_ghRepo','ev_fxOn','ev_pmOff','ev_chat','ev_chats','ev_goals','ev_style','ev_live','ev_src'];
+const SYNC_KEYS=['ev_tz','ca_wl','ca_wlset','ca_bot','ev_brk','ev_bt','ca_alerts','ca_cBal','ca_cRisk','ca_symbol','ca_market','ca_spread','ca_depth','ca_model','ca_mHaiku','ca_tdplan','ca_ghRepo','ev_fxOn','ev_pmOff','ev_chat','ev_chats','ev_goals','ev_style','ev_live','ev_src'];
 let syncApplying=false;
 const KMT=()=>{try{return JSON.parse(localStorage.getItem('ev_kmt')||'{}');}catch(e){return {};}};
 {const _set=store.set;store.set=(k,v)=>{_set(k,v);if(!syncApplying&&SYNC_KEYS.includes(k)){const m=KMT();m[k]=Date.now();localStorage.setItem('ev_kmt',JSON.stringify(m));}};}
@@ -958,7 +986,7 @@ async function finnhub(market,sym,key){
   const all = [...items.filter(rel), ...gen.filter(rel), ...items, ...gen];
   const seen=new Set(), pick=[];
   for(const a of all){ if(seen.has(a.id)) continue; seen.add(a.id); pick.push(a); if(pick.length>=10) break; }
-  return pick.map(a=>`- ${sast(a.datetime*1000)} SAST ${a.headline}`).join('\n');
+  return pick.map(a=>`- ${zt(a.datetime*1000)} ${zlab()} ${a.headline}`).join('\n');
 }
 
 // ---- analyze
@@ -1084,7 +1112,7 @@ async function fxRefresh(){if(fxBusy||!$('fxOn').checked)return;const tk=$('kTwe
   finally{fxBusy=false;}}
 function fxBlock(sym){if(!$('fxOn').checked||!window.EVTA)return '';const fx=fxGet('ev_fx'),im=fxGet('ev_im'),now=Date.now(),out=[];
   if(fx&&now-fx.t<6*36e5){const cols=[4,24,120].map(k=>EVTA.strength(fx.s,k)),by=c=>cols.map(a=>{const x=a.find(y=>y.ccy===c);return x?(x.v>=0?'+':'')+x.v.toFixed(2):'n/a';}).join(' / ');
-    const ccys=cols[1].map(x=>x.ccy);out.push(`CURRENCY STRENGTH (average % move of each currency against the other majors, from hourly closes at ${sastHM(fx.t)} SAST; 4H / 1D / 5D): `+ccys.map(c=>`${c} ${by(c)}`).join('; ')+`. Strongest on 1D: ${ccys[0]}, weakest: ${ccys[ccys.length-1]}.`);
+    const ccys=cols[1].map(x=>x.ccy);out.push(`CURRENCY STRENGTH (average % move of each currency against the other majors, from hourly closes at ${ztHM(fx.t)} ${zlab()}; 4H / 1D / 5D): `+ccys.map(c=>`${c} ${by(c)}`).join('; ')+`. Strongest on 1D: ${ccys[0]}, weakest: ${ccys[ccys.length-1]}.`);
     const L=legsOf(sym);if(L){const v=c=>{const x=cols[1].find(y=>y.ccy===c);return x?x.v:null;};const a=v(L[0]),b=v(L[1]);if(a!=null&&b!=null)out.push(`For ${String(sym).toUpperCase()}: ${L[0]} ${a>=0?'+':''}${a.toFixed(2)} vs ${L[1]} ${b>=0?'+':''}${b.toFixed(2)} on 1D: the strength gap favours ${a>b?'BUY':'SELL'}.`);else if(b!=null)out.push(`For ${String(sym).toUpperCase()}: ${L[1]} is ${b>=0?'+':''}${b.toFixed(2)} on 1D.`);}}
   else if(fx)out.push('CURRENCY STRENGTH: data is older than 6 hours; refreshing in the background.');
   const bk=fxGet('ev_bk');if(bk&&now-bk.t<6*36e5){const ch=(c,k)=>c&&c.length>k?(c[c.length-1]/c[c.length-1-k]-1)*100:null,f=x=>x==null?'n/a':(x>=0?'+':'')+x.toFixed(2)+'%';
@@ -1157,7 +1185,7 @@ $('go').onclick=async()=>{
       else if(lists.news.length) content.push({type:'text',text:'NEWS / ECONOMIC CALENDAR SCREENSHOTS (read every event and headline in them):'},...lists.news.map(imgBlock));
       const others=pairs.filter(x=>x!==p).map(x=>x.sym).join(', ');
       const LV=LIVE[String(p.sym).toUpperCase()]||{},MS=cd?marketState(cd,LV.px,Date.now()):null;let learn='';try{learn=learnText(allLearn(),LS.get(),p.sym,MS);}catch(e){}try{const rs=riskText(riskState(HS.get(),Date.now(),BOTC.get()));learn=(learn?learn+'\n\n':'')+rs;}catch(e){}try{const sb=styleBlock();if(sb)learn=(learn?learn+'\n\n':'')+sb;}catch(e){}
-      content.push({type:'text',text:`Instrument: ${p.sym}.${lists[p.key].length>6?` There are ${lists[p.key].length} charts: read them all but keep every section brief so the answer finishes through the Final trade plan.`:''}${pairBrief(p.sym,true)}${learn?learn+'\n\n':''}${others?` Also being analyzed in this session: ${others}. In the Risk line of the Final trade plan, mention correlated exposure with them if relevant (for example both are USD-driven, so they are not independent bets).`:''}\n\nLIVE DATA (${L.at}; active sessions: ${sessions()}):\n${L.live||('none. '+(p.px?('User-provided current price: '+p.px+'. Treat it as approximate.'):'No live price; read price from the charts and say levels are approximate.'))}\n\n${(()=>{try{const v=lotVal(p.sym),rz=fxRates()['USD/ZAR'];return `ACCOUNT CURRENCY: ${ACCT()}${ACCT()==='ZAR'&&rz?` (USD/ZAR ${rz.toFixed(4)})`:''}. ${v!=null?`One standard lot of ${p.sym} gains or loses about ${ACCT()} ${Math.round(v).toLocaleString('en-US')} per 1.0 price move.`:''} In the Risk line, give the risk and lot size for a ${ACCT()} account.\n\n`;}catch(e){return '';}})()}${p.sp&&+p.sp>0?`BROKER COSTS${p.spSrc?' ('+p.spSrc+')':''}: about ${p.sp} in price per round trip. Buys fill at the ask and sells at the bid: keep stops and targets clear of it, and check that every R:R still meets 1:1.5 after the spread.\n\n`:''}RECENT HEADLINES:\n${L.news||'none'}\n\nUSER NOTE: ${$('note').value.trim()||'none'}`});
+      content.push({type:'text',text:`Instrument: ${p.sym}.${lists[p.key].length>6?` There are ${lists[p.key].length} charts: read them all but keep every section brief so the answer finishes through the Final trade plan.`:''}${pairBrief(p.sym,true)}${learn?learn+'\n\n':''}${others?` Also being analyzed in this session: ${others}. In the Risk line of the Final trade plan, mention correlated exposure with them if relevant (for example both are USD-driven, so they are not independent bets).`:''}\n\nLIVE DATA (fetched ${ztT(Date.parse(L.at))}; current time ${ztNow()}; active sessions: ${sessions()}):\n${L.live||('none. '+(p.px?('User-provided current price: '+p.px+'. Treat it as approximate.'):'No live price; read price from the charts and say levels are approximate.'))}\n\n${(()=>{try{const v=lotVal(p.sym),rz=fxRates()['USD/ZAR'];return `ACCOUNT CURRENCY: ${ACCT()}${ACCT()==='ZAR'&&rz?` (USD/ZAR ${rz.toFixed(4)})`:''}. ${v!=null?`One standard lot of ${p.sym} gains or loses about ${ACCT()} ${Math.round(v).toLocaleString('en-US')} per 1.0 price move.`:''} In the Risk line, give the risk and lot size for a ${ACCT()} account.\n\n`;}catch(e){return '';}})()}${p.sp&&+p.sp>0?`BROKER COSTS${p.spSrc?' ('+p.spSrc+')':''}: about ${p.sp} in price per round trip. Buys fill at the ask and sells at the bid: keep stops and targets clear of it, and check that every R:R still meets 1:1.5 after the spread.\n\n`:''}RECENT HEADLINES:\n${L.news||'none'}\n\nUSER NOTE: ${$('note').value.trim()||'none'}`});
       const card=cards[i];
       const co=await claudeStream(ak,SYSTEM,content,t=>{ q(i).innerHTML=md(t); card.dataset.raw=t; if(!scrolled&&t){scrolled=true;card.scrollIntoView({behavior:'smooth'});} btn.textContent=tag(i)+'analyzing… ('+t.length+' chars)'; },deep);
       const text=co.text,stop=co.stop;
@@ -1195,7 +1223,7 @@ function buildTelegram(raw,sym){
   if(!got.Decision) return sec.trim();
   const dec=got.Decision.toUpperCase();
   const icon=dec.includes('NO')?'⚪':dec.includes('BUY')?'🟢':dec.includes('SELL')?'🔴':'📊';
-  const d=new Date(), t=sast(d)+' SAST';
+  const d=new Date(), t=zt(d)+' '+zlab();
   let out=`📊 ${(sym||'').toUpperCase()} TRADE PLAN\n🕒 ${t}\n\n${icon} ${got.Decision.toUpperCase()}${got.Order?' | '+got.Order.toUpperCase():''}\n`;
   const lab={Entry:'📍 Entry','Entry 2':'📍 Entry 2 (scale-in)','Average entry':'📐 Average entry','Stop loss':'🛑 Stop loss',TP1:'🎯 TP1',TP2:'🎯 TP2',TP3:'🎯 TP3',TP4:'🎯 TP4',TP5:'🎯 TP5',TP6:'🎯 TP6',Probability:'📈 Probability',Confidence:'📈 Confidence','Built from':'🧠 Why',Trigger:'⏱ Trigger','Valid until':'⏳ Valid until','Time stop':'⏲ Time stop','Cancel / invalidated if':'❌ Cancel if',Management:'🛠 Management',Risk:'⚖️ Risk',Backup:'🔁 Backup'};
   for(const [key] of FINAL_KEYS.slice(2)){
@@ -1216,17 +1244,19 @@ async function copyFinal(btn){
 }
 
 // ---- sessions
-function dayNote(){const d=new Date(),h=d.getUTCHours()+d.getUTCMinutes()/60,w=d.getUTCDay(),n=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(Date.now()+TZO*36e5).getUTCDay()];
-  const c=(w===5&&h>=20.5)||w===6||(w===0&&h<22)?' | FOREX/GOLD MARKET CLOSED for the weekend (crypto still trades, thin liquidity)':w===5&&h>=12?' | Friday: weekend gap risk, forex/gold close about 23:00 SAST':'';return n+' '+c.replace(/^ \| /,'')+(c?' | ':'');}
+function dayNote(){const d=new Date(),h=d.getUTCHours()+d.getUTCMinutes()/60,w=d.getUTCDay(),n=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(Date.now()+zOff(Date.now())*6e4).getUTCDay()];
+  const c=(w===5&&h>=20.5)||w===6||(w===0&&h<22)?' | FOREX/GOLD MARKET CLOSED for the weekend (crypto still trades, thin liquidity)':w===5&&h>=12?' | Friday: weekend gap risk, forex/gold close about '+ztHM(Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate(),21))+' '+zlab():'';return n+' '+c.replace(/^ \| /,'')+(c?' | ':'');}
 function sessions(){return dayNote()+sessions0();}
 function sessions0(){const d=new Date(),h=d.getUTCHours()+d.getUTCMinutes()/60;const on=[['Sydney',22,7],['Tokyo',0,9],['London',7,16],['New York',12,21]].filter(([n,a,b])=>a<b?h>=a&&h<b:h>=a||h<b).map(x=>x[0]);return (on.join(' + ')||'Off-hours')+(on.includes('London')&&on.includes('New York')?' (London/NY overlap, highest volatility)':'');}
-function tickSess(){$('sess').textContent=sastHM()+' SAST · '+sessions();} tickSess(); setInterval(tickSess,30000);
+function tzUI(){const sel=$('tzCountry');if(!sel)return;if(!sel.options.length)sel.innerHTML=ZONES.map(z=>`<option>${esc(z[0])}</option>`).join('');sel.value=zone()[0];$('tzNow').textContent=`Now ${ztHM()} ${zlab()} (${offTxt()})`;}
+$('tzCountry').onchange=()=>{store.set('ev_tz',$('tzCountry').value);tickSess();try{renderHist();}catch(e){}try{renderBot();}catch(e){}};
+function tickSess(){tzUI();$('sess').textContent=ztHM()+' '+zlab()+' · '+sessions();} tickSess(); setInterval(tickSess,30000);
 // ---- final plan parser
 function parseFinal(raw){const i=raw.search(/^### *Final trade plan/mi);if(i<0)return{};const g={};for(const ln of raw.slice(i).split('\n').slice(1)){const m=ln.replace(/\*\*/g,'').match(/^\s*[-*•]?\s*([A-Za-z0-9 \/]+?)\s*:\s*(.+)$/);if(m){const k=m[1].trim().toLowerCase();if(!g[k])g[k]=m[2].trim();}}return g;}
 const num=x=>{const m=String(x||'').replace(/,/g,'').match(/-?\d+(\.\d+)?/);return m?+m[0]:null;};
 // ---- history + journal
 const HS={get:()=>{try{return JSON.parse(localStorage.getItem('ca_hist')||'[]')}catch(e){return[]}},set:a=>{keepTexts(a);const now=Date.now(),pack=(n,k)=>JSON.stringify(a.slice(0,n).map((e,i)=>(i<k||(e.ord==='WEEKLY OUTLOOK'&&now-e.id<20*86400000))?e:{...e,text:''}));try{localStorage.setItem('ca_hist',pack(400,40));}catch(e){try{localStorage.setItem('ca_hist',pack(150,12));}catch(e2){}}}};
-const APP_VER='edgeview-v43.3';
+const APP_VER='edgeview-v43.4';
 function META(){return {model:$('model').value.trim()||'claude-sonnet-5-5',deep:$('depth').value,ver:APP_VER};}
 
 function addOdds(card,text,sym){
@@ -1254,7 +1284,7 @@ function setSt(id,st){HS.set(HS.get().map(e=>e.id==id?{...e,st,auto:'manual'}:e)
 function delH(id){HS.set(HS.get().filter(e=>e.id!=id));renderHist();}
 async function viewH(id){const e0=HS.get().find(x=>x.id==id);if(!e0)return;const e={...e0};if(!e.text)e.text=await fullText(e.id);if(!e.text){alert('The full text of this entry is not on this device or in your cloud backup. Only the numbers are kept.');return;}if(/### *Final weekly plan/i.test(e.text)){go('weekend');$('wResults').innerHTML='';const c=newWResult(e.sym);c.dataset.raw=e.text;c.querySelector('.rc-out').innerHTML=mdW(e.text);c.querySelector('.rc-live').hidden=true;c.scrollIntoView({behavior:'smooth'});return;}go('analyze');$('results').innerHTML='';const c=newResult(e.sym);c.dataset.raw=e.text;c.querySelector('.rc-out').innerHTML=md(e.text);c.querySelector('.rc-live').hidden=true;c.scrollIntoView({behavior:'smooth'});}
 const expOf=v=>planTime(v);
-function tagOf(e){const x=expOf(e.valid);if(!x)return'';return e.st=='open'&&x<Date.now()?' | <b style="color:var(--red)">EXPIRED: cancel if unfilled</b>':' | valid till '+locT(x,{weekday:'short',hour:'2-digit',minute:'2-digit'})+' SAST';}
+function tagOf(e){const x=expOf(e.valid);if(!x)return'';return e.st=='open'&&x<Date.now()?' | <b style="color:var(--red)">EXPIRED: cancel if unfilled</b>':' | valid till '+locT(x,{weekday:'short',hour:'2-digit',minute:'2-digit'})+' '+zlab(x);}
 
 
 // ---- data-only analysis (v32): structure text and app-drawn charts
@@ -1314,7 +1344,7 @@ async function lcLoad(force){
   try{const bars=await fetchTF(sym,LC.tf,force);if(sym!==LC.sym)return;LC.bars=bars;LC.at=Date.now();LC.off=Math.min(LC.off,Math.max(0,LC.bars.length-20));lcDraw();
     const ch=dayChange(LC.bars);
     if(ch){$('lcPx').textContent=f2(ch.px);$('lcChg').textContent=(ch.abs>=0?'+':'−')+Math.abs(ch.abs).toFixed(pxDec(ch.px))+' ('+(ch.pct>=0?'+':'−')+Math.abs(ch.pct).toFixed(2)+'%) today';$('lcChg').className='chg '+(ch.abs>=0?'up':'dn');tickSet(sym,ch.px,ch.pct);}
-    $('lcStat').textContent=`${LC.tf} · updated ${sastHM()} SAST`;}
+    $('lcStat').textContent=`${LC.tf} · updated ${ztHM()} ${zlab()}`;}
   catch(e){if(sym===LC.sym){LC.bars=[];lcDraw();$('lcPx').textContent='–';$('lcChg').textContent='';$('lcStat').textContent=String(e.message||e);}}
   renderChartSide();
 }
@@ -1424,7 +1454,7 @@ function renderAlerts(){
   const a=AL.get(),un=a.filter(x=>!x.read).length;
   $('bellDot').hidden=!un;$('bellDot').textContent=un>9?'9+':un;$('robotBadge').hidden=!un;$('robotBadge').textContent=un>9?'9+':un;
   const box=$('alertList');if(!box)return;
-  box.innerHTML=a.length?a.slice(0,30).map(x=>`<div class="alert ${x.side==='BUY'?'bull':x.side==='SELL'?'bear':''}"><div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline"><b>${esc(x.title)}</b><span class="hint" style="margin:0;white-space:nowrap">${locT(x.t,{weekday:'short',hour:'2-digit',minute:'2-digit'})} SAST</span></div>
+  box.innerHTML=a.length?a.slice(0,30).map(x=>`<div class="alert ${x.side==='BUY'?'bull':x.side==='SELL'?'bear':''}"><div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline"><b>${esc(x.title)}</b><span class="hint" style="margin:0;white-space:nowrap">${locT(x.t,{weekday:'short',hour:'2-digit',minute:'2-digit'})} ${zlab()}</span></div>
     <div style="font-size:13.5px;margin-top:2px">${esc(x.body)}</div>${x.sym?`<div class="acts" style="display:flex;gap:6px;margin-top:8px"><button class="sec" data-an="${esc(x.sym)}">Full analysis</button><button class="sec" data-ch="${esc(x.sym)}">Chart</button></div>`:''}</div>`).join(''):'<div class="empty">No alerts yet. Add pairs to the watchlist and keep the scanner on.</div>';
   box.querySelectorAll('[data-an]').forEach(b=>b.onclick=()=>{LC.sym=b.dataset.an;$('lcAnalyze').onclick();});
   box.querySelectorAll('[data-ch]').forEach(b=>b.onclick=()=>showOnChart(b.dataset.ch));
@@ -1501,8 +1531,8 @@ const PMQ={q:[],busy:false,
 async function reviewTrade(e,bars){
   const i=e.text?e.text.search(/^### *Final trade plan/mi):-1,plan=i>=0?e.text.slice(i,i+1600):`${e.dec} ${e.ord} entry ${e.entry}, stop ${e.sl}, TP1 ${e.tp1}, valid until ${e.valid}`;
   const out=e.st==='win'?(isLad(e)?`WIN: TP${e.hit} reached (${fR(rOf(e))})`:`WIN: TP1 hit (${fR(rOf(e))})`):'LOSS: stopped out (-1R)';
-  const tb=(bars||[]).map(b=>`${sast(b.t).slice(5)} ${f2(b.o)} ${f2(b.h)} ${f2(b.l)} ${f2(b.c)}`).join('\n');
-  const u=`SYMBOL ${e.sym}\nPLAN (made ${sast(e.id)} SAST):\n${plan}\n\nFINGERPRINT: ${JSON.stringify(e.f)}\n\nOUTCOME: ${out}. ${e.autoNote||''} MFE ${e.x.mfe}R, MAE ${e.x.mae}R, filled ${e.x.fillMin} min after the plan, held ${e.x.holdMin} min.\n\nHOURLY CANDLES, SAST (time open high low close), from 6 hours before the fill to the exit:\n${tb||'not available'}`;
+  const tb=(bars||[]).map(b=>`${zt(b.t).slice(5)} ${f2(b.o)} ${f2(b.h)} ${f2(b.l)} ${f2(b.c)}`).join('\n');
+  const u=`SYMBOL ${e.sym}\nPLAN (made ${zt(e.id)} ${zlab()}):\n${plan}\n\nFINGERPRINT: ${JSON.stringify(e.f)}\n\nOUTCOME: ${out}. ${e.autoNote||''} MFE ${e.x.mfe}R, MAE ${e.x.mae}R, filled ${e.x.fillMin} min after the plan, held ${e.x.holdMin} min.\n\nHOURLY CANDLES, ${zlab()} (time open high low close), from 6 hours before the fill to the exit:\n${tb||'not available'}`;
   try{const j=await haiku(PM_SYS,u);if(!j||!j.lesson)return;const a=LS.get();if(a.some(l=>l.id==e.id))return;
     a.unshift({id:e.id,t:Date.now(),sym:e.sym,side:e.f.side,setup:e.f.setup,reg:e.f.reg,res:e.st,verdict:String(j.verdict||'').toLowerCase().slice(0,12),applies:String(j.applies||'').slice(0,60),text:String(j.lesson).slice(0,240)});LS.set(a);renderLearn();}
   catch(err){}
@@ -1538,14 +1568,14 @@ async function scanPair(sym,mode){
   const tr=[...new Set(sig.map(x=>EVDetect.sigVerdict(x,sigList()).line).filter(Boolean))];
   const data=EVDetect.brief(sym,m15,h1,h4)+'\nEARLY-MOVE SIGNALS:\n'+(sig.length?sig.map(sigText).join('\n'):'none')+(tr.length?'\nPAST FOLLOW-THROUGH OF THESE SIGNAL TYPES on this trader\'s watchlist (1 ATR with the signal before 1 ATR against): '+tr.join(' '):'');
   if(mode==='session'){
-    let v=null;try{v=await haiku(SCREEN_SYS,`Session open screen. Current time ${sastNow()}.\n${data}`);}catch(e){return {sym,err:e.message};}
+    let v=null;try{v=await haiku(SCREEN_SYS,`Session open screen. Current time ${ztNow()}.\n${data}`);}catch(e){return {sym,err:e.message};}
     if(v&&v.opportunity==='yes'&&(+v.quality||0)>=3&&!recent(v.direction))pushAlert({kind:'session',sym,side:v.direction,title:`${sym}: possible ${v.direction} (${v.quality}/5)`,body:`${v.setup||''}. ${v.why||''} Trigger: ${v.trigger||'n/a'}. Wrong below/above ${v.invalidation!=null?f2(+v.invalidation):'n/a'}.`});
     return {sym,v,sig};
   }
   const sv=best?EVDetect.sigVerdict(best,sigList()):null;
   if(best&&best.score>=min&&!recent(best.side)&&sv&&sv.weak&&best.score<min+15){$('wlStat').textContent=`${sym}: skipped a ${best.tf} ${best.side} signal (score ${best.score}). ${sv.line} Signals of this kind need a score of ${min+15}+ to alert.`;return {sym,sig};}
   if(best&&best.score>=min&&!recent(best.side)){
-    let v=null;try{v=$('kAnthropic').value.trim()?await haiku(SCREEN_SYS,`An early-move signal just fired on a closed candle. Confirm or reject it. Current time ${sastNow()}.\n${data}`):null;}catch(e){v=null;}
+    let v=null;try{v=$('kAnthropic').value.trim()?await haiku(SCREEN_SYS,`An early-move signal just fired on a closed candle. Confirm or reject it. Current time ${ztNow()}.\n${data}`):null;}catch(e){v=null;}
     if(!v||(v.opportunity!=='no'&&(v.direction===best.side||v.direction==='NONE')))
       pushAlert({kind:'early',sym,side:best.side,score:best.score,title:`${sym}: early ${best.side} move (${best.tf}, score ${best.score})`,body:(sv&&sv.line?sv.line+' ':'')+(v?`${v.setup||best.patterns.join(' + ')}. ${v.why||''} Trigger: ${v.trigger||'n/a'}.`:best.why.join('; ')+'. (Not confirmed by Haiku: no Anthropic key.)')+` Origin ${f2(best.origin)}, stop idea ${f2(best.stopIdea)}.`});
   }
@@ -1560,10 +1590,10 @@ async function scanAll(mode){
     try{const r=await scanPair(s,mode);if(r.err)errs.push(s+': '+r.err);else ok++;}catch(e){errs.push(s+': '+(e.message||e));}
   }
   scanning=false;store.set('ca_lastScan',String(Date.now()));
-  st.textContent=`Last ${mode==='session'?'session screen':'scan'} ${sastHM()} SAST: ${ok} pair${ok===1?'':'s'}${errs.length?'. '+errs.join('; '):''}`;
+  st.textContent=`Last ${mode==='session'?'session screen':'scan'} ${ztHM()} ${zlab()}: ${ok} pair${ok===1?'':'s'}${errs.length?'. '+errs.join('; '):''}`;
   renderChartSide();
 }
-function nextOpenText(){const now=Date.now(),n=EVDetect.sessionOpens(now).find(s=>s.t>now);if(!n)return '';const m=Math.round((n.t-now)/60000);return `Next session open: ${n.name} at ${sastHM(n.t)} SAST (in ${m>=60?Math.floor(m/60)+'h ':''}${m%60}m).`;}
+function nextOpenText(){const now=Date.now(),n=EVDetect.sessionOpens(now).find(s=>s.t>now);if(!n)return '';const m=Math.round((n.t-now)/60000);return `Next session open: ${n.name} at ${ztHM(n.t)} ${zlab()} (in ${m>=60?Math.floor(m/60)+'h ':''}${m%60}m).`;}
 // one scheduler for the scanner and the auto-trader, every 30 seconds while the app is open
 const WLS={get:()=>{try{return {sess:true,early:true,notify:false,min:'60',...JSON.parse(store.get('ca_wlset')||'{}')};}catch(e){return {sess:true,early:true,notify:false,min:'60'};}},set:o=>store.set('ca_wlset',JSON.stringify(o))};
 async function robotTick(){
@@ -1595,7 +1625,7 @@ async function syncWatchlist(){
   const repo=ghRepo(),url=`https://api.github.com/repos/${repo}/contents/watchlist.json`,H={Authorization:'Bearer '+tok,Accept:'application/vnd.github+json'};
   st.textContent='Sending…';
   try{let sha;const g=await fetch(url,{headers:H});if(g.ok)sha=(await g.json()).sha;
-    const cfg=WLS.get(),body={pairs:WL.get(),minScore:+cfg.min||60,sessionScreen:!!cfg.sess,earlyDetection:!!cfg.early,model:($('mHaiku').value.trim()||'claude-haiku-5-5'),updated:new Date().toISOString()};
+    const cfg=WLS.get(),body={pairs:WL.get(),minScore:+cfg.min||60,sessionScreen:!!cfg.sess,earlyDetection:!!cfg.early,model:($('mHaiku').value.trim()||'claude-haiku-5-5'),timeZone:TZname(),country:zone()[0],updated:new Date().toISOString()};
     const r=await fetch(url,{method:'PUT',headers:H,body:JSON.stringify({message:'Update watchlist from the app',content:btoa(unescape(encodeURIComponent(JSON.stringify(body,null,2)+'\n'))),...(sha?{sha}:{})})});
     const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.message||('HTTP '+r.status));
     st.textContent=`Sent ${body.pairs.length} pairs to ${repo}. The background scanner uses them from its next hourly run.`;}
@@ -1648,7 +1678,7 @@ async function botCheck(force){
   botBusy=false;PMQ.run();
   for(const c of changes){const side=sideOf(c.e)>0?'BUY':'SELL';pushAlert({kind:'trade',sym:c.e.sym,side,title:`Robot: ${c.e.sym} ${side} ${c.msg}`,body:`Entry ${c.e.entry.split('|')[0].trim()}, stop ${c.e.sl.split('|')[0].trim()}, TP1 ${String(c.e.tp1).split('|')[0].trim()}.`});}
   if(changes.length)renderHist();
-  $('botStat').textContent=`Robot checked ${sastHM()} SAST. Twelve Data credits used today: ${tdUse()} of 800.`;
+  $('botStat').textContent=`Robot checked ${ztHM()} ${zlab()}. Twelve Data credits used today: ${tdUse()} of 800.`;
   renderBot();renderChartSide();if(!$('v-chart').hidden&&LC.bars.length)lcDraw();
 }
 function renderBot(){
@@ -1690,7 +1720,7 @@ function renderChartSide(){
   const S=LC.sym,a=HS.get().filter(e=>e.bot&&e.sym===S).slice(0,5),risk=BOTC.get().bal*BOTC.get().risk/100;
   $('lcBot').innerHTML=a.length?a.map(e=>tradeRow(e,risk)).join(''):'<div class="empty">No robot trades on this market.</div>';wireTradeRows($('lcBot'));
   const g=SG.get().filter(x=>x.sym===S).slice(0,6);
-  $('lcSig').innerHTML=g.length?g.map(x=>`<div><div style="display:flex;justify-content:space-between;gap:8px"><b>${x.side} · ${x.tf} · ${x.patterns.join(' + ')}</b><span class="pill ${x.score>=70?'brass':''}">${x.score}</span></div><div class="hint" style="margin-top:2px">${esc(x.why.slice(0,2).join('; '))}. ${sast(x.at).slice(5)} SAST</div></div>`).join(''):`<div class="empty">${WL.get().includes(S)?'No early-move signals yet on this market.':'Add this market to your watchlist and the robot watches it for early moves.'}</div>`;
+  $('lcSig').innerHTML=g.length?g.map(x=>`<div><div style="display:flex;justify-content:space-between;gap:8px"><b>${x.side} · ${x.tf} · ${x.patterns.join(' + ')}</b><span class="pill ${x.score>=70?'brass':''}">${x.score}</span></div><div class="hint" style="margin-top:2px">${esc(x.why.slice(0,2).join('; '))}. ${zt(x.at).slice(5)} ${zlab()}</div></div>`).join(''):`<div class="empty">${WL.get().includes(S)?'No early-move signals yet on this market.':'Add this market to your watchlist and the robot watches it for early moves.'}</div>`;
 }
 
 // ---- plan check card (v30)
@@ -1705,7 +1735,7 @@ function addCheck(card,text,p){
       for(const cur of L2){const b=before[cur]||0,af=after[cur]||0;if(Math.abs(af)>=3&&Math.abs(af)>Math.abs(b))c.items.push({lvl:'warn',msg:`This takes your ${cur} exposure to ${af>0?'+':''}${af} units (${af>0?'long':'short'}) across open plans: these trades are one bet, so cut the size.`});else if(Math.abs(af)>Math.abs(b)&&Math.abs(b)>=1)c.items.push({lvl:'ok',msg:`Adds to an existing ${cur} position: ${b>0?'+':''}${b} → ${af>0?'+':''}${af} units.`});}
       const opp=pl.filter(x=>normSym(x.e.sym)===normSym(p.sym)&&(/SELL/i.test(x.e.dec)?-1:1)!==c.side);if(opp.length)c.items.push({lvl:'warn',msg:`You have ${opp.length} open ${opp.length>1?'plans':'plan'} on ${String(p.sym).toUpperCase()} in the other direction.`});}catch(e){}
     try{const cal=p.cal||null;if(cal){const vm=String(g['valid until']||'').match(/(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})/),until=vm?planTime(g['valid until']):null;
-      const cl=calClash(cal,now,until);if(cl.length)c.items.push({lvl:'warn',msg:`High-impact news before this order expires: ${cl.slice(0,3).map(x=>`${x.country} ${x.title} at ${sastHM(x.t)} SAST${x.t-now>864e5?' on '+sast(x.t).slice(5,10):''}`).join('; ')}. Avoid holding through it or tighten the plan.`});}}catch(e){}
+      const cl=calClash(cal,now,until);if(cl.length)c.items.push({lvl:'warn',msg:`High-impact news before this order expires: ${cl.slice(0,3).map(x=>`${x.country} ${x.title} at ${ztHM(x.t)} ${zlab()}${x.t-now>864e5?' on '+zt(x.t).slice(5,10):''}`).join('; ')}. Avoid holding through it or tighten the plan.`});}}catch(e){}
     const d=document.createElement('div'); d.className='rc-check';
     d.style.cssText='margin-top:12px;padding:10px 12px;border:1px solid var(--line,#2a303c);border-radius:10px;font-size:13px';
     const ic={bad:'⛔',warn:'⚠️',ok:'✅'};
@@ -1758,11 +1788,11 @@ async function autoResolve(force){
     await sleep(1500);
   }
   resolving=false; renderHist(); PMQ.run(); shadowCheck();
-  if(el) el.textContent=`Last checked ${sastHM()} SAST: ${done} plan${done===1?'':'s'} settled from the candles.`+(fails.length?` Could not check: ${fails.join(', ')}.`:'');
+  if(el) el.textContent=`Last checked ${ztHM()} ${zlab()}: ${done} plan${done===1?'':'s'} settled from the candles.`+(fails.length?` Could not check: ${fails.join(', ')}.`:'');
 }
 function renderHist(){const a=HS.get(),cl=a.filter(e=>e.st=='win'||e.st=='loss'),w=cl.filter(e=>e.st=='win').length,pr=cl.filter(e=>e.prob!=null);
 $('stats').textContent=cl.length?`Closed ${cl.length}: ${w} wins, ${cl.length-w} losses, win rate ${(w/cl.length*100).toFixed(0)}%`+(pr.length?` | Edgeview's stated average probability ${(pr.reduce((t,e)=>t+e.prob,0)/pr.length).toFixed(0)}%`:''):'No closed trades yet. Open plans are checked against the candles automatically; you can also mark Win or Loss yourself.';
-$('hist').innerHTML=a.map(e=>`<div class="hi"><b>${esc(e.sym)} ${esc(e.dec)}</b> ${esc(e.ord)}${e.ord==='WEEKLY OUTLOOK'?'':' @ '+esc(e.entry)}<br><small>${sast(e.id)} SAST${e.ord==='WEEKLY OUTLOOK'?'':' | SL '+esc(e.sl)+' | TP1 '+esc(e.tp1)}${e.prob!=null?' | '+e.prob+'%':''} | <b>${e.st.toUpperCase()}</b>${isLad(e)&&e.hit!=null?' | '+(e.hit?'TP'+e.hit+' of '+e.tps.length+' hit':'stopped')+' | '+fR(rOf(e)):''}${tagOf(e)}${e.auto==='candles'?' | <i>auto: '+esc(e.autoNote||'from candles')+'</i>':''}${e.st==='open'&&e.run?' | <i>'+esc(String(e.run.note||(e.run.filled?'Filled, still running.':'Not filled yet.')))+'</i>':''}</small><div class="row" style="margin-top:6px;flex-wrap:wrap"><button class="sec" onclick="viewH(${e.id})">View</button><button class="sec" onclick="discussH(${e.id})">Discuss</button>${hitBtns(e)}<button class="sec" onclick="setSt(${e.id},'skip')">Skipped</button>${e.ord!=='WEEKLY OUTLOOK'&&e.st!=='open'?`<button class="sec" onclick="copyResult(this,${e.id})">Post result</button>`:''}<button class="sec" onclick="delH(${e.id})">Delete</button></div></div>`).join('')||'<small>Nothing saved yet. Every analysis is saved here automatically.</small>';
+$('hist').innerHTML=a.map(e=>`<div class="hi"><b>${esc(e.sym)} ${esc(e.dec)}</b> ${esc(e.ord)}${e.ord==='WEEKLY OUTLOOK'?'':' @ '+esc(e.entry)}<br><small>${zt(e.id)} ${zlab()}${e.ord==='WEEKLY OUTLOOK'?'':' | SL '+esc(e.sl)+' | TP1 '+esc(e.tp1)}${e.prob!=null?' | '+e.prob+'%':''} | <b>${e.st.toUpperCase()}</b>${isLad(e)&&e.hit!=null?' | '+(e.hit?'TP'+e.hit+' of '+e.tps.length+' hit':'stopped')+' | '+fR(rOf(e)):''}${tagOf(e)}${e.auto==='candles'?' | <i>auto: '+esc(e.autoNote||'from candles')+'</i>':''}${e.st==='open'&&e.run?' | <i>'+esc(String(e.run.note||(e.run.filled?'Filled, still running.':'Not filled yet.')))+'</i>':''}</small><div class="row" style="margin-top:6px;flex-wrap:wrap"><button class="sec" onclick="viewH(${e.id})">View</button><button class="sec" onclick="discussH(${e.id})">Discuss</button>${hitBtns(e)}<button class="sec" onclick="setSt(${e.id},'skip')">Skipped</button>${e.ord!=='WEEKLY OUTLOOK'&&e.st!=='open'?`<button class="sec" onclick="copyResult(this,${e.id})">Post result</button>`:''}<button class="sec" onclick="delH(${e.id})">Delete</button></div></div>`).join('')||'<small>Nothing saved yet. Every analysis is saved here automatically.</small>';
 $('calib').innerHTML=calibHTML(a);renderLearn();}
 $('resolveNow').onclick=()=>autoResolve(true);$('learnRev').onclick=reviewBacklog;renderSigStats();$('pmOn').checked=store.get('ev_pmOff')!=='1';$('pmOn').onchange=()=>store.set('ev_pmOff',$('pmOn').checked?'0':'1');setTimeout(()=>autoResolve(false),4000);
 $('recapW').onclick=function(){copyRecap(this,7);};$('recapM').onclick=function(){copyRecap(this,30);};
@@ -1844,7 +1874,7 @@ async function syncRun(mode){if(syncBusy)return;syncBusy=true;const st=$('syncSt
     if(cur&&cur.box&&cur.box.ct){let d;try{d=await openData(cur.box,c.pass);}catch(e){throw new Error('the backup could not be decrypted: wrong passphrase?');}res=applyRemote(d);}
     let tx=0;if(mode!=='pull'){await ghPut(c,SYNC_PATH,await sealData(syncPayload(),c.pass),cur&&cur.sha,'Edgeview encrypted backup');tx=await syncTexts(c).catch(()=>0);await syncImgs(c).catch(()=>0);}
     store.set('ev_syncAt',String(Date.now()));store.set('ev_syncSig',syncSig());
-    st.textContent=`Synced ${sastHM()} SAST with ${c.repo} (${SYNC_BR} branch)`+(res.added?`, ${res.added} new journal entr${res.added===1?'y':'ies'} from another device`:'')+(res.kv?`, ${res.kv} setting${res.kv===1?'':'s'} updated`:'')+(tx?`, ${tx} month${tx===1?'':'s'} of analyses archived`:'')+'.';
+    st.textContent=`Synced ${ztHM()} ${zlab()} with ${c.repo} (${SYNC_BR} branch)`+(res.added?`, ${res.added} new journal entr${res.added===1?'y':'ies'} from another device`:'')+(res.kv?`, ${res.kv} setting${res.kv===1?'':'s'} updated`:'')+(tx?`, ${tx} month${tx===1?'':'s'} of analyses archived`:'')+'.';
     if(res.added){renderHist();renderBot();}renderLearn();renderSigStats();
     if(res.kv){if(syncFirst&&performance.now()<30000){location.reload();return;}if(typeof chatRender==='function')chatRender();
       st.innerHTML+=' <button class="sec" id="syncReload" style="padding:2px 8px">Reload to apply</button>';$('syncReload').onclick=()=>location.reload();}}
@@ -1925,7 +1955,7 @@ function chatHead(){const c=chatGet(chatCur());if(!c)return;$('chatTitle').textC
   $('chatSub').textContent=(c.sym?(isSynth(c.sym)?'Deriv synthetic':'Market')+px:'General chat: goals, style, account')+(CTX?' · discussing an analysis':'');}
 function chatListRender(){const q=$('chatSearch').value.trim().toLowerCase(),msgs=CH.get(),last={};for(const m of msgs)last[m.c]=m;
   const list=chatsLive().filter(c=>!q||(c.title||symTitle(c.sym)).toLowerCase().includes(q)||(c.sym||'').toLowerCase().includes(q)||msgs.some(m=>m.c===c.id&&(m.x||'').toLowerCase().includes(q)));
-  const when=t=>{const d=new Date(t),n=new Date();return d.toDateString()===n.toDateString()?d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',timeZone:TZ}):n-d<6*864e5?d.toLocaleDateString([],{weekday:'short',timeZone:TZ}):d.toLocaleDateString([],{day:'numeric',month:'short',timeZone:TZ});};
+  const when=t=>{const d=new Date(t),n=new Date();return d.toDateString()===n.toDateString()?d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',timeZone:TZname()}):n-d<6*864e5?d.toLocaleDateString([],{weekday:'short',timeZone:TZname()}):d.toLocaleDateString([],{day:'numeric',month:'short',timeZone:TZname()});};
   $('chatList').innerHTML=list.length?list.map(c=>{const l=last[c.id],ti=c.title||symTitle(c.sym),av=c.sym?String(c.sym).replace(/[^A-Z0-9]/gi,'').slice(0,4):'✦';
       return `<div class="citem" data-ci="${esc(c.id)}"><div class="cav">${esc(av)}</div><div class="ct"><b>${esc(ti)}</b><small>${l?esc((l.r==='u'?'You: ':'')+String(l.x||(l.imgs&&l.imgs.length?'📷 Screenshot':'')).replace(/\s+/g,' ').slice(0,90)):'No messages yet'}</small></div><time>${when(l?l.t:c.t)}</time></div>`;}).join(''):
     `<div class="card hint" style="text-align:center;padding:28px 16px">${q?'No chat matches.':'No chats yet. Tap <b>＋ New chat</b> and pick the pair you want to talk about, or tap Discuss under any analysis.'}</div>`;
@@ -1960,7 +1990,7 @@ $('chatIn').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&matc
 $('chatChart').onclick=()=>{$('chartTfs').hidden=!$('chartTfs').hidden;};
 $('chartTfs').querySelectorAll('[data-tf]').forEach(b=>b.onclick=async()=>{$('chartTfs').hidden=true;const c=chatGet(chatCur()),sym=(c&&c.sym)||LC.sym,tf=b.dataset.tf;
   $('chatStat').textContent=`Drawing ${sym} ${tf}…`;try{const bars=await fetchTF(sym,tf,false),cv=document.createElement('canvas');cv.width=1200;cv.height=720;
-    drawCandles(cv,bars,{title:`${sym} ${tf} · ${sast()} SAST`,emas:EMAS,count:120,end:bars.length,lines:chartLines(sym),zones:zonesFor(sym),marks:botMarks(sym)});
+    drawCandles(cv,bars,{title:`${sym} ${tf} · ${zt()} ${zlab()}`,emas:EMAS,count:120,end:bars.length,lines:chartLines(sym),zones:zonesFor(sym),marks:botMarks(sym)});
     const url=cv.toDataURL('image/jpeg',0.85);ATT.push({url,b64:url.split(',')[1],chart:`${sym} ${tf}`});renderAtt();$('chatStat').textContent='';}
   catch(e){$('chatStat').textContent='Could not draw the chart: '+(e.message||e);}});
 // markdown for coach replies: headings, lists, tables, bold, italics, code
@@ -1989,7 +2019,7 @@ function chatRender(){const cur=chatCur(),a=CH.get().filter(m=>m.c===cur),log=$(
   log.querySelectorAll('[data-cp]').forEach(b=>b.onclick=async()=>{const m=CH.get().find(x=>x.id===b.dataset.cp);if(m){const ok=await copyText(m.x||'');b.textContent=ok?'Copied':'Copy failed';setTimeout(()=>b.textContent='Copy',1500);}});
   log.querySelectorAll('img[data-k]').forEach(async im=>{const b=await chatImg(im.dataset.k);if(b){im.src='data:image/jpeg;base64,'+b;im.onclick=()=>{const w=document.createElement('div');w.style.cssText='position:fixed;inset:0;z-index:99;background:rgba(0,0,0,.9);display:flex;align-items:center;justify-content:center';w.innerHTML=`<img src="${im.src}" style="max-width:100%;max-height:100%">`;w.onclick=()=>w.remove();document.body.appendChild(w);};}
     else im.replaceWith(Object.assign(document.createElement('span'),{className:'chip',textContent:'chart not synced yet'}));});
-  $('chatCtx').hidden=!CTX;if(CTX)$('chatCtx').innerHTML=`📎 Discussing the ${esc(CTX.sym)} analysis${CTX.id?' from '+sast(CTX.id)+' SAST':''} <button class="cbtn" style="height:24px;padding:0 8px" id="ctxX">✕</button>`;
+  $('chatCtx').hidden=!CTX;if(CTX)$('chatCtx').innerHTML=`📎 Discussing the ${esc(CTX.sym)} analysis${CTX.id?' from '+zt(CTX.id)+' '+zlab():''} <button class="cbtn" style="height:24px;padding:0 8px" id="ctxX">✕</button>`;
   if(CTX)$('ctxX').onclick=()=>{CTX=null;chatPut(cur,{ctx:null});chatRender();chatHead();};
   log.scrollTop=log.scrollHeight;}
 // what the coach knows about the pair of this chat: live candles and structure, and every saved analysis of it
@@ -1998,8 +2028,8 @@ async function pairContext(sym){if(!sym)return '';const S=String(sym).toUpperCas
     const px=(TS.last[S]||{}).px||(h1.length?h1[h1.length-1].c:null);if(px)out.push(`PRICE NOW ${f2(px)}`);}catch(e){out.push('Live candles unavailable: '+(e.message||e));}
   if(isSynth(S))out.push(synthBrief(S));
   const an=HS.get().filter(e=>String(e.sym).toUpperCase()===S&&e.ord!=='WEEKLY OUTLOOK');
-  if(an.length)out.push(`SAVED ANALYSES AND TRADES OF ${S} (newest first):\n`+an.slice(0,8).map(e=>`- ${sast(e.id)} SAST ${e.dec} ${e.ord} entry ${e.entry} SL ${e.sl} TP1 ${e.tp1}${e.prob!=null?' p='+e.prob+'%':''} -> ${e.st}${e.st==='win'||e.st==='loss'?' '+fR(rOf(e)):''}${e.bot?' (robot)':''}`).join('\n'));
-  const last=an.find(e=>e.text)||null;if(last&&!(CTX&&CTX.id===last.id)){const i=last.text.search(/^### *Final trade plan/mi);out.push(`LATEST ${S} ANALYSIS (${sast(last.id)} SAST), final plan:\n`+(i>=0?last.text.slice(i,i+2500):last.text.slice(0,2500)));}
+  if(an.length)out.push(`SAVED ANALYSES AND TRADES OF ${S} (newest first):\n`+an.slice(0,8).map(e=>`- ${zt(e.id)} ${zlab()} ${e.dec} ${e.ord} entry ${e.entry} SL ${e.sl} TP1 ${e.tp1}${e.prob!=null?' p='+e.prob+'%':''} -> ${e.st}${e.st==='win'||e.st==='loss'?' '+fR(rOf(e)):''}${e.bot?' (robot)':''}`).join('\n'));
+  const last=an.find(e=>e.text)||null;if(last&&!(CTX&&CTX.id===last.id)){const i=last.text.search(/^### *Final trade plan/mi);out.push(`LATEST ${S} ANALYSIS (${zt(last.id)} ${zlab()}), final plan:\n`+(i>=0?last.text.slice(i,i+2500):last.text.slice(0,2500)));}
   return out.join('\n\n');}
 let chatBusy=false;
 async function chatSend(o={}){if(chatBusy)return;const txt=$('chatIn').value.trim();if(!txt&&!ATT.length)return;const cur=chatCur();if(!cur)return;
@@ -2034,18 +2064,18 @@ Memory updates (the app reads these tags and hides them from the user; never men
 - When the trader sets or changes a goal, end your reply with <goals_update>{"day":"...","week":"..."}</goals_update> with only the fields that changed.
 - The live robot trades the trader's MetaTrader account under a mandate (see LIVE ACCOUNT). When the trader asks to change how it runs the account, end your reply with <mandate_update>{only the changed fields among: on, risk, target, maxDD, dayLoss, maxOpen, maxDay, minRR, maxLot, pairs, sessions, tpMode, be, notes}</mandate_update>. The app shows it to the trader to confirm. Never switch on real-money trading; that is only done by the trader in the Robot tab. Push back on changes that raise the risk of breaching the limits.`;
 function coachContext(){const a=HS.get(),g=goalsNow(),L=[],now=Date.now();
-  L.push(`Now: ${sastNow()}. The user is in South Africa: write every time you mention in SAST (UTC+2, no daylight saving).`);
+  L.push(`Now: ${ztNow()}.`);
   try{L.push(`Account: XM ${(BRK.get().acc||'standard')} account in ${$('acct').value||'ZAR'}; balance in the position-size tool ${$('cBal').value||'not set'}, risk per trade ${$('cRisk').value||'?'}%. Robot paper account balance ${BOTC.get().bal}, risk ${BOTC.get().risk}% per trade.`);}catch(e){}
   L.push(`TRADER'S STYLE PROFILE (current):\n${STYLE.get().trim()||'(empty: learn it)'}`);
   L.push(`GOALS: today: ${g.day||'none set'}; this week: ${g.week||'none set'}.${g.oldDay?' Last goal from a previous day: '+g.oldDay+'.':''} Progress: ${progText()}.`);
   const tr=a.filter(e=>e.ord!=='WEEKLY OUTLOOK'),cl=tr.filter(e=>(e.st==='win'||e.st==='loss')&&now-e.id<30*864e5),w=cl.filter(e=>e.st==='win').length;
   L.push(`JOURNAL, last 30 days: ${cl.length} closed, ${w} won${cl.length?' ('+Math.round(w/cl.length*100)+'%)':''}, total ${fR(cl.reduce((s,e)=>s+(rOf(e)||0),0))}.`);
-  L.push('RECENT ANALYSES AND TRADES (newest first):\n'+(tr.slice(0,14).map(e=>`- ${sast(e.id)} SAST ${e.sym} ${e.dec} ${e.ord} entry ${e.entry} SL ${e.sl} TP1 ${e.tp1}${e.prob!=null?' p='+e.prob+'%':''} -> ${e.st}${e.st==='win'||e.st==='loss'?' '+fR(rOf(e)):''}${e.bot?' (robot)':''}`).join('\n')||'none yet'));
+  L.push('RECENT ANALYSES AND TRADES (newest first):\n'+(tr.slice(0,14).map(e=>`- ${zt(e.id)} ${zlab()} ${e.sym} ${e.dec} ${e.ord} entry ${e.entry} SL ${e.sl} TP1 ${e.tp1}${e.prob!=null?' p='+e.prob+'%':''} -> ${e.st}${e.st==='win'||e.st==='loss'?' '+fR(rOf(e)):''}${e.bot?' (robot)':''}`).join('\n')||'none yet'));
   const ls=LS.get().slice(0,8);if(ls.length)L.push('LESSONS FROM CLOSED TRADES:\n'+ls.map(l=>`- ${l.sym} ${l.res}: ${l.text}`).join('\n'));
-  const last=a.find(e=>e.text&&e.ord!=='WEEKLY OUTLOOK');if(last&&!(CTX&&CTX.id===last.id)){const i=last.text.search(/^### *Final trade plan/mi);L.push(`LATEST ANALYSIS (${last.sym}, ${sast(last.id)} SAST), final plan:\n`+(i>=0?last.text.slice(i,i+2500):last.text.slice(0,2500)));}
+  const last=a.find(e=>e.text&&e.ord!=='WEEKLY OUTLOOK');if(last&&!(CTX&&CTX.id===last.id)){const i=last.text.search(/^### *Final trade plan/mi);L.push(`LATEST ANALYSIS (${last.sym}, ${zt(last.id)} ${zlab()}), final plan:\n`+(i>=0?last.text.slice(i,i+2500):last.text.slice(0,2500)));}
   try{const M=MANDATE.get(),S=LST;L.push(`LIVE ACCOUNT MANDATE: ${M.on?'trading on':'paused'}; pairs ${M.pairs.join(', ')}; risk ${M.risk}% a trade; target +${M.target}%; max drawdown ${M.maxDD}%; daily loss ${M.dayLoss}%; max ${M.maxOpen} open, ${M.maxDay} a day; min R:R ${M.minRR}; sessions ${M.sessions.join(', ')}; take profit ${M.tpMode}; break-even ${M.be?'on':'off'}; real money ${M.allowReal?'allowed':'not allowed'}; instructions: ${M.notes||'none'}`);
-    if(S&&S.acct)L.push(`LIVE ACCOUNT STATE (robot run ${Math.round((Date.now()-S.at)/60000)} min ago): ${S.acct.real?'REAL':'DEMO'} ${S.acct.broker||''}, balance ${S.acct.balance} ${S.acct.currency}, equity ${S.acct.equity}; challenge ${S.ch?S.ch.status:'not started'}${S.lim?`, gain ${S.lim.gain.toFixed(2)}%, drawdown used ${S.lim.ddUsed.toFixed(2)}%, today's loss used ${S.lim.dayUsed.toFixed(2)}%`:''}${S.idle?'; not trading: '+S.idle:''}\nOpen: ${(S.pos||[]).map(p=>`${p.sym} ${/SELL/.test(p.type)?'SELL':'BUY'} ${p.vol} @ ${p.open} SL ${p.sl} TP ${p.tp} P/L ${p.pl}`).join('; ')||'none'}\nRobot log: ${(S.log||[]).slice(0,8).map(x=>sast(x.t).slice(5)+' SAST '+x.msg).join(' | ')}`);}catch(e){}
-  if(CTX)L.push(`ANALYSIS THE USER WANTS TO DISCUSS (${CTX.sym}${CTX.id?', '+sast(CTX.id)+' SAST':''}), full text:\n${CTX.text}`);
+    if(S&&S.acct)L.push(`LIVE ACCOUNT STATE (robot run ${Math.round((Date.now()-S.at)/60000)} min ago): ${S.acct.real?'REAL':'DEMO'} ${S.acct.broker||''}, balance ${S.acct.balance} ${S.acct.currency}, equity ${S.acct.equity}; challenge ${S.ch?S.ch.status:'not started'}${S.lim?`, gain ${S.lim.gain.toFixed(2)}%, drawdown used ${S.lim.ddUsed.toFixed(2)}%, today's loss used ${S.lim.dayUsed.toFixed(2)}%`:''}${S.idle?'; not trading: '+S.idle:''}\nOpen: ${(S.pos||[]).map(p=>`${p.sym} ${/SELL/.test(p.type)?'SELL':'BUY'} ${p.vol} @ ${p.open} SL ${p.sl} TP ${p.tp} P/L ${p.pl}`).join('; ')||'none'}\nRobot log: ${(S.log||[]).slice(0,8).map(x=>zt(x.t).slice(5)+' '+x.msg).join(' | ')}`);}catch(e){}
+  if(CTX)L.push(`ANALYSIS THE USER WANTS TO DISCUSS (${CTX.sym}${CTX.id?', '+zt(CTX.id)+' '+zlab():''}), full text:\n${CTX.text}`);
   return L.join('\n\n');}
 async function chatStream(ak,system,messages,onText){const mdl=$('model').value.trim()||'claude-sonnet-5-5';
   const send=v=>fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':ak,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
@@ -2181,11 +2211,11 @@ async function planCard(btn){const card=btn&&btn.closest('.res'),sym=card?card.d
 const c=document.createElement('canvas');c.width=1080;c.height=1350;const x=c.getContext('2d'),F='sans-serif';
 x.fillStyle='#0b0f13';x.fillRect(0,0,1080,1350);x.fillStyle='#11171d';x.fillRect(40,40,1000,1270);x.fillStyle='#d9a441';x.fillRect(40,40,1000,10);
 const dec=g.decision.toUpperCase(),col=dec.includes('BUY')?'#3cc08e':dec.includes('SELL')?'#ea6259':'#8b94a5',T=(t,px,y,c2,b)=>{x.fillStyle=c2;x.font=(b?'bold ':'')+px+'px '+F;x.fillText(t,90,y);};
-T('EDGEVIEW',46,125,'#d9a441',1);T(sast()+' SAST',30,175,'#8b94a5');
+T('EDGEVIEW',46,125,'#d9a441',1);T(zt()+' '+zlab(),30,175,'#8b94a5');
 T((sym||'').toUpperCase(),96,300,'#ffffff',1);T(dec+(g.order?'  ·  '+g.order.toUpperCase():''),58,390,col,1);
 const lad=['tp3','tp4','tp5','tp6'].map(k=>g[k]?String(g[k]).split('|')[0].trim():'').filter(Boolean);
 const rows=[['Entry',g.entry],['Entry 2',/^none/i.test(g['entry 2']||'')?'':g['entry 2']],['Stop loss',g['stop loss']],['TP1',g.tp1],['TP2',g.tp2],...(lad.length?[['TP3 to TP'+(2+lad.length),lad.join('  ·  ')]]:[]),['Probability',g.probability],['Valid until',g['valid until']]].filter(r=>r[1]);
-const gap=rows.length>7?88:105;let y=500;for(const [k,v] of rows){T(k,34,y,'#8b94a5');let tx=v.split('|')[0].trim(),sz=50,mx=34;if(k==='Valid until'){const m=tx.match(/\d{4}-\d\d-\d\d[ T]\d{1,2}:\d\d\s*(SAST|UTC)/);if(m)tx=m[0];}if(k.startsWith('TP3')){sz=36;mx=70;}T(tx.slice(0,mx),sz,y+58,'#e6e9ef',1);y+=gap;}
+const gap=rows.length>7?88:105;let y=500;for(const [k,v] of rows){T(k,34,y,'#8b94a5');let tx=v.split('|')[0].trim(),sz=50,mx=34;if(k==='Valid until'){const m=tx.match(/\d{4}-\d\d-\d\d[ T]\d{1,2}:\d\d\s*([A-Z]{2,5}([+-]\d{1,2}(:\d\d)?)?)?/);if(m)tx=m[0];}if(k.startsWith('TP3')){sz=36;mx=70;}T(tx.slice(0,mx),sz,y+58,'#e6e9ef',1);y+=gap;}
 T('Analysis only, not financial advice. Trade at your own risk.',26,1270,'#8b94a5');
 c.toBlob(async b=>{const f=new File([b],'edgeview-plan.png',{type:'image/png'});
 if(navigator.canShare&&navigator.canShare({files:[f]})){try{await navigator.share({files:[f],title:'Edgeview plan'});return;}catch(e){if(e.name==='AbortError')return;}}
@@ -2228,7 +2258,7 @@ function weekReport(sym,daily,weekly,inter,crypto,price,now){
   const O=+wk[0].open,C=+wk[wk.length-1].close,H=Math.max(...wk.map(x=>+x.high)),L=Math.min(...wk.map(x=>+x.low));
   const px=price||C, pre=daily.find(x=>trade(x)&&ds(x)<ws), prevC=pre?+pre.close:null;
   const chg=prevC?(C-prevC)/prevC*100:(C-O)/O*100, pos=H>L?(C-L)/(H-L):0.5;
-  let t=`WEEKEND ENGINE DATA for ${sym} (week starting Monday ${ws}; status: ${done?'COMPLETED, market closed':'IN PROGRESS, partial week, outlook is preliminary'}${crypto?'; crypto trades 24/7 and its week ends Monday 02:00 SAST':''})`;
+  let t=`WEEKEND ENGINE DATA for ${sym} (week starting Monday ${ws}; status: ${done?'COMPLETED, market closed':'IN PROGRESS, partial week, outlook is preliminary'}${crypto?'; crypto trades 24/7 and its week ends Monday 00:00 UTC ('+ztHM(Date.UTC(2026,0,5))+' '+zlab()+')':''})`;
   t+=`\nLast price ${f2(px)}. Week: open ${f2(O)}, high ${f2(H)}, low ${f2(L)}, close ${f2(C)}, change ${chg>=0?'+':''}${chg.toFixed(2)}% vs previous close${prevC?' ('+f2(prevC)+')':''}, range ${f2(H-L)}, closed at ${(pos*100).toFixed(0)}% of the range (${pos>0.66?'near the high':pos<0.34?'near the low':'mid-range'})`;
   t+='\nDay by day:';
   let big=null;
@@ -2263,7 +2293,7 @@ function weekReport(sym,daily,weekly,inter,crypto,price,now){
 function parseWeekFinal(raw){const i=raw.search(/^### *Final weekly plan/mi);if(i<0)return{};const g={};for(const ln of raw.slice(i).split('\n').slice(1)){const m=ln.replace(/\*\*/g,'').match(/^\s*[-*•]?\s*([A-Za-z0-9 \/]+?)\s*:\s*(.+)$/);if(m){const k=m[1].trim().toLowerCase();if(!g[k])g[k]=m[2].trim();}}return g;}
 function buildWeekTG(raw,sym){const g=parseWeekFinal(raw);if(!g['weekly bias'])return raw.trim();
   const b=g['weekly bias'].toUpperCase(),ic=b.includes('BULL')?'🟢':b.includes('BEAR')?'🔴':'⚪';
-  let o=`📅 ${sym.toUpperCase()} WEEKLY OUTLOOK\n🕒 ${sast().slice(0,10)} (week ahead)\n\n${ic} ${b}\n`;
+  let o=`📅 ${sym.toUpperCase()} WEEKLY OUTLOOK\n🕒 ${zt().slice(0,10)} (week ahead)\n\n${ic} ${b}\n`;
   for(const [k,l] of [['scenarios','📊 Scenarios'],['key levels','📍 Key levels'],['buy limit','🟢 Buy limit'],['sell limit','🔴 Sell limit'],['gap plan','⚡ Monday gap'],['watch','🗓 Watch'],['valid until','⏳ Valid until'],['invalidated if','❌ Invalidated if'],['risk','⚖️ Risk']]) if(g[k]) o+=`${l}: ${g[k]}\n`;
   return o+'\n⚠️ Analysis only, not financial advice. Trade at your own risk.';}
 function mdW(s){const i=s.search(/^### *Final weekly plan/mi);if(i<0)return md1(s);return md1(s.slice(0,i))+'<div class="finalbox">'+md1(s.slice(i))+'<button class="sec" style="margin-top:10px;width:100%" onclick="copyWeekTG(this)">Copy weekly outlook for Telegram</button></div>';}
@@ -2286,7 +2316,7 @@ Dollar index, yields, COT or funding and fear-greed, and what they imply. Use th
 ### Key levels for next week
 Exact prices: resistance 1 to 3, support 1 to 3, this week's high and low, previous week's high and low, weekly pivots, 52-week high or low if near.
 ### Next week's calendar
-From the live calendar block: day, time in SAST, event, impact, forecast and previous. Mark the danger days and windows to avoid. If the feed has no events for next week yet, say so and remind the user to check for the usual high-impact events.
+From the live calendar block: day, time in the user's local time, event, impact, forecast and previous. Mark the danger days and windows to avoid. If the feed has no events for next week yet, say so and remind the user to check for the usual high-impact events.
 ### Scenarios for next week
 Bullish, Base or Range, and Bearish. Each has a probability in percent (total 100%, no scenario above 60%), the trigger that confirms it (exact level and timeframe close), the target and the invalidation level.
 ### Expected range
@@ -2294,7 +2324,7 @@ From the weekly ATR and average range: the likely low to high band for the week.
 ### Monday open plan
 How to treat a gap using the average gap in the data: what to do if price opens above or below Friday's close, which scenario each gap favours, and no market orders in the first 30 to 60 minutes after the open. Wait for the London session. For crypto say there is no closed-market gap.
 ### Trade plan for the week
-BUY LIMIT and SELL LIMIT, each on one line: entry (a real level) | Stop loss | TP1 | TP2 | R:R | Win prob % | Valid until (SAST).
+BUY LIMIT and SELL LIMIT, each on one line: entry (a real level) | Stop loss | TP1 | TP2 | R:R | Win prob % | Valid until (local time with its label).
 ### Final weekly plan
 This is the last section. Use this exact layout, one item per line:
 Weekly bias: BULLISH or BEARISH or NEUTRAL | probability %
@@ -2303,8 +2333,8 @@ Key levels: R1 price, R2 price | S1 price, S2 price
 Buy limit: entry | SL | TP1 | TP2 | R:R | Win prob %
 Sell limit: entry | SL | TP1 | TP2 | R:R | Win prob %
 Gap plan: one line
-Watch: the 2 or 3 biggest events with day and SAST time
-Valid until: exact SAST date and time (no later than next Friday 14:00 SAST; use Wednesday 18:00 SAST if a mid-week review is needed)
+Watch: the 2 or 3 biggest events with day and local time
+Valid until: exact local date and time with its label (no later than next Friday 12:00 UTC converted to local time; use Wednesday 16:00 UTC converted to local time if a mid-week review is needed)
 Invalidated if: exact price or event
 Risk: suggested percent of account per trade
 If the bias is unclear, set Weekly bias to NEUTRAL, say to wait for Monday London, and mark the orders SKIP.
@@ -2336,7 +2366,7 @@ $('wSymbol').value=store.get('ca_wsymbol')||store.get('ca_symbol')||'XAU/USD';
 $('wMarket').value=store.get('ca_wmarket')||store.get('ca_market')||'forex';
 $('wSymbol').onchange=()=>store.set('ca_wsymbol',$('wSymbol').value);
 $('wMarket').onchange=()=>{store.set('ca_wmarket',$('wMarket').value);updW();};
-function updW(){const c=$('wMarket').value==='crypto';$('wState').textContent=c?'Crypto trades 24/7, so the week is always in progress (it closes Monday 02:00 SAST). Best run on Sunday.':weekComplete(false)?'Market closed: the week is complete. This is the ideal time to run the engine.':'The week is still in progress, so the outlook will be preliminary. Best run after the Friday close or on the weekend.';}
+function updW(){const c=$('wMarket').value==='crypto';$('wState').textContent=c?'Crypto trades 24/7, so the week is always in progress (it closes Monday 00:00 UTC, '+ztHM(Date.UTC(2026,0,5))+' '+zlab()+'). Best run on Sunday.':weekComplete(false)?'Market closed: the week is complete. This is the ideal time to run the engine.':'The week is still in progress, so the outlook will be preliminary. Best run after the Friday close or on the weekend.';}
 updW();setInterval(updW,60000);
 
 let wInter={t:0,dx:null,ty:null};
@@ -2457,7 +2487,7 @@ $('wGo').onclick=async()=>{
       if(digest)content.push({type:'text',text:"NEXT WEEK'S CALENDAR / NEWS (transcribed from the user's screenshots):\n"+digest});
       else if(lists.wnews.length)content.push({type:'text',text:`NEXT WEEK'S CALENDAR / NEWS SCREENSHOTS (${lists.wnews.length}). Read every event, day, time, impact and forecast/previous value:`},...lists.wnews.map(imgBlock));
       const prevW=lastWeekOutlook(p.sym),others=pairs.filter(x=>x!==p).map(x=>x.sym).join(', ');
-      content.push({type:'text',text:`Instrument: ${p.sym}.${pairBrief(p.sym,false)}${others?` Also being analyzed this weekend: ${others}. In the Risk line of the Final weekly plan, mention correlated exposure with them if relevant.`:''} Current time: ${sastNow()}. ${sessions()}\n\nWEEKEND DATA:\n${L.live||'none; read everything from the screenshots and say levels are approximate'}\n\nRECENT HEADLINES:\n${L.news||'none'}\n\nUSER NOTE: ${$('wNote').value.trim()||'none'}${prevW?`\n\nLAST WEEK'S SAVED OUTLOOK (${prevW.when}):\n${prevW.txt}`:''}`});
+      content.push({type:'text',text:`Instrument: ${p.sym}.${pairBrief(p.sym,false)}${others?` Also being analyzed this weekend: ${others}. In the Risk line of the Final weekly plan, mention correlated exposure with them if relevant.`:''} Current time: ${ztNow()}. ${sessions()}\n\nWEEKEND DATA:\n${L.live||'none; read everything from the screenshots and say levels are approximate'}\n\nRECENT HEADLINES:\n${L.news||'none'}\n\nUSER NOTE: ${$('wNote').value.trim()||'none'}${prevW?`\n\nLAST WEEK'S SAVED OUTLOOK (${prevW.when}):\n${prevW.txt}`:''}`});
       const card=cards[i];
       const co=await claudeStream(ak,SYSTEM_W,content,t=>{q(i).innerHTML=mdW(t);card.dataset.raw=t;if(!scrolled&&t){scrolled=true;card.scrollIntoView({behavior:'smooth'});}btn.textContent=tag(i)+'analyzing the week… ('+t.length+' chars)';},deep);
       const text=co.text,stop=co.stop;
@@ -2492,8 +2522,8 @@ function volContext(daily,hourly,inter){
   if(av)t+=`\nAverage daily range by weekday (% of price, last year): ${av}`;
   if(hourly&&hourly.length>48){const hrs={};for(const x of hourly){const h=+String(x.datetime).slice(11,13);if(isNaN(h))continue;(hrs[h]=hrs[h]||[]).push(+x.high-+x.low);}
     const avgH=h=>{const a=hrs[h];return a&&a.length?a.reduce((p,c)=>p+c,0)/a.length:null;};
-    const sess=[['Asia 02-09 SAST',0,7],['London 09-14 SAST',7,12],['London/NY overlap 14-18 SAST',12,16],['NY afternoon 18-23 SAST',16,21],['Rollover 23-02 SAST',21,24]].map(([n,a,b])=>{const v=[];for(let h=a;h<b;h++){const x=avgH(h);if(x!=null)v.push(x);}return v.length?`${n} ${f2(v.reduce((p,c)=>p+c,0)/v.length)}`:null;}).filter(Boolean);
-    const top=Object.keys(hrs).map(h=>[+h,avgH(+h)]).sort((a,b)=>b[1]-a[1]).slice(0,3).map(x=>String((x[0]+TZO)%24).padStart(2,'0')+':00 SAST').join(', ');
+    const hl=h=>String(hLocal(h%24)).padStart(2,'0'),sess=[['Asia',0,7],['London',7,12],['London/NY overlap',12,16],['NY afternoon',16,21],['Rollover',21,24]].map(([n,a,b])=>[`${n} ${hl(a)}-${hl(b)} ${zlab()}`,a,b]).map(([n,a,b])=>{const v=[];for(let h=a;h<b;h++){const x=avgH(h);if(x!=null)v.push(x);}return v.length?`${n} ${f2(v.reduce((p,c)=>p+c,0)/v.length)}`:null;}).filter(Boolean);
+    const top=Object.keys(hrs).map(h=>[+h,avgH(+h)]).sort((a,b)=>b[1]-a[1]).slice(0,3).map(x=>String(hLocal(x[0])).padStart(2,'0')+':00 '+zlab()).join(', ');
     if(sess.length)t+=`\nAverage 1H candle range by session (last ${hourly.length} hourly candles): ${sess.join('; ')}; busiest hours ${top}`;}
   if(inter&&inter.length){const base=retMap(daily),parts=[];for(const m of inter){if(!m.vals||m.vals.length<25)continue;const mm=retMap(m.vals),a=corrOf(base,mm,20),b=corrOf(base,mm,60);if(a)parts.push(`vs ${m.name} ${a.r.toFixed(2)}${b?' / '+b.r.toFixed(2):''}`);}
     if(parts.length)t+=`\nRolling correlation of daily returns, 20d / 60d: ${parts.join('; ')} (negative means they move opposite; a sign flip versus the usual relationship means the usual driver is not working)`;}
@@ -2560,7 +2590,7 @@ function hitBtns(e){
 function fR(r){return r==null?'n/a':(r>=0?'+':'-')+Math.abs(r).toFixed(2)+'R';}
 function resultPost(e){
   const dir=/SELL/i.test(e.dec||'')?'SELL':/BUY/i.test(e.dec||'')?'BUY':(e.dec||'').toUpperCase();
-  const when=sast(e.id)+' SAST';
+  const when=zt(e.id)+' '+zlab();
   const lv=(e.entry?`📍 Entry ${String(e.entry).split('|')[0].trim()}`:'')+(e.sl?` | 🛑 Stop ${String(e.sl).split('|')[0].trim()}`:'')+(e.tp1?` | 🎯 TP1 ${String(e.tp1).split('|')[0].trim()}`:'');
   let t;
   if(isLad(e)&&e.hit>0){const n=e.tps.length,parts=e.tps.slice(0,e.hit).map((x,i)=>`TP${i+1} ${Math.round(x.sh)}%`).join(', ');
@@ -2591,14 +2621,14 @@ function recapText(entries,now,days){
 
 // ==== PAIR PURE START
 const CCY={
- USD:'Fed rate expectations, US 2Y and 10Y yields, CPI, NFP, PCE, retail sales, FOMC and Fed speakers. Safe-haven bid in risk-off. Most US data lands 14:30-15:30 SAST and moves every USD pair at once, so several USD positions are really one bet.',
- JPY:'the BoJ and the US-Japan yield gap (US10Y versus JGB yields), safe-haven demand in risk-off (JPY crosses usually fall when equities fall), and carry-trade unwinds that can be fast and large. The Japanese Ministry of Finance can intervene when the yen weakens sharply or too fast: treat vertical spikes in USDJPY-type pairs near multi-decade yen lows as intervention risk and do not chase them. The Tokyo fix (02:55 SAST) and importer USD demand around the 5th, 10th, 15th, 20th, 25th and month-end can move USDJPY in the Tokyo morning (a tendency, not a rule). JPY pairs are most active in the Tokyo and London sessions, and every JPY pair shares the same yen driver, so JPY positions are largely one bet.',
+ USD:'Fed rate expectations, US 2Y and 10Y yields, CPI, NFP, PCE, retail sales, FOMC and Fed speakers. Safe-haven bid in risk-off. Most US data lands 12:30-13:30 UTC and moves every USD pair at once, so several USD positions are really one bet.',
+ JPY:'the BoJ and the US-Japan yield gap (US10Y versus JGB yields), safe-haven demand in risk-off (JPY crosses usually fall when equities fall), and carry-trade unwinds that can be fast and large. The Japanese Ministry of Finance can intervene when the yen weakens sharply or too fast: treat vertical spikes in USDJPY-type pairs near multi-decade yen lows as intervention risk and do not chase them. The Tokyo fix (00:55 UTC) and importer USD demand around the 5th, 10th, 15th, 20th, 25th and month-end can move USDJPY in the Tokyo morning (a tendency, not a rule). JPY pairs are most active in the Tokyo and London sessions, and every JPY pair shares the same yen driver, so JPY positions are largely one bet.',
  EUR:'ECB versus Fed expectations, Eurozone inflation and PMIs, German data (Ifo, ZEW), and Eurozone political or spread stress. Most active from the London open.',
- GBP:'BoE expectations, UK CPI, jobs and GDP (released 08:00-09:00 SAST), gilt yields and fiscal news. GBP pairs are volatile and can gap on UK data; keep stops wider than for EUR pairs.',
+ GBP:'BoE expectations, UK CPI, jobs and GDP (released 06:00-07:00 UTC), gilt yields and fiscal news. GBP pairs are volatile and can gap on UK data; keep stops wider than for EUR pairs.',
  CHF:'a safe-haven currency driven by SNB policy and risk-off flows; ranges are usually smaller and spreads wider than other majors. The SNB has intervened before.',
- AUD:'a risk-sensitive commodity currency driven by China demand, iron ore and copper, the RBA, and Australian jobs and CPI (released about 02:30 SAST, Sydney/Tokyo hours). Often used as a risk proxy.',
- CAD:'oil (WTI), the BoC, Canadian jobs (about 15:30 SAST) and US-Canada trade news. Canadian and US data often release at the same time.',
- ZAR:'a high-beta emerging-market currency driven by global risk appetite, the dollar and US yields, gold and platinum prices, the SARB, South African politics, power supply and credit-rating news. Spreads and swap costs are wide, liquidity is thinnest outside about 08:00-18:00 SAST, and spikes are common in the Asian night, so allow more room for stops and expect worse fills. Gold and USD/ZAR often move in opposite directions.',
+ AUD:'a risk-sensitive commodity currency driven by China demand, iron ore and copper, the RBA, and Australian jobs and CPI (released about 00:30 UTC, Sydney/Tokyo hours). Often used as a risk proxy.',
+ CAD:'oil (WTI), the BoC, Canadian jobs (13:30 UTC) and US-Canada trade news. Canadian and US data often release at the same time.',
+ ZAR:'a high-beta emerging-market currency driven by global risk appetite, the dollar and US yields, gold and platinum prices, the SARB, South African politics, power supply and credit-rating news. Spreads and swap costs are wide, liquidity is thinnest outside about 06:00-16:00 UTC, and spikes are common in the Asian night, so allow more room for stops and expect worse fills. Gold and USD/ZAR often move in opposite directions.',
  XAU:'real yields and the dollar (gold usually rises when both fall), Fed expectations, central-bank buying, and geopolitical safe-haven flows. It reacts strongly to US CPI, NFP and FOMC and trades most heavily in London and New York (London fixes 10:30 and 15:00 UK time). If gold rises together with real yields, say the usual relationship is broken and that safe-haven or central-bank demand is driving it.'
 };
 const PAIRN={
@@ -2634,7 +2664,7 @@ function trackRecord(entries,sym){
   const parts=[];
   for(const [n,f] of [['Buys',e=>/BUY/i.test(e.dec||'')],['Sells',e=>/SELL/i.test(e.dec||'')]]){const g=cl.filter(f);if(g.length>=4)parts.push(`${n} ${wr(g)}% (${g.length})`);}
   const m={};cl.forEach(e=>{const x=sessOf(e.id);(m[x]=m[x]||[]).push(e);});
-  const SL={'Asia (22-07 UTC)':'Asia (00-09 SAST)','London (07-12 UTC)':'London (09-14 SAST)','London/New York (12-16 UTC)':'London/New York (14-18 SAST)','New York late (16-22 UTC)':'New York late (18-00 SAST)'};
+  const hl=h=>String(hLocal(h)).padStart(2,'0'),zl=zlab(),SL={'Asia (22-07 UTC)':`Asia (${hl(22)}-${hl(7)} ${zl})`,'London (07-12 UTC)':`London (${hl(7)}-${hl(12)} ${zl})`,'London/New York (12-16 UTC)':`London/New York (${hl(12)}-${hl(16)} ${zl})`,'New York late (16-22 UTC)':`New York late (${hl(16)}-${hl(22)} ${zl})`};
   for(const [x,g] of Object.entries(m)) if(g.length>=4) parts.push(`${SL[x]||x} ${wr(g)}% (${g.length})`);
   if(parts.length) t+=' Breakdown: '+parts.join(', ')+'.';
   return t;
@@ -2685,7 +2715,7 @@ function structureOf(label,vals,px,opt){
 }
 // Last n closed candles as a compact table.
 function candleTable(label,vals,n){const b=toBars(vals).slice(-n),d=label==='1D'||label==='1W';
-  return `${label} last ${b.length} closed candles (SAST ${d?'date':'time'} open high low close): `+b.map(x=>`${sast(x.t).slice(5,d?10:16)} ${f2(x.o)} ${f2(x.h)} ${f2(x.l)} ${f2(x.c)}`).join(' | ');}
+  return `${label} last ${b.length} closed candles (${zlab()} ${d?'date':'time'} open high low close): `+b.map(x=>`${zt(x.t).slice(5,d?10:16)} ${f2(x.o)} ${f2(x.h)} ${f2(x.l)} ${f2(x.c)}`).join(' | ');}
 // ==== STRUCT PURE END
 
 // ==== DRAW START
@@ -2963,7 +2993,7 @@ function styleOrders(text){const out=[];let style=null;
     const entry=_num(parts[0]),sl=val(lab(/^(stop|SL\b)/i)),tp1=val(lab(/^TP\s*1\b|^TP\s*[:=]?\s*\d/i)),side=/BUY/i.test(m[1])?1:-1;
     if(entry==null||sl==null||tp1==null||side*(entry-sl)<=0||side*(tp1-entry)<=0)continue;
     const pp=lab(/prob/i),vp=lab(/valid/i),vm=vp&&vp.match(/\d{4}-\d{2}-\d{2}[ T]\d{1,2}:\d{2}/);
-    out.push({style,dec:side>0?'BUY':'SELL',ord:(side>0?'BUY':'SELL')+' LIMIT',entry:String(entry),sl:String(sl),tp1:String(tp1),prob:pp?_num(pp):null,valid:vm?vm[0]+(/^\s*(UTC|GMT(?![+-])|Z\b)/i.test(vp.slice(vp.indexOf(vm[0])+vm[0].length))?' UTC':' SAST'):''});}
+    out.push({style,dec:side>0?'BUY':'SELL',ord:(side>0?'BUY':'SELL')+' LIMIT',entry:String(entry),sl:String(sl),tp1:String(tp1),prob:pp?_num(pp):null,valid:vm?vm[0]+(/^\s*(UTC|GMT(?![+-])|Z\b)/i.test(vp.slice(vp.indexOf(vm[0])+vm[0].length))?' UTC':' '+zlab()):''});}
   const seen=new Set();return out.filter(o=>{const k=o.dec+o.entry+o.sl;if(seen.has(k))return false;seen.add(k);return true;});}
 // Shadow entries for one analysis: drop orders that duplicate the final plan.
 function shadowEntries(text,sym,g,id,tol){const fe=_num(g.entry),fd=/SELL/i.test(g.decision||'')?'SELL':/BUY/i.test(g.decision||'')&&!/NO\s*TRADE/i.test(g.decision||'')?'BUY':null;
@@ -3054,7 +3084,7 @@ function calendarFor(events,sym,now){
 function calText(evs,now){
   if(!evs.length) return '';
   const h=x=>{const d=(x.t-now)/36e5;return d<0?`${(-d).toFixed(1)}h ago`:`in ${d<48?d.toFixed(1)+'h':(d/24).toFixed(1)+' days'}`;};
-  return 'LIVE ECONOMIC CALENDAR (ForexFactory weekly feed, times in SAST; actual results are not in this feed, so take them from the headlines): '+evs.slice(0,18).map(x=>`${sast(x.t)} ${String(x.country).toUpperCase()} ${x.title} [${x.impact}] ${h(x)}${x.forecast?`, forecast ${x.forecast}`:''}${x.previous?`, previous ${x.previous}`:''}`).join('; ');
+  return 'LIVE ECONOMIC CALENDAR (ForexFactory weekly feed, times in '+zlab()+'; actual results are not in this feed, so take them from the headlines): '+evs.slice(0,18).map(x=>`${zt(x.t)} ${String(x.country).toUpperCase()} ${x.title} [${x.impact}] ${h(x)}${x.forecast?`, forecast ${x.forecast}`:''}${x.previous?`, previous ${x.previous}`:''}`).join('; ');
 }
 // High-impact events between now and an order's expiry.
 function calClash(evs,now,until){return (evs||[]).filter(x=>/high/i.test(x.impact||'')&&x.t>=now&&x.t<=(until||now+24*36e5));}

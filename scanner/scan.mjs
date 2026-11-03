@@ -14,9 +14,17 @@ import { derivCode, isSynth, synthCode, synthBrief, derivCandles } from './deriv
 const env = process.env, now = +env.SCAN_NOW || Date.now();   // SCAN_NOW only for tests
 const AK = env.ANTHROPIC_API_KEY || '', TK = env.TWELVE_DATA_KEY || '', TG = env.TELEGRAM_BOT_TOKEN || '', CHAT = env.TELEGRAM_CHAT_ID || '';
 const STATE = '.scanner-state.json';
-// South African time (SAST = UTC+2, no daylight saving) for everything the user reads
-const sast = t => new Date(t + 2 * 36e5).toISOString().slice(0, 16).replace('T', ' ') + ' SAST';
-const sastNow = t => `${sast(t)} (South Africa, UTC+2; write any time in SAST)`;
+// the user's local time (time zone chosen in the app's Settings and sent with the watchlist; South Africa by default)
+const TZN = () => (W && W.timeZone) || 'Africa/Johannesburg';
+function sast(t) {
+  try {
+    const f = new Intl.DateTimeFormat('en-GB', { timeZone: TZN(), year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZoneName: 'short' });
+    const p = {}; for (const x of f.formatToParts(new Date(t))) p[x.type] = x.value;
+    const lab = TZN() === 'Africa/Johannesburg' ? 'SAST' : p.timeZoneName;
+    return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute} ${lab}`;
+  } catch (e) { return new Date(t).toISOString().slice(0, 16).replace('T', ' ') + ' UTC'; }
+}
+const sastNow = t => `${sast(t)} (the user's local time${W && W.country ? ' in ' + W.country : ''}; write any time in this time zone)`;
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const isCrypto = s => /^(BTC|ETH|SOL|XRP|BNB|ADA|DOGE|AVAX|DOT|LINK|LTC|TRX|TON|MATIC|SHIB|PEPE|SUI|APT|ARB|OP|NEAR|ATOM)\b/i.test(String(s).replace('/', ' '));
