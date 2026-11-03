@@ -169,3 +169,12 @@ Everything now follows you to any phone, not only this browser's storage:
 - **How:** turn on "Keep everything in sync across my devices" in Settings (GitHub token with Contents read and write, plus a backup passphrase). It syncs when the app opens, about a minute after anything changes, and when you switch away from the app. Lists are merged; single settings take the most recently changed value.
 - **New phone:** on the old phone tap **Create a link code**. On the new phone type the same passphrase, paste the code and tap **Link this phone**. The code carries your keys, token and repository, encrypted with the passphrase.
 - Opening an old analysis whose text is not on the device fetches it from the cloud archive.
+
+## Coach: talk to the robot (v38)
+A new **Coach** tab is a chat with Claude that knows your app: the latest analyses and their results, your journal, lessons, open trades, account and goals.
+- **Ask about an analysis.** Tap **Discuss** on any result or journal entry and the full analysis goes into the conversation.
+- **Goals.** Set today's and this week's goal (or just tell the coach). Progress in R is tracked from the journal. Goals and progress go into every analysis; when today's goal or loss limit is reached the plan prefers NO TRADE.
+- **Your style.** Describe how you enter, where your stop goes and how you take profit. The coach keeps a style profile (Coach > How I trade, editable) and every analysis builds its entry, stop and take-profit the way you trade, saying why when the data argues otherwise.
+- **Other people's analysis.** Tap ＋ (or paste) to share screenshots; the coach reviews them critically against Edgeview's data and your style.
+- **Voice notes.** Tap 🎤, talk, tap again to send. With an OpenAI key (Settings) the note is transcribed by Whisper; without it the phone's speech recognition is used. Claude reads the transcript.
+- Conversations, goals and style sync to your other devices; shared screenshots stay on the device that sent them.

@@ -50,6 +50,17 @@
   nav#tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;height:calc(var(--tabh) + env(safe-area-inset-bottom,0px));padding-bottom:env(safe-area-inset-bottom,0px);display:flex;background:rgba(14,19,24,.96);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-top:1px solid var(--line)}
   nav#tabs button{flex:1;background:none;border:0;color:var(--dim);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font:600 11px var(--ui);padding:6px 0;border-radius:0;width:auto;cursor:pointer;position:relative}
   nav#tabs button svg{width:22px;height:22px}
+  #chatLog{display:flex;flex-direction:column;gap:10px;max-height:62vh;overflow-y:auto;padding:2px 0 8px}
+  .msg{max-width:88%;padding:10px 12px;border-radius:14px;font-size:14px;line-height:1.5;word-wrap:break-word;overflow-wrap:anywhere}
+  .msg.u{align-self:flex-end;background:var(--brassbg);border:1px solid rgba(217,164,65,.35);border-bottom-right-radius:4px;white-space:pre-wrap}
+  .msg.a{white-space:pre-wrap;align-self:flex-start;background:var(--panel2);border:1px solid var(--line);border-bottom-left-radius:4px}
+  .msg .mt{font-size:11px;color:var(--dim);margin-top:4px}
+  .msg img{max-width:160px;max-height:160px;border-radius:8px;margin:4px 4px 0 0;display:inline-block}
+  .msg .chip{display:inline-block;font-size:11px;color:var(--brass2);border:1px solid var(--line2);border-radius:999px;padding:1px 8px;margin-top:6px}
+  .chatbar{display:flex;gap:6px;align-items:flex-end;margin-top:8px}
+  .chatbar textarea{flex:1;min-height:42px;max-height:140px;resize:none;margin:0}
+  .chatbar button{width:auto;padding:0 12px;height:42px;flex:none}
+  #chatMic.rec{background:var(--bearbg);color:var(--bear);border-color:var(--bear)}
   nav#tabs button.on{color:var(--brass2)}
   nav#tabs button.on::before{content:"";position:absolute;top:0;left:30%;right:30%;height:2px;background:var(--brass);border-radius:0 0 2px 2px}
   nav#tabs .badge{position:absolute;top:6px;left:calc(50% + 6px);min-width:15px;height:15px;border-radius:8px;background:var(--bear);color:#fff;font:700 9px/15px var(--ui);padding:0 3px}
@@ -156,6 +167,7 @@
   <button data-v="chart"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15v-4M8 11h0"/><rect x="7" y="9" width="2" height="5"/><rect x="11.5" y="6" width="2" height="7"/><rect x="16" y="10" width="2" height="5"/></svg>Chart</button>
   <button data-v="analyze"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.4 5.2L20 9l-4 4 1 6-5-2.8L7 19l1-6-4-4 5.6-.8z"/></svg>Analyze</button>
   <button data-v="robot"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01M9.5 16.5h5"/></svg>Robot<span class="badge" id="robotBadge" hidden></span></button>
+  <button data-v="coach"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H10l-4 3v-3H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/><path d="M8 10h8M8 13h5"/></svg>Coach</button>
   <button data-v="journal"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4h10a2 2 0 0 1 2 2v14H8a2 2 0 0 1-2-2z"/><path d="M6 18a2 2 0 0 1 2-2h10"/><path d="M10 8h5M10 11h4"/></svg>Journal</button>
   <button data-v="more"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>More</button>
 </nav>
@@ -187,6 +199,8 @@
     <input id="kFinnhub" type="password" autocomplete="off">
     <label>FRED API key (optional, macro data: real yields, breakevens, fed funds, VIX)</label>
     <input id="kFred" type="password" autocomplete="off">
+    <label>OpenAI API key (optional, for voice notes: Whisper understands accents best and works on every phone)</label>
+    <input id="kOpenAI" type="password" autocomplete="off" placeholder="sk-... (without it, the phone's own speech recognition is used)">
     <label>Analysis depth</label>
     <select id="depth"><option value="std">Standard (faster, cheaper)</option><option value="deep">Deep (extended thinking, slower, costs more)</option></select>
     <label>Twelve Data plan</label>
@@ -369,6 +383,22 @@
     <div class="hint">Entry and stop fill in from the final plan. The value per 1.0 move fills in for your account currency from live exchange rates (gold 100 oz per lot, forex 100,000 units, crypto 1). Check XM's contract size; Micro account lots are 100 times smaller.</div>
   </div>
   </section>
+  <section class="view" id="v-coach" hidden>
+  <div class="card"><b>Goals</b>
+    <div class="row"><div><label>Today</label><input id="gDay" placeholder="e.g. +2R, max 3 trades, London only"></div><div><label>This week</label><input id="gWeek" placeholder="e.g. +5% on the account"></div></div>
+    <div class="hint" id="gProg"></div></div>
+  <details class="card"><summary style="cursor:pointer"><b style="display:inline">How I trade</b> <span class="hint">your style: every analysis uses it for entry, stop and take-profit</span></summary>
+    <textarea id="styleTx" rows="9" placeholder="Tell the coach how you trade and it fills this in. For example: I trade gold and GBP/JPY in London and New York. I wait for a liquidity sweep of the Asia high or low, then a 5M break of structure, and enter on the retest of the order block. Stop 2 pips beyond the sweep wick. TP1 at 1:2, TP2 at the opposite session level. Risk 1% per trade, at most 2 trades a day."></textarea>
+    <div class="hint" id="styleStat">You can edit it here too. It syncs with your other devices.</div></details>
+  <div class="card"><b>Coach</b>
+    <div id="chatLog"></div>
+    <div id="chatCtx" class="hint" hidden></div>
+    <div class="thumbs" id="chatAtt"></div>
+    <div class="chatbar"><button class="sec" id="chatImg" aria-label="Add screenshots">＋</button><textarea id="chatIn" rows="1" placeholder="Ask about an analysis, set a goal, share someone's chart…"></textarea><button class="sec" id="chatMic" aria-label="Voice note">🎤</button><button id="chatSend">Send</button></div>
+    <input id="chatFile" type="file" accept="image/*" multiple hidden>
+    <div class="hint" id="chatStat">Tap 🎤 to record a voice note, tap again to send it. Screenshots you share are kept on this device; the conversation syncs.</div>
+    <div class="row" style="margin-top:6px"><button class="sec" id="chatClear">Start a new conversation</button></div></div>
+  </section>
   <section class="view" id="v-journal" hidden>
   <div class="card"><b>What the robot has learned</b><div id="learnBox"></div>
     <div class="row" style="margin-top:8px;align-items:center;gap:8px;flex-wrap:wrap"><button class="sec" id="learnRev">Review closed trades now</button><label class="hint" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="pmOn" checked> Write a lesson after every closed trade (Claude Haiku, about $0.002 each)</label></div>
@@ -468,7 +498,7 @@ RULES
 const $ = id => document.getElementById(id);
 const store = { get:k=>localStorage.getItem(k)||'', set:(k,v)=>localStorage.setItem(k,v), del:k=>localStorage.removeItem(k) };
 // ---- cloud memory (v37): settings that follow you to every device, with the time each was last changed
-const SYNC_KEYS=['ca_wl','ca_wlset','ca_bot','ev_brk','ev_bt','ca_alerts','ca_cBal','ca_cRisk','ca_symbol','ca_market','ca_spread','ca_depth','ca_model','ca_mHaiku','ca_tdplan','ca_ghRepo','ev_fxOn','ev_pmOff','ev_chat','ev_goals','ev_style','ev_live'];
+const SYNC_KEYS=['ca_wl','ca_wlset','ca_bot','ev_brk','ev_bt','ca_alerts','ca_cBal','ca_cRisk','ca_symbol','ca_market','ca_spread','ca_depth','ca_model','ca_mHaiku','ca_tdplan','ca_ghRepo','ev_fxOn','ev_pmOff','ev_chat','ev_chatCur','ev_goals','ev_style','ev_live'];
 let syncApplying=false;
 const KMT=()=>{try{return JSON.parse(localStorage.getItem('ev_kmt')||'{}');}catch(e){return {};}};
 {const _set=store.set;store.set=(k,v)=>{_set(k,v);if(!syncApplying&&SYNC_KEYS.includes(k)){const m=KMT();m[k]=Date.now();localStorage.setItem('ev_kmt',JSON.stringify(m));}};}
@@ -481,7 +511,7 @@ const IDB=(()=>{let dbp;const db=()=>dbp||(dbp=new Promise((res,rej)=>{const r=i
 const TXseen=new Set();
 function keepTexts(a){for(const e of a||[])if(e&&e.text&&e.id!=null&&!TXseen.has(e.id)){TXseen.add(e.id);IDB.texts.put(+e.id,e.text);}}
 // ---- keys
-['kAnthropic','kTwelve','kFinnhub','kFred','model','mHaiku','kGh','ghRepo','kSync','symbol','market'].forEach(id=>{ const v=store.get('ca_'+id); if(v) $(id).value=v; });
+['kAnthropic','kTwelve','kFinnhub','kFred','kOpenAI','model','mHaiku','kGh','ghRepo','kSync','symbol','market'].forEach(id=>{ const v=store.get('ca_'+id); if(v) $(id).value=v; });
 
 const BRK={get:()=>{try{return {broker:'xm',acc:'standard',ov:'',...JSON.parse(store.get('ev_brk')||'{}')};}catch(e){return {broker:'xm',acc:'standard',ov:''};}},set:o=>store.set('ev_brk',JSON.stringify(o))};
 const costFor=sym=>brokerCost(sym,BRK.get());
@@ -506,7 +536,7 @@ function brkInfo(){const b=BRK.get();if(b.broker!=='xm'&&!b.ov.trim()){$('brkInf
 (()=>{const b=BRK.get();$('brk').value=b.broker;$('brkAcc').value=b.acc;$('brkOv').value=b.ov;$('acct').value=b.ccy||'ZAR';$('usdzar').value=b.usdzar||'';const sv=()=>{BRK.set({broker:$('brk').value,acc:$('brkAcc').value,ov:$('brkOv').value.trim(),ccy:$('acct').value,usdzar:$('usdzar').value.trim()});brkInfo();ccyLabels();try{renderBot();}catch(e){}};['brk','brkAcc','brkOv','acct','usdzar'].forEach(id=>$(id).onchange=sv);setTimeout(brkInfo,0);setTimeout(()=>refreshUsdZar(false).then(()=>{try{renderBot();}catch(e){}}),3000);})();
 $('tdplan').value=store.get('ca_tdplan')||'free';$('tdplan').onchange=()=>store.set('ca_tdplan',$('tdplan').value);
 $('depth').value=store.get('ca_depth')||'std';$('depth').onchange=()=>store.set('ca_depth',$('depth').value);
-const KEY_IDS=['kAnthropic','kTwelve','kFinnhub','kFred','model','mHaiku','kGh','ghRepo','kSync'];
+const KEY_IDS=['kAnthropic','kTwelve','kFinnhub','kFred','kOpenAI','model','mHaiku','kGh','ghRepo','kSync'];
 function saveAll(msg){
   KEY_IDS.forEach(id=>store.set('ca_'+id,$(id).value.trim()));
   const el=$('saveStatus'); el.textContent=msg||'Saved on this device ✓';
@@ -522,7 +552,7 @@ $('testClaude').onclick=async()=>{
   }catch(e){out.textContent='Failed: '+(e.message||e);}
 };
 $('saveKeys').onclick = ()=>{ saveAll(); go('chart'); };
-$('clearKeys').onclick = ()=>{ ['kAnthropic','kTwelve','kFinnhub','kFred','kGh'].forEach(id=>{store.del('ca_'+id);$(id).value='';}); $('saveStatus').textContent='Keys removed from this device'; };
+$('clearKeys').onclick = ()=>{ ['kAnthropic','kTwelve','kFinnhub','kFred','kOpenAI','kGh'].forEach(id=>{store.del('ca_'+id);$(id).value='';}); $('saveStatus').textContent='Keys removed from this device'; };
 if(store.get('ca_kAnthropic')) $('saveStatus').textContent='Keys are saved on this device ✓';
 // ask the browser not to evict saved keys
 if(navigator.storage&&navigator.storage.persist){ navigator.storage.persist().catch(()=>{}); }
@@ -810,10 +840,11 @@ function updSummary(){const P=activePairs(),im=P.reduce((t,p)=>t+lists[p.key].le
   $('runSummary').textContent=P.length?`Ready: ${P.length} pair${P.length>1?'s':''}, ${im?im+' chart'+(im!==1?'s':''):'charts drawn from live data'}`+(nn?`, ${nn} calendar image${nn>1?'s':''}${P.length>1?' (read once, shared by all pairs)':''}`:'')+` · about ${P.length} min`:'Type an instrument, for example gold or EUR/USD.';}
 function newResult(sym){
   const d=document.createElement('div');d.className='card res';d.dataset.sym=sym;
-  d.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px"><b>${esc(sym.toUpperCase())}</b><span><button class="sec rc-chart">Chart</button> <button class="sec rc-calc">Position size</button> <button class="sec rc-copy">Copy</button></span></div><details class="rc-live"><summary class="hint" style="cursor:pointer">Live data used</summary><div class="rc-livetxt" style="font-size:13px;color:var(--mute);white-space:pre-wrap"></div></details><div class="rc-out"></div>`;
+  d.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px"><b>${esc(sym.toUpperCase())}</b><span><button class="sec rc-chart">Chart</button> <button class="sec rc-calc">Position size</button> <button class="sec rc-copy">Copy</button> <button class="sec rc-disc">Discuss</button></span></div><details class="rc-live"><summary class="hint" style="cursor:pointer">Live data used</summary><div class="rc-livetxt" style="font-size:13px;color:var(--mute);white-space:pre-wrap"></div></details><div class="rc-out"></div>`;
   $('results').appendChild(d);
   d.querySelector('.rc-copy').onclick=()=>copyText(d.dataset.raw||d.querySelector('.rc-out').innerText);
   d.querySelector('.rc-chart').onclick=()=>showOnChart(d.dataset.sym);
+  d.querySelector('.rc-disc').onclick=()=>{if(d.dataset.raw)discuss({sym:d.dataset.sym,text:d.dataset.raw,id:null});};
   d.querySelector('.rc-calc').onclick=()=>{if(d.dataset.raw){fillCalc(d.dataset.raw,d.dataset.sym);go('size');}};
   return d;
 }
@@ -918,7 +949,7 @@ $('go').onclick=async()=>{
       if(digest) content.push({type:'text',text:"ECONOMIC CALENDAR / NEWS (transcribed from the user's screenshots):\n"+digest});
       else if(lists.news.length) content.push({type:'text',text:'NEWS / ECONOMIC CALENDAR SCREENSHOTS (read every event and headline in them):'},...lists.news.map(imgBlock));
       const others=pairs.filter(x=>x!==p).map(x=>x.sym).join(', ');
-      const LV=LIVE[String(p.sym).toUpperCase()]||{},MS=cd?marketState(cd,LV.px,Date.now()):null;let learn='';try{learn=learnText(allLearn(),LS.get(),p.sym,MS);}catch(e){}try{const rs=riskText(riskState(HS.get(),Date.now(),BOTC.get()));learn=(learn?learn+'\n\n':'')+rs;}catch(e){}
+      const LV=LIVE[String(p.sym).toUpperCase()]||{},MS=cd?marketState(cd,LV.px,Date.now()):null;let learn='';try{learn=learnText(allLearn(),LS.get(),p.sym,MS);}catch(e){}try{const rs=riskText(riskState(HS.get(),Date.now(),BOTC.get()));learn=(learn?learn+'\n\n':'')+rs;}catch(e){}try{const sb=styleBlock();if(sb)learn=(learn?learn+'\n\n':'')+sb;}catch(e){}
       content.push({type:'text',text:`Instrument: ${p.sym}.${lists[p.key].length>6?` There are ${lists[p.key].length} charts: read them all but keep every section brief so the answer finishes through the Final trade plan.`:''}${pairBrief(p.sym,true)}${learn?learn+'\n\n':''}${others?` Also being analyzed in this session: ${others}. In the Risk line of the Final trade plan, mention correlated exposure with them if relevant (for example both are USD-driven, so they are not independent bets).`:''}\n\nLIVE DATA (${L.at}; active sessions: ${sessions()}):\n${L.live||('none. '+(p.px?('User-provided current price: '+p.px+'. Treat it as approximate.'):'No live price; read price from the charts and say levels are approximate.'))}\n\n${(()=>{try{const v=lotVal(p.sym),rz=fxRates()['USD/ZAR'];return `ACCOUNT CURRENCY: ${ACCT()}${ACCT()==='ZAR'&&rz?` (USD/ZAR ${rz.toFixed(4)})`:''}. ${v!=null?`One standard lot of ${p.sym} gains or loses about ${ACCT()} ${Math.round(v).toLocaleString('en-US')} per 1.0 price move.`:''} In the Risk line, give the risk and lot size for a ${ACCT()} account.\n\n`;}catch(e){return '';}})()}${p.sp&&+p.sp>0?`BROKER COSTS${p.spSrc?' ('+p.spSrc+')':''}: about ${p.sp} in price per round trip. Buys fill at the ask and sells at the bid: keep stops and targets clear of it, and check that every R:R still meets 1:1.5 after the spread.\n\n`:''}RECENT HEADLINES:\n${L.news||'none'}\n\nUSER NOTE: ${$('note').value.trim()||'none'}`});
       const card=cards[i];
       const co=await claudeStream(ak,SYSTEM,content,t=>{ q(i).innerHTML=md(t); card.dataset.raw=t; if(!scrolled&&t){scrolled=true;card.scrollIntoView({behavior:'smooth'});} btn.textContent=tag(i)+'analyzing… ('+t.length+' chars)'; },deep);
@@ -988,7 +1019,7 @@ function parseFinal(raw){const i=raw.search(/^### *Final trade plan/mi);if(i<0)r
 const num=x=>{const m=String(x||'').replace(/,/g,'').match(/-?\d+(\.\d+)?/);return m?+m[0]:null;};
 // ---- history + journal
 const HS={get:()=>{try{return JSON.parse(localStorage.getItem('ca_hist')||'[]')}catch(e){return[]}},set:a=>{keepTexts(a);const now=Date.now(),pack=(n,k)=>JSON.stringify(a.slice(0,n).map((e,i)=>(i<k||(e.ord==='WEEKLY OUTLOOK'&&now-e.id<20*86400000))?e:{...e,text:''}));try{localStorage.setItem('ca_hist',pack(400,40));}catch(e){try{localStorage.setItem('ca_hist',pack(150,12));}catch(e2){}}}};
-const APP_VER='edgeview-v37';
+const APP_VER='edgeview-v38';
 function META(){return {model:$('model').value.trim()||'claude-sonnet-5-5',deep:$('depth').value,ver:APP_VER};}
 
 function addOdds(card,text,sym){
@@ -1520,7 +1551,7 @@ async function autoResolve(force){
 }
 function renderHist(){const a=HS.get(),cl=a.filter(e=>e.st=='win'||e.st=='loss'),w=cl.filter(e=>e.st=='win').length,pr=cl.filter(e=>e.prob!=null);
 $('stats').textContent=cl.length?`Closed ${cl.length}: ${w} wins, ${cl.length-w} losses, win rate ${(w/cl.length*100).toFixed(0)}%`+(pr.length?` | Edgeview's stated average probability ${(pr.reduce((t,e)=>t+e.prob,0)/pr.length).toFixed(0)}%`:''):'No closed trades yet. Open plans are checked against the candles automatically; you can also mark Win or Loss yourself.';
-$('hist').innerHTML=a.map(e=>`<div class="hi"><b>${esc(e.sym)} ${esc(e.dec)}</b> ${esc(e.ord)}${e.ord==='WEEKLY OUTLOOK'?'':' @ '+esc(e.entry)}<br><small>${new Date(e.id).toISOString().slice(0,16).replace('T',' ')}Z${e.ord==='WEEKLY OUTLOOK'?'':' | SL '+esc(e.sl)+' | TP1 '+esc(e.tp1)}${e.prob!=null?' | '+e.prob+'%':''} | <b>${e.st.toUpperCase()}</b>${isLad(e)&&e.hit!=null?' | '+(e.hit?'TP'+e.hit+' of '+e.tps.length+' hit':'stopped')+' | '+fR(rOf(e)):''}${tagOf(e)}${e.auto==='candles'?' | <i>auto: '+esc(e.autoNote||'from candles')+'</i>':''}${e.st==='open'&&e.run?' | <i>'+esc(String(e.run.note||(e.run.filled?'Filled, still running.':'Not filled yet.')))+'</i>':''}</small><div class="row" style="margin-top:6px;flex-wrap:wrap"><button class="sec" onclick="viewH(${e.id})">View</button>${hitBtns(e)}<button class="sec" onclick="setSt(${e.id},'skip')">Skipped</button>${e.ord!=='WEEKLY OUTLOOK'&&e.st!=='open'?`<button class="sec" onclick="copyResult(this,${e.id})">Post result</button>`:''}<button class="sec" onclick="delH(${e.id})">Delete</button></div></div>`).join('')||'<small>Nothing saved yet. Every analysis is saved here automatically.</small>';
+$('hist').innerHTML=a.map(e=>`<div class="hi"><b>${esc(e.sym)} ${esc(e.dec)}</b> ${esc(e.ord)}${e.ord==='WEEKLY OUTLOOK'?'':' @ '+esc(e.entry)}<br><small>${new Date(e.id).toISOString().slice(0,16).replace('T',' ')}Z${e.ord==='WEEKLY OUTLOOK'?'':' | SL '+esc(e.sl)+' | TP1 '+esc(e.tp1)}${e.prob!=null?' | '+e.prob+'%':''} | <b>${e.st.toUpperCase()}</b>${isLad(e)&&e.hit!=null?' | '+(e.hit?'TP'+e.hit+' of '+e.tps.length+' hit':'stopped')+' | '+fR(rOf(e)):''}${tagOf(e)}${e.auto==='candles'?' | <i>auto: '+esc(e.autoNote||'from candles')+'</i>':''}${e.st==='open'&&e.run?' | <i>'+esc(String(e.run.note||(e.run.filled?'Filled, still running.':'Not filled yet.')))+'</i>':''}</small><div class="row" style="margin-top:6px;flex-wrap:wrap"><button class="sec" onclick="viewH(${e.id})">View</button><button class="sec" onclick="discussH(${e.id})">Discuss</button>${hitBtns(e)}<button class="sec" onclick="setSt(${e.id},'skip')">Skipped</button>${e.ord!=='WEEKLY OUTLOOK'&&e.st!=='open'?`<button class="sec" onclick="copyResult(this,${e.id})">Post result</button>`:''}<button class="sec" onclick="delH(${e.id})">Delete</button></div></div>`).join('')||'<small>Nothing saved yet. Every analysis is saved here automatically.</small>';
 $('calib').innerHTML=calibHTML(a);renderLearn();}
 $('resolveNow').onclick=()=>autoResolve(true);$('learnRev').onclick=reviewBacklog;renderSigStats();$('pmOn').checked=store.get('ev_pmOff')!=='1';$('pmOn').onchange=()=>store.set('ev_pmOff',$('pmOn').checked?'0':'1');setTimeout(()=>autoResolve(false),4000);
 $('recapW').onclick=function(){copyRecap(this,7);};$('recapM').onclick=function(){copyRecap(this,30);};
@@ -1617,6 +1648,125 @@ $('linkUse').onclick=async()=>{const st=$('linkStat');try{const code=$('linkIn')
     for(const [id,v] of Object.entries(d.keys||{}))if($(id)){$(id).value=v;store.set('ca_'+id,v);}store.set('ca_kSync',pass);
     store.set('ev_syncOn','1');$('syncOn').checked=true;st.textContent='Linked. Bringing in your history…';$('linkIn').value='';await syncRun('pull');if(!syncBusy)location.reload();}
   catch(e){st.textContent='Could not link: '+(e.message||e);}};
+// ---- coach (v38): chat with the robot about its analyses, your goals and your style; screenshots and voice notes
+const CH={get:()=>{try{return JSON.parse(store.get('ev_chat')||'[]');}catch(e){return [];}},set:a=>{try{store.set('ev_chat',JSON.stringify(a.slice(-400)));}catch(e){store.set('ev_chat',JSON.stringify(a.slice(-120)));}}};
+const GOALS={get:()=>{try{return {day:'',dayD:'',week:'',weekK:'',...JSON.parse(store.get('ev_goals')||'{}')};}catch(e){return {day:'',dayD:'',week:'',weekK:''};}},set:o=>store.set('ev_goals',JSON.stringify(o))};
+const STYLE={get:()=>store.get('ev_style')||'',set:t=>store.set('ev_style',t)};
+const dKey=(t=Date.now())=>{const d=new Date(t);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
+const wKey=(t=Date.now())=>{const d=new Date(t),m=new Date(d.getFullYear(),d.getMonth(),d.getDate()-((d.getDay()+6)%7));return dKey(m.getTime());};
+function goalsNow(){const g=GOALS.get();return {day:g.dayD===dKey()?g.day:'',week:g.weekK===wKey()?g.week:'',oldDay:g.dayD!==dKey()?g.day:'',oldWeek:g.weekK!==wKey()?g.week:''};}
+function setGoals(o){const g=GOALS.get();if(o.day!=null){g.day=String(o.day).slice(0,300);g.dayD=dKey();}if(o.week!=null){g.week=String(o.week).slice(0,300);g.weekK=wKey();}GOALS.set(g);renderGoals();}
+const exitAt=e=>{let t=(e.run&&e.run.exitT)||e.exitT||e.id;t=+t;return t<1e12?t*1000:t;};
+function goalProg(){const now=new Date(),d0=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime(),w0=d0-((now.getDay()+6)%7)*864e5,all=HS.get().filter(e=>e.ord!=='WEEKLY OUTLOOK');
+  const cl=all.filter(e=>e.st==='win'||e.st==='loss'),sum=a=>a.reduce((s,e)=>s+(rOf(e)||0),0),D=cl.filter(e=>exitAt(e)>=d0),W=cl.filter(e=>exitAt(e)>=w0);
+  return {dR:sum(D),dN:D.length,dW:D.filter(e=>e.st==='win').length,wR:sum(W),wN:W.length,wW:W.filter(e=>e.st==='win').length,open:all.filter(e=>e.st==='open').length};}
+const progText=()=>{const p=goalProg();return `today ${fR(p.dR)} from ${p.dN} closed trade${p.dN===1?'':'s'} (${p.dW} won); this week ${fR(p.wR)} from ${p.wN} (${p.wW} won); ${p.open} open or pending`;};
+function renderGoals(){const g=goalsNow();if(document.activeElement!==$('gDay'))$('gDay').value=g.day;if(document.activeElement!==$('gWeek'))$('gWeek').value=g.week;
+  $('gProg').textContent='Progress: '+progText()+'.'+(g.oldDay?` Last goal set for a previous day: "${g.oldDay}".`:'');}
+['gDay','gWeek'].forEach(id=>$(id).onchange=()=>setGoals(id==='gDay'?{day:$('gDay').value.trim()}:{week:$('gWeek').value.trim()}));
+$('styleTx').value=STYLE.get();$('styleTx').onchange=()=>{STYLE.set($('styleTx').value.trim());$('styleStat').textContent='Saved. Every new analysis uses it.';};
+function styleBlock(){const st=STYLE.get().trim(),g=goalsNow();if(!st&&!g.day&&!g.week)return '';
+  return `TRADER'S OWN STYLE (written with the user in the Coach). Build the Final trade plan the way this trader enters, places stops and takes profit, unless the data clearly argues against it; if you deviate, say why in one line:\n${st||'(not described yet)'}`+
+    (g.day||g.week?`\n\nTRADER'S GOALS: today: ${g.day||'none set'}; this week: ${g.week||'none set'}. Progress: ${progText()}. If today's goal or loss limit is already reached, say so in the Risk line and prefer NO TRADE.`:'');}
+const chatCur=()=>store.get('ev_chatCur')||'c0';
+let ATT=[],CTX=null;
+function discuss(x){CTX={sym:x.sym,id:x.id,text:String(x.text||'').slice(0,14000)};go('coach');$('chatCtx').hidden=false;
+  $('chatCtx').innerHTML=`Discussing the ${esc(String(x.sym||'').toUpperCase())} analysis${x.id?' from '+new Date(x.id).toISOString().slice(0,16).replace('T',' ')+'Z':''}. <button class="sec" style="padding:2px 8px" id="ctxX">✕</button>`;$('ctxX').onclick=()=>{CTX=null;$('chatCtx').hidden=true;};
+  if(!$('chatIn').value)$('chatIn').value='Talk me through this analysis. ';$('chatIn').focus();}
+async function discussH(id){const e=HS.get().find(x=>x.id==id);if(!e)return;const text=e.text||await fullText(id);if(!text){alert('The full text of this entry is not available.');return;}discuss({sym:e.sym,id:e.id,text});}
+function renderAtt(){$('chatAtt').innerHTML=ATT.map((im,i)=>`<div class="th"><img src="${im.url}" alt=""><b data-ai="${i}">×</b></div>`).join('');
+  $('chatAtt').querySelectorAll('[data-ai]').forEach(b=>b.onclick=()=>{ATT.splice(+b.dataset.ai,1);renderAtt();});}
+$('chatImg').onclick=()=>$('chatFile').click();
+$('chatFile').onchange=async e=>{for(const f of [...e.target.files].slice(0,6-ATT.length)){try{ATT.push(await shrink(f));}catch(_){}}e.target.value='';renderAtt();};
+$('chatIn').addEventListener('paste',async e=>{const fs=[...(e.clipboardData||{}).items||[]].filter(i=>i.type.startsWith('image/')).map(i=>i.getAsFile());if(!fs.length)return;e.preventDefault();for(const f of fs.slice(0,6-ATT.length))ATT.push(await shrink(f));renderAtt();});
+$('chatIn').addEventListener('input',()=>{const t=$('chatIn');t.style.height='auto';t.style.height=Math.min(140,t.scrollHeight)+'px';});
+$('chatIn').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&matchMedia('(pointer:fine)').matches){e.preventDefault();chatSend();}});
+function chatRender(){const cur=chatCur(),a=CH.get().filter(m=>m.c===cur),log=$('chatLog');
+  log.innerHTML=a.length?a.map(m=>`<div class="msg ${m.r}">${m.r==='a'?md1(m.x||''):esc(m.x||'')}${(m.imgs||[]).map(k=>`<img data-k="${esc(k)}" alt="shared screenshot">`).join('')}${(m.chips||[]).map(c=>`<div class="chip">${esc(c)}</div>`).join(' ')}<div class="mt">${m.voice?'🎤 ':''}${new Date(m.t).toLocaleString([],{weekday:'short',hour:'2-digit',minute:'2-digit'})}${m.ctx?' · about '+esc(m.ctx):''}</div></div>`).join(''):
+    '<div class="hint">Ask anything: "Why a sell on gold today?", "My goal this week is +4R, help me plan it", "Here is a setup from a channel I follow, what do you think?", or describe how you enter trades so every analysis follows your style.</div>';
+  log.querySelectorAll('img[data-k]').forEach(async im=>{const b=await IDB.kv.get(im.dataset.k);if(b)im.src='data:image/jpeg;base64,'+b;else im.replaceWith(Object.assign(document.createElement('span'),{className:'chip',textContent:'screenshot on another device'}));});
+  log.scrollTop=log.scrollHeight;}
+const COACH_SYS=`You are Edgeview Coach, the trading coach inside the user's own Edgeview app (forex, gold and crypto). You talk with one trader, usually on a phone.
+What you do:
+- Explain and discuss Edgeview's analyses: why the bias, why each level, what would invalidate it, how to manage the trade. Use the data in the context; never invent prices, news or results. If a fresh plan is needed, say to run Analyze, or work from the latest saved analysis and give its time.
+- Review analysis the user shares from others (screenshots or text) critically, like a senior trader: state their bias and levels, check them against Edgeview's latest data and the trader's style, say what is strong and what is weak, and give your own view. Never agree just to please.
+- Goals: help set daily and weekly goals that are process-based and survivable (in R or %, with a maximum number of trades and a daily loss limit). If a goal is unrealistic (for example doubling the account in a week), say so plainly, explain the risk of ruin, and propose a realistic version. Turn goals into a concrete plan: which sessions, which pairs, how many A+ setups are needed at the trader's average R.
+- Learn how this trader trades: entry trigger, timeframes, sessions, pairs, where the stop goes, how targets are set, risk per trade, management. Ask one short question at a time when something important is missing.
+- Keep replies short and easy to read on a phone: plain language, short paragraphs or bullets, numbers with units. No disclaimers in every reply.
+Memory updates (the app reads these tags and hides them from the user; never mention them):
+- When you learn something new or changed about how the trader trades, end your reply with <style_update>THE COMPLETE UPDATED STYLE PROFILE: concise first-person rules, at most 25 lines, keeping everything still true from the current profile</style_update>.
+- When the trader sets or changes a goal, end your reply with <goals_update>{"day":"...","week":"..."}</goals_update> with only the fields that changed.`;
+function coachContext(){const a=HS.get(),g=goalsNow(),L=[],now=Date.now();
+  L.push(`Now: ${new Date(now).toISOString().slice(0,16).replace('T',' ')} UTC; the user's local time is ${new Date(now).toLocaleString()}.`);
+  try{L.push(`Account: XM ${(BRK.get().acc||'standard')} account in ${$('acct').value||'ZAR'}; balance in the position-size tool ${$('cBal').value||'not set'}, risk per trade ${$('cRisk').value||'?'}%. Robot paper account balance ${BOTC.get().bal}, risk ${BOTC.get().risk}% per trade.`);}catch(e){}
+  L.push(`TRADER'S STYLE PROFILE (current):\n${STYLE.get().trim()||'(empty: learn it)'}`);
+  L.push(`GOALS: today: ${g.day||'none set'}; this week: ${g.week||'none set'}.${g.oldDay?' Last goal from a previous day: '+g.oldDay+'.':''} Progress: ${progText()}.`);
+  const tr=a.filter(e=>e.ord!=='WEEKLY OUTLOOK'),cl=tr.filter(e=>(e.st==='win'||e.st==='loss')&&now-e.id<30*864e5),w=cl.filter(e=>e.st==='win').length;
+  L.push(`JOURNAL, last 30 days: ${cl.length} closed, ${w} won${cl.length?' ('+Math.round(w/cl.length*100)+'%)':''}, total ${fR(cl.reduce((s,e)=>s+(rOf(e)||0),0))}.`);
+  L.push('RECENT ANALYSES AND TRADES (newest first):\n'+(tr.slice(0,14).map(e=>`- ${new Date(e.id).toISOString().slice(0,16).replace('T',' ')}Z ${e.sym} ${e.dec} ${e.ord} entry ${e.entry} SL ${e.sl} TP1 ${e.tp1}${e.prob!=null?' p='+e.prob+'%':''} -> ${e.st}${e.st==='win'||e.st==='loss'?' '+fR(rOf(e)):''}${e.bot?' (robot)':''}`).join('\n')||'none yet'));
+  const ls=LS.get().slice(0,8);if(ls.length)L.push('LESSONS FROM CLOSED TRADES:\n'+ls.map(l=>`- ${l.sym} ${l.res}: ${l.text}`).join('\n'));
+  const last=a.find(e=>e.text&&e.ord!=='WEEKLY OUTLOOK');if(last&&!(CTX&&CTX.id===last.id)){const i=last.text.search(/^### *Final trade plan/mi);L.push(`LATEST ANALYSIS (${last.sym}, ${new Date(last.id).toISOString().slice(0,16).replace('T',' ')}Z), final plan:\n`+(i>=0?last.text.slice(i,i+2500):last.text.slice(0,2500)));}
+  if(CTX)L.push(`ANALYSIS THE USER WANTS TO DISCUSS (${CTX.sym}${CTX.id?', '+new Date(CTX.id).toISOString().slice(0,16).replace('T',' ')+'Z':''}), full text:\n${CTX.text}`);
+  return L.join('\n\n');}
+async function chatStream(ak,system,messages,onText){const mdl=$('model').value.trim()||'claude-sonnet-5-5';
+  const send=v=>fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':ak,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify({model:mdl,max_tokens:4000,stream:true,...(v===0?{thinking:{type:'disabled'}}:{}),system,messages})});
+  let r=await send(0);if(!r.ok&&r.status===400)r=await send(1);if(!r.ok){let m=r.status;try{m=(await r.json()).error?.message||m;}catch(_){}throw new Error(m);}
+  const rd=r.body.getReader(),dec=new TextDecoder();let buf='',text='';
+  const handle=ln=>{if(!ln.startsWith('data:'))return;let ev;try{ev=JSON.parse(ln.slice(5));}catch(_){return;}if(ev.type==='content_block_delta'&&ev.delta?.type==='text_delta')text+=ev.delta.text;else if(ev.type==='error')throw new Error(ev.error?.message||'Stream error');};
+  while(true){const {done,value}=await rd.read();if(done)break;buf+=dec.decode(value,{stream:true});const ls=buf.split('\n');buf=ls.pop();for(const l of ls)handle(l.replace(/\r$/,''));onText(text);}
+  if(buf)handle(buf);onText(text);return text;}
+const stripTags=t=>t.replace(/<style_update>[\s\S]*?(<\/style_update>|$)/g,'').replace(/<goals_update>[\s\S]*?(<\/goals_update>|$)/g,'').trim();
+async function buildMsgs(list){const out=[],withImg=list.filter(m=>m.r==='u'&&(m.imgs||[]).length).slice(-2).map(m=>m.id);
+  for(const m of list){const role=m.r==='u'?'user':'assistant',content=[];
+    if(m.r==='u'&&(m.imgs||[]).length){if(withImg.includes(m.id)){for(const k of m.imgs){const b=await IDB.kv.get(k);if(b)content.push({type:'image',source:{type:'base64',media_type:'image/jpeg',data:b}});}}
+      else content.push({type:'text',text:`[${m.imgs.length} screenshot${m.imgs.length>1?'s':''} shared earlier]`});}
+    const tx=(m.voice?'(voice note) ':'')+(m.x||'');if(tx.trim())content.push({type:'text',text:tx});if(!content.length)continue;
+    const prev=out[out.length-1];if(prev&&prev.role===role)prev.content.push(...content);else out.push({role,content});}
+  while(out.length&&out[0].role!=='user')out.shift();return out;}
+let chatBusy=false;
+async function chatSend(o={}){if(chatBusy)return;const txt=$('chatIn').value.trim();if(!txt&&!ATT.length)return;
+  const ak=$('kAnthropic').value.trim();if(!ak){$('chatStat').textContent='Add your Anthropic key in Settings first.';return;}
+  chatBusy=true;$('chatSend').disabled=true;const cur=chatCur(),m={id:Date.now()+'-'+Math.random().toString(36).slice(2,6),c:cur,t:Date.now(),r:'u',x:txt,imgs:[],voice:!!o.voice,ctx:CTX?String(CTX.sym||'').toUpperCase():null};
+  for(let i=0;i<ATT.length;i++){const k='img:'+m.id+':'+i;await IDB.kv.put(k,ATT[i].b64);m.imgs.push(k);}
+  CH.set([...CH.get(),m]);ATT=[];renderAtt();$('chatIn').value='';$('chatIn').style.height='';chatRender();
+  const bub=document.createElement('div');bub.className='msg a';bub.innerHTML='<span class="hint">Thinking…</span>';$('chatLog').appendChild(bub);$('chatLog').scrollTop=$('chatLog').scrollHeight;
+  try{const msgs=await buildMsgs(CH.get().filter(x=>x.c===cur).slice(-24));
+    const raw=await chatStream(ak,COACH_SYS+'\n\nCONTEXT FROM THE APP (live data from the user\'s Edgeview):\n'+coachContext(),msgs,t=>{bub.innerHTML=md1(stripTags(t));$('chatLog').scrollTop=$('chatLog').scrollHeight;});
+    const chips=[],su=raw.match(/<style_update>([\s\S]*?)<\/style_update>/),gu=raw.match(/<goals_update>([\s\S]*?)<\/goals_update>/);
+    if(su&&su[1].trim().length>20){STYLE.set(su[1].trim().slice(0,4000));$('styleTx').value=STYLE.get();chips.push('Updated how you trade');}
+    if(gu){try{const g=JSON.parse(gu[1].trim());setGoals({...(g.day!=null?{day:g.day}:{}),...(g.week!=null?{week:g.week}:{})});chips.push('Goals updated');}catch(e){}}
+    CH.set([...CH.get(),{id:Date.now()+'-a',c:cur,t:Date.now(),r:'a',x:stripTags(raw)||'(no answer)',chips}]);$('chatStat').textContent='';}
+  catch(e){$('chatStat').textContent='Coach error: '+(e.message||e);}
+  finally{chatBusy=false;$('chatSend').disabled=false;chatRender();}}
+$('chatSend').onclick=()=>chatSend();
+$('chatClear').onclick=()=>{store.set('ev_chatCur','c'+Date.now());CTX=null;$('chatCtx').hidden=true;chatRender();};
+// voice notes: Whisper when an OpenAI key is set, otherwise the phone's speech recognition
+const VO={rec:null,sr:null,chunks:[],base:''};
+async function micToggle(){const btn=$('chatMic'),st=$('chatStat'),ok=$('kOpenAI').value.trim();
+  if(VO.rec){VO.rec.stop();return;}if(VO.sr){VO.sr.stop();return;}
+  if(ok&&window.MediaRecorder&&navigator.mediaDevices){try{const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+      const mime=['audio/webm','audio/mp4','audio/ogg'].find(t=>MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(t))||'';
+      const rec=new MediaRecorder(stream,mime?{mimeType:mime}:{});VO.rec=rec;VO.chunks=[];rec.ondataavailable=e=>{if(e.data.size)VO.chunks.push(e.data);};
+      const t0=Date.now();const tick=setInterval(()=>{st.textContent=`Recording ${Math.round((Date.now()-t0)/1000)}s… tap 🎤 again to send`;},500);
+      rec.onstop=async()=>{clearInterval(tick);stream.getTracks().forEach(t=>t.stop());VO.rec=null;btn.classList.remove('rec');
+        const type=rec.mimeType||mime||'audio/webm',blob=new Blob(VO.chunks,{type});if(blob.size<2000){st.textContent='Too short, nothing sent.';return;}
+        st.textContent='Transcribing your voice note…';try{const fd=new FormData();fd.append('file',blob,'voice.'+(type.includes('mp4')?'m4a':type.includes('ogg')?'ogg':'webm'));fd.append('model','whisper-1');
+          const r=await fetch('https://api.openai.com/v1/audio/transcriptions',{method:'POST',headers:{Authorization:'Bearer '+ok},body:fd}),j=await r.json().catch(()=>({}));
+          if(!r.ok)throw new Error(j.error?.message||('HTTP '+r.status));const tx=(j.text||'').trim();if(!tx){st.textContent='No speech heard.';return;}
+          $('chatIn').value=($('chatIn').value?$('chatIn').value+' ':'')+tx;st.textContent='';chatSend({voice:true});}
+        catch(e){st.textContent='Could not transcribe: '+(e.message||e);}};
+      rec.start(1000);btn.classList.add('rec');}catch(e){st.textContent='Microphone not available: '+(e.message||e)+'. Allow the microphone for this site in the browser settings.';}
+    return;}
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){st.textContent='This browser has no speech recognition. Add an OpenAI key in Settings for voice notes, or use the microphone on your keyboard.';return;}
+  const sr=new SR();VO.sr=sr;sr.lang=navigator.language||'en-ZA';sr.continuous=true;sr.interimResults=true;VO.base=$('chatIn').value?$('chatIn').value+' ':'';let fin='';
+  sr.onresult=e=>{let it='';for(let i=e.resultIndex;i<e.results.length;i++){const r=e.results[i];if(r.isFinal)fin+=r[0].transcript+' ';else it+=r[0].transcript;}$('chatIn').value=VO.base+fin+it;};
+  sr.onerror=e=>{st.textContent='Voice: '+(e.error==='not-allowed'?'allow the microphone for this site':e.error);};
+  sr.onend=()=>{VO.sr=null;btn.classList.remove('rec');st.textContent='';if(fin.trim())chatSend({voice:true});};
+  try{sr.start();btn.classList.add('rec');st.textContent='Listening… tap 🎤 again to send';}catch(e){VO.sr=null;st.textContent='Voice: '+(e.message||e);}}
+$('chatMic').onclick=micToggle;
+renderGoals();chatRender();setInterval(()=>{if(!$('v-coach').hidden)renderGoals();},60000);
 // ---- position size
 const VPP=sy=>/XAU/i.test(sy)?100:/XAG/i.test(sy)?5000:/BTC|ETH|SOL|XRP|BNB/i.test(sy)?1:/ZAR/i.test(sy)?5500:/JPY/i.test(sy)?650:/CAD/i.test(sy)?72000:/CHF/i.test(sy)?110000:100000;
 ['cBal','cRisk'].forEach(i=>{const v=store.get('ca_'+i);if(v)$(i).value=v;});
@@ -1646,7 +1796,7 @@ if(navigator.canShare&&navigator.canShare({files:[f]})){try{await navigator.shar
 const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='edgeview-plan.png';a.click();},'image/png');}
 
 // ---- navigation (v33): bottom tabs on phones, a side rail on wide screens, a sheet for the rest
-const TITLES={chart:'Chart',analyze:'Analyze',robot:'Robot',journal:'Journal',weekend:'Weekend engine',size:'Position size',settings:'Settings'};
+const TITLES={chart:'Chart',analyze:'Analyze',robot:'Robot',coach:'Coach',journal:'Journal',weekend:'Weekend engine',size:'Position size',settings:'Settings'};
 const TAB_OF={weekend:'more',size:'more',settings:'more'};
 function closeSheets(){['moreSheet','searchSheet'].forEach(id=>$(id).hidden=true);$('sheetBg').hidden=true;}
 function openSheet(id){closeSheets();$(id).hidden=false;$('sheetBg').hidden=false;}
@@ -1664,7 +1814,7 @@ document.querySelectorAll('#tabs button,#moreSheet [data-v]').forEach(b=>b.oncli
 $('sheetBg').onclick=closeSheets;
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeSheets();});
 renderTicker();renderWL();renderAlerts();
-go(store.get('ca_kAnthropic')?((['chart','analyze','robot','journal'].includes(store.get('ca_view'))&&store.get('ca_view'))||'chart'):'settings');
+go(store.get('ca_kAnthropic')?((['chart','analyze','robot','coach','journal'].includes(store.get('ca_view'))&&store.get('ca_view'))||'chart'):'settings');
 
 // ==== WEEKEND PURE START
 const DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
