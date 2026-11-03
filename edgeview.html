@@ -489,6 +489,7 @@
     <div class="row" style="margin-top:8px;align-items:center;gap:8px;flex-wrap:wrap"><button class="sec" id="learnRev">Review closed trades now</button><label class="hint" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="pmOn" checked> Write a lesson after every closed trade (Claude Haiku, about $0.002 each)</label></div>
     <div id="learnStat" class="hint"></div></div>
   <div class="card"><b>Calibration: is Edgeview's % honest?</b><div id="calib"></div></div>
+  <div class="card"><b>Performance</b><div id="perfBox" class="hint"></div></div>
   <div class="card"><b>History &amp; journal</b>
     <div id="stats" class="hint"></div>
     <div id="biasBox"></div>
@@ -600,6 +601,8 @@ RULES
 - TWO ENTRIES (scaling in): when a real second level exists, split the plan into Entry and Entry 2 (a deeper limit in the same direction), with ONE shared stop beyond Entry 2's structure. Entry 2 must be at least 0.5 x ATR from Entry. The total risk with both entries filled and the stop hit must stay inside the 0.5-1% risk budget (the risk is split across the two entries, not doubled). The R:R from the Average entry must still be at least 1:1.5, or write Entry 2 as NONE. Never add a third entry, never move the stop further away, never add after the stop level is breached, and cancel Entry 2 if the Cancel / invalidated condition happens first. Entry 2 only adds size at a better price; it is not averaging down without a stop. The limit orders in the Scalp, Intraday and Swing blocks may also carry a second limit: write it on the same line as "LIMIT 2: price (share %)" with the same stop loss. If only Entry fills, the risk taken is only its share. Say in the Management line what to do if only one entry fills.
 - Give limit orders even when an immediate entry exists, as a better-price alternative. If there is no immediate entry, the limit orders are the main plan.
 - Place limit entries at real levels (support/resistance, demand/supply zone, EMA, Fibonacci, pivot, Bollinger band), not at random prices.
+- NEWS REACTION: if a NEWS REACTION block is given and one of its releases falls inside the plan's validity, compare its usual first-hour range with the stop distance. If the stop is smaller than that range, either set the validity to end before the release, put the stop beyond the usual reaction, or choose NO TRADE. Use the continuation share to judge whether chasing the first move has worked on this pair.
+- RATE DIFFERENTIAL: a widening 10-year yield gap in favour of one currency is a slow tailwind for it (days to weeks); it never overrides the chart on intraday timeframes, but count it in the bull vs bear scores.
 - OANDA BOOKS: if an OANDA order book or position book is given, treat large clusters of resting orders as liquidity and likely reaction points. Place limit entries just in front of a large resting-order cluster on the side you want to buy or sell, and put stops beyond clusters of stop orders (those are the levels stop hunts run), not inside them. Retail position skew of 60% or more is contrarian evidence worth at most 5 points of probability. The books show OANDA's clients only and are up to 20 minutes old.
 - FILL-FRIENDLY ENTRIES: price often turns a few points before an obvious level, because other orders sit in front of it. Put a limit entry on the near edge of the zone (the side price is coming from), not on the exact swing high or low: a BUY LIMIT a little above the support or demand line, a SELL LIMIT a little below the resistance or supply line, by at least half the spread plus about 0.05 x the 1H ATR. Keep the stop beyond the far side of the structure. If a FILL HISTORY line is given, use its suggested buffer instead.
 - Minimum R:R 1:1.5 for every order, or mark that order SKIP.
@@ -1117,7 +1120,7 @@ async function liveCalendar(){
   const now=Date.now();
   if(calMem&&now-calMem.t<36e5) return calMem.ev;
   try{const c=JSON.parse(localStorage.getItem('ca_cal')||'null');if(c&&now-c.t<36e5&&Array.isArray(c.ev)){calMem=c;return c.ev;}}catch(e){}
-  try{const ev=await getJSON('https://nfs.faireconomy.media/ff_calendar_thisweek.json');if(!Array.isArray(ev))throw 0;calMem={t:now,ev};try{localStorage.setItem('ca_cal',JSON.stringify(calMem));}catch(e){}return ev;}
+  try{const ev=await getJSON('https://nfs.faireconomy.media/ff_calendar_thisweek.json');if(!Array.isArray(ev))throw 0;calMem={t:now,ev};ffStore(ev);try{localStorage.setItem('ca_cal',JSON.stringify(calMem));}catch(e){}return ev;}
   catch(e){srcFail('Live economic calendar (ForexFactory feed)');try{const c=JSON.parse(localStorage.getItem('ca_cal')||'null');if(c&&Array.isArray(c.ev))return c.ev;}catch(_){}return null;}
 }
 
@@ -1197,6 +1200,8 @@ async function liveFor(p,tk,fk){
   try{const ps=await positioning(p.sym,p.market);if(ps)live=(live?live+'\n':'')+ps;}catch(e){}
   try{const mc=await fredMacro($('kFred').value.trim());if(mc)live=(live?live+'\n':'')+mc;}catch(e){}
   let cal=null;try{const ev=await liveCalendar();if(ev){cal=calendarFor(ev,p.sym,Date.now());const ct=calText(cal,Date.now());live=(live?live+'\n':'')+(ct||'LIVE ECONOMIC CALENDAR: no medium or high impact events for '+calCcys(p.sym).join('/')+' in the next 7 days in the feed.');}}catch(e){}
+  try{const nr=await newsFor(p.sym,cal);if(nr)live=(live?live+'\n':'')+nr;}catch(e){}
+  try{const rd=await rateDiff(p.sym,$('kFred').value.trim());if(rd)live=(live?live+'\n':'')+rd;}catch(e){}
   try{const xt=expoText(HS.get(),Date.now(),p.sym);if(xt)live=(live?live+'\n':'')+xt;}catch(e){}
   try{const db=await depthBlock(p.sym);if(db)live=(live?live+'\n':'')+db;}catch(e){}
   try{const oa=await oandaBlock(p.sym);if(oa)live=(live?live+'\n':'')+oa;}catch(e){}
@@ -1320,7 +1325,7 @@ function parseFinal(raw){const i=raw.search(/^### *Final trade plan/mi);if(i<0)r
 const num=x=>{const m=String(x||'').replace(/,/g,'').match(/-?\d+(\.\d+)?/);return m?+m[0]:null;};
 // ---- history + journal
 const HS={get:()=>{try{return JSON.parse(localStorage.getItem('ca_hist')||'[]')}catch(e){return[]}},set:a=>{keepTexts(a);const now=Date.now(),pack=(n,k)=>JSON.stringify(a.slice(0,n).map((e,i)=>(i<k||(e.ord==='WEEKLY OUTLOOK'&&now-e.id<20*86400000))?e:{...e,text:''}));try{localStorage.setItem('ca_hist',pack(400,40));}catch(e){try{localStorage.setItem('ca_hist',pack(150,12));}catch(e2){}}}};
-const APP_VER='edgeview-v43.8';
+const APP_VER='edgeview-v43.9';
 function META(){return {model:$('model').value.trim()||'claude-sonnet-5-5',deep:$('depth').value,ver:APP_VER};}
 
 function addOdds(card,text,sym){
@@ -1859,7 +1864,10 @@ function addCheck(card,text,p){
       for(const cur of L2){const b=before[cur]||0,af=after[cur]||0;if(Math.abs(af)>=3&&Math.abs(af)>Math.abs(b))c.items.push({lvl:'warn',msg:`This takes your ${cur} exposure to ${af>0?'+':''}${af} units (${af>0?'long':'short'}) across open plans: these trades are one bet, so cut the size.`});else if(Math.abs(af)>Math.abs(b)&&Math.abs(b)>=1)c.items.push({lvl:'ok',msg:`Adds to an existing ${cur} position: ${b>0?'+':''}${b} → ${af>0?'+':''}${af} units.`});}
       const opp=pl.filter(x=>normSym(x.e.sym)===normSym(p.sym)&&(/SELL/i.test(x.e.dec)?-1:1)!==c.side);if(opp.length)c.items.push({lvl:'warn',msg:`You have ${opp.length} open ${opp.length>1?'plans':'plan'} on ${String(p.sym).toUpperCase()} in the other direction.`});}catch(e){}
     try{const cal=p.cal||null;if(cal){const vm=String(g['valid until']||'').match(/(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})/),until=vm?planTime(g['valid until']):null;
-      const cl=calClash(cal,now,until);if(cl.length)c.items.push({lvl:'warn',msg:`High-impact news before this order expires: ${cl.slice(0,3).map(x=>`${x.country} ${x.title} at ${ztHM(x.t)} ${zlab()}${x.t-now>864e5?' on '+zt(x.t).slice(5,10):''}`).join('; ')}. Avoid holding through it or tighten the plan.`});}}catch(e){}
+      const cl=calClash(cal,now,until);if(cl.length)c.items.push({lvl:'warn',msg:`High-impact news before this order expires: ${cl.slice(0,3).map(x=>`${x.country} ${x.title} at ${ztHM(x.t)} ${zlab()}${x.t-now>864e5?' on '+zt(x.t).slice(5,10):''}`).join('; ')}. Avoid holding through it or tighten the plan.`});
+      try{const N=NRX[String(p.sym).toUpperCase()],en=_num(g.entry),sl=_num(g['stop loss']);if(N&&N.st&&en!=null&&sl!=null&&en!==sl){const d=Math.abs(en-sl),seen=new Set();
+        for(const x of cl){const k=String(x.country).toUpperCase()+' '+famOf(x.title);if(seen.has(k))continue;seen.add(k);const s2=N.st.find(z=>z.key===k);
+          if(s2&&s2.medR>=0.8*d)c.items.push({lvl:'warn',msg:`${k}: in the first hour after past releases ${String(p.sym).toUpperCase()} usually moved ${fq(s2.medR,en)} (median of ${s2.n}, ${s2.medX.toFixed(1)}x a normal hour), ${s2.medR>=d?'more than':'close to'} this stop distance of ${fq(d,en)}. A normal reaction can stop the trade out.`});}}}catch(e){}}}catch(e){}
     try{const bb=String(g['bull vs bear']||''),bu=bb.match(/bull\D{0,12}?(\d+(?:\.\d+)?)/i),be=bb.match(/bear\D{0,12}?(\d+(?:\.\d+)?)/i);
       if(bu&&be){const B=+bu[1],S=+be[1],gap=(B-S)*c.side;if(gap<0)c.items.push({lvl:'bad',msg:`The plan is a ${c.side>0?'BUY':'SELL'} but its own scores favour the other side (bull ${B}, bear ${S}).`});else if(gap<3)c.items.push({lvl:'bad',msg:`Bull ${B} and bear ${S} are within 2 points: by the rules this should be NO TRADE.`});else c.items.push({lvl:'ok',msg:`Both sides scored: bull ${B}, bear ${S}.`});}}catch(e){}
     try{const f=p.f;if(f&&f.side){const a=[f.trD,f.tr4].filter(x=>x===-f.side).length;
@@ -1924,7 +1932,7 @@ async function autoResolve(force){
 function renderHist(){const a=HS.get(),cl=a.filter(e=>e.st=='win'||e.st=='loss'),w=cl.filter(e=>e.st=='win').length,pr=cl.filter(e=>e.prob!=null);
 $('stats').textContent=cl.length?`Closed ${cl.length}: ${w} wins, ${cl.length-w} losses, win rate ${(w/cl.length*100).toFixed(0)}%`+(pr.length?` | Edgeview's stated average probability ${(pr.reduce((t,e)=>t+e.prob,0)/pr.length).toFixed(0)}%`:''):'No closed trades yet. Open plans are checked against the candles automatically; you can also mark Win or Loss yourself.';
 $('hist').innerHTML=a.map(e=>`<div class="hi"><b>${esc(e.sym)} ${esc(e.dec)}</b> ${esc(e.ord)}${e.ord==='WEEKLY OUTLOOK'?'':' @ '+esc(e.entry)}<br><small>${zt(e.id)} ${zlab()}${e.ord==='WEEKLY OUTLOOK'?'':' | SL '+esc(e.sl)+' | TP1 '+esc(e.tp1)}${e.prob!=null?' | '+e.prob+'%':''} | <b>${e.st.toUpperCase()}</b>${isLad(e)&&e.hit!=null?' | '+(e.hit?'TP'+e.hit+' of '+e.tps.length+' hit':'stopped')+' | '+fR(rOf(e)):''}${tagOf(e)}${e.auto==='candles'?' | <i>auto: '+esc(e.autoNote||'from candles')+'</i>':''}${e.st==='open'&&e.run?' | <i>'+esc(String(e.run.note||(e.run.filled?'Filled, still running.':'Not filled yet.')))+'</i>':''}</small><div class="row" style="margin-top:6px;flex-wrap:wrap"><button class="sec" onclick="viewH(${e.id})">View</button><button class="sec" onclick="discussH(${e.id})">Discuss</button>${hitBtns(e)}<button class="sec" onclick="setSt(${e.id},'skip')">Skipped</button>${e.ord!=='WEEKLY OUTLOOK'&&e.st!=='open'?`<button class="sec" onclick="copyResult(this,${e.id})">Post result</button>`:''}<button class="sec" onclick="delH(${e.id})">Delete</button></div></div>`).join('')||'<small>Nothing saved yet. Every analysis is saved here automatically.</small>';
-$('calib').innerHTML=calibHTML(a);try{$('biasBox').innerHTML=biasHTML(a);}catch(e){}renderLearn();}
+$('calib').innerHTML=calibHTML(a);try{$('biasBox').innerHTML=biasHTML(a);}catch(e){}try{const M=MANDATE.get();$('perfBox').innerHTML=perfHTML(a,+M.risk||1,(+M.maxDD||0)/100)||'No closed trades yet. Expectancy, profit factor, the equity curve and the drawdown odds appear here after your first results.';}catch(e){}renderLearn();}
 // Direction bias from the journal: buy/sell share per pair, win rate and stated vs actual % per side, blind check agreement.
 function biasStats(entries){const by={};
   for(const e of entries||[]){if(!e||e.ord==='WEEKLY OUTLOOK')continue;const sd=/NO\s*TRADE/i.test(e.dec||'')?0:/BUY/i.test(e.dec||'')?1:/SELL/i.test(e.dec||'')?-1:0;if(!sd)continue;
@@ -2318,6 +2326,7 @@ function liveRender(){const M=MANDATE.get(),S=LST;$('livePause').textContent=M.o
     (ch.reason?`<div><b>${esc(ch.reason)}</b></div>`:'')+(S.idle?`<div>Not opening trades: ${esc(S.idle)}.</div>`:'')+(S.err?`<div class="err">Last error: ${esc(S.err)}</div>`:'')+
     `<div style="margin-top:6px"><b>Open</b> (${pos.length}) ${pos.map(p=>`<div>${esc(p.sym)} ${p.type&&/SELL/.test(p.type)?'SELL':'BUY'} ${p.vol} @ ${p.open} · SL ${p.sl||'none'} · TP ${p.tp||'none'} · <span style="color:${p.pl>=0?'var(--bull)':'var(--bear)'}">${lvMoney(p.pl,A.currency)}</span>${p.mine?'':' (manual)'}</div>`).join('')}</div>`+
     (ord.length?`<div style="margin-top:4px"><b>Pending</b> ${ord.map(o=>`<div>${esc(o.sym)} ${esc(String(o.type||'').replace('ORDER_TYPE_',''))} ${o.vol} @ ${o.open}</div>`).join('')}</div>`:'')+
+    (()=>{try{return execHTML(S.trades);}catch(e){return '';}})()+
     `<details style="margin-top:6px"><summary style="cursor:pointer">Robot log</summary>${(S.log||[]).slice(0,25).map(x=>`<div>${locT(x.t,{weekday:'short',hour:'2-digit',minute:'2-digit'})}: ${esc(x.msg)}</div>`).join('')}</details>`+
     `<div style="margin-top:4px">Last robot run ${ago<1?'just now':ago+' min ago'}.</div>`;}
 $('liveRefresh').onclick=async()=>{$('liveStatus').textContent='Reading the robot\'s state…';await liveLoad();liveRender();if(!LST)$('liveStatus').textContent='No robot state yet. Finish the setup below, turn on cloud sync, and start a challenge.';};
@@ -3286,13 +3295,139 @@ function oddsText(r,claude){
 // ==== ODDS PURE END
 
 
+
+// ==== PERF PURE START
+// Results after costs, in R, oldest first; equity at a fixed risk % per trade (compounded).
+function perfStats(entries,risk){
+  const cl=(entries||[]).filter(e=>e&&e.ord!=='WEEKLY OUTLOOK'&&(e.st==='win'||e.st==='loss')).map(e=>({id:e.id,r:rOf(e)})).filter(x=>x.r!=null&&isFinite(x.r)).sort((a,b)=>a.id-b.id);
+  const n=cl.length;if(!n)return null;const rs=cl.map(x=>x.r),rk=(risk>0?risk:1)/100;
+  const W=rs.filter(r=>r>0),L=rs.filter(r=>r<=0),sw=W.reduce((a,b)=>a+b,0),sl=-L.reduce((a,b)=>a+b,0);
+  let cum=0,peak=0,mdd=0,eq=1,pe=1,mddP=0,run=0,maxRun=0;const curve=[0];
+  for(const r of rs){cum+=r;curve.push(cum);peak=Math.max(peak,cum);mdd=Math.max(mdd,peak-cum);eq*=Math.max(0,1+r*rk);pe=Math.max(pe,eq);mddP=Math.max(mddP,pe>0?1-eq/pe:1);if(r<=0){run++;maxRun=Math.max(maxRun,run);}else run=0;}
+  return {n,rs,curve,risk:rk*100,exp:cum/n,total:cum,pf:sl>0?sw/sl:null,win:W.length/n,avgW:W.length?sw/W.length:null,avgL:L.length?-sl/L.length:null,mddR:mdd,mddP,maxRun,curRun:run,ret:eq-1};}
+// Bootstrap: draw the next N trades from your own results (with replacement) and record the worst drawdown and the return.
+function perfMC(rs,risk,o){o=o||{};const n=(rs||[]).length;if(n<10)return null;const N=o.trades||100,R=o.runs||4000,rnd=mulberry(o.seed||20261104),rk=risk/100,lim=o.limit||0;
+  const dd=new Float64Array(R),fin=new Float64Array(R);let h10=0,h20=0,hl=0,ruin=0;
+  for(let k=0;k<R;k++){let eq=1,pe=1,m=0;for(let i=0;i<N;i++){eq*=Math.max(0,1+rs[(rnd()*n)|0]*rk);if(eq>pe)pe=eq;const d=1-eq/pe;if(d>m)m=d;}
+    dd[k]=m;fin[k]=eq-1;if(m>=0.1)h10++;if(m>=0.2)h20++;if(lim&&m>=lim)hl++;if(eq<=0.5)ruin++;}
+  dd.sort();fin.sort();const q=(a,p)=>a[Math.min(a.length-1,Math.floor(p*a.length))];
+  return {trades:N,runs:R,p10:h10/R,p20:h20/R,pLim:lim?hl/R:null,ruin:ruin/R,ddMed:q(dd,0.5),dd95:q(dd,0.95),finMed:q(fin,0.5),fin05:q(fin,0.05),fin95:q(fin,0.95)};}
+function equitySVG(curve){const n=(curve||[]).length;if(n<2)return '';const W=320,H=96,P=8,mn=Math.min(0,...curve),mx=Math.max(0,...curve),sp=mx-mn||1;
+  const X=i=>P+(W-2*P)*i/(n-1),Y=v=>P+4+(H-2*P-8)*(1-(v-mn)/sp),pts=curve.map((v,i)=>X(i).toFixed(1)+','+Y(v).toFixed(1)).join(' '),last=curve[n-1];
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:560px;display:block;margin:6px 0" role="img" aria-label="Equity curve in R after costs"><line x1="${P}" x2="${W-P}" y1="${Y(0).toFixed(1)}" y2="${Y(0).toFixed(1)}" stroke="var(--line)" stroke-dasharray="3 3"/><polyline fill="none" stroke="${last>=0?'var(--bull)':'var(--bear)'}" stroke-width="1.8" stroke-linejoin="round" points="${pts}"/><text x="${P}" y="${H-2}" font-size="9" fill="var(--mute)">trade 1</text><text x="${W-P}" y="${H-2}" font-size="9" fill="var(--mute)" text-anchor="end">trade ${n-1}: ${last>=0?'+':''}${last.toFixed(1)}R</text><text x="${P}" y="9" font-size="9" fill="var(--mute)">peak ${mx>=0?'+':''}${mx.toFixed(1)}R</text></svg>`;}
+function perfHTML(entries,risk,limit){const s=perfStats(entries,risk);if(!s)return '';const P=x=>(x*100).toFixed(x!==0&&Math.abs(x)<0.1?1:0)+'%',sg=x=>(x>=0?'+':'')+x.toFixed(2)+'R';
+  let h=`<div style="color:var(--text)">${s.n} closed trade${s.n===1?'':'s'}, after costs: expectancy <b>${sg(s.exp)}</b> per trade, profit factor <b>${s.pf==null?'no losses yet':s.pf.toFixed(2)}</b>, win rate ${P(s.win)}${s.avgW!=null?`, average win ${sg(s.avgW)}`:''}${s.avgL!=null?`, average loss ${sg(s.avgL)}`:''}.</div>`+equitySVG(s.curve);
+  h+=`<div>Total ${sg(s.total)}. Worst drawdown ${s.mddR.toFixed(2)}R, which is ${P(s.mddP)} of the account at ${s.risk}% risk per trade. Longest losing run ${s.maxRun}${s.curRun?`; current losing run ${s.curRun}`:''}.</div>`;
+  const mc=perfMC(s.rs,s.risk,{limit});
+  h+=mc?`<div style="margin-top:6px"><b>The next ${mc.trades} trades</b>, simulated ${mc.runs} times by redrawing your own results at ${s.risk}% risk: chance of a 10% drawdown ${P(mc.p10)}, of a 20% drawdown ${P(mc.p20)}${mc.pLim!=null?`, of reaching your ${(limit*100).toFixed(0)}% drawdown limit ${P(mc.pLim)}`:''}, of losing half the account ${P(mc.ruin)}. Typical worst drawdown ${P(mc.ddMed)} (1 run in 20: ${P(mc.dd95)}). Return: median ${P(mc.finMed)}, 90% of runs between ${P(mc.fin05)} and ${P(mc.fin95)}.</div>`
+    :`<div style="margin-top:6px">The drawdown simulation starts after 10 closed trades (${s.n} so far).</div>`;
+  if(s.n<30)h+=`<div style="margin-top:4px">With fewer than 30 trades these numbers swing a lot; read them as rough.</div>`;
+  return h;}
+// Live robot: planned vs actual fills.
+function execStats(trades){const T=(trades||[]).filter(t=>t&&t.entry!=null&&t.sl!=null);if(!T.length)return null;
+  const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:null,pend=T.filter(t=>t.order&&t.order!=='MARKET'),filled=pend.filter(t=>t.fill!=null||/win|loss|be/.test(t.st||'')),exp=pend.filter(t=>t.st==='expired');
+  const F=T.filter(t=>t.slipR!=null&&isFinite(t.slipR)),ttf=pend.filter(t=>t.fillAt!=null&&t.at!=null&&t.fillAt>=t.at).map(t=>(t.fillAt-t.at)/36e5);
+  const spR=T.filter(t=>t.spr!=null&&t.entry!==t.sl).map(t=>t.spr/Math.abs(t.entry-t.sl));
+  return {n:T.length,pend:pend.length,filled:filled.length,expired:exp.length,waiting:pend.filter(t=>t.st==='open'&&t.fill==null).length,nSlip:F.length,slipR:avg(F.map(t=>t.slipR)),worse:F.filter(t=>t.slipR>0.005).length,worst:F.length?Math.max(...F.map(t=>t.slipR)):null,ttf:avg(ttf),sprR:avg(spR),moved:T.filter(t=>t.entry0!=null).length};}
+function execHTML(trades){const e=execStats(trades);if(!e)return '';const L=[],P=x=>(x*100).toFixed(1)+'%';
+  if(e.filled+e.expired)L.push(`limit and stop orders filled ${e.filled} of ${e.filled+e.expired} (${P(e.filled/(e.filled+e.expired))})${e.waiting?`, ${e.waiting} still waiting`:''}`);
+  if(e.nSlip)L.push(`average slippage ${e.slipR>=0?'+':''}${e.slipR.toFixed(3)}R (${e.worse} of ${e.nSlip} fills worse than planned, worst ${e.worst>=0?'+':''}${e.worst.toFixed(3)}R; plus means a worse price)`);
+  if(e.ttf!=null)L.push(`orders took ${e.ttf.toFixed(1)} h on average to fill`);
+  if(e.sprR!=null)L.push(`the spread at placement was ${P(e.sprR)} of the stop distance`);
+  if(e.moved)L.push(`${e.moved} entr${e.moved===1?'y was':'ies were'} moved onto the broker's prices or in front of the level`);
+  return L.length?`<div style="margin-top:6px"><b>Execution</b> (${e.n} robot trade${e.n===1?'':'s'}): ${L.join('; ')}.</div>`:'';}
+// ==== PERF PURE END
+
+// ==== NEWS PURE START
+// FOMC decision days (14:00 New York). Other US dates come from FRED, the stored ForexFactory feed, or the BLS schedule rule.
+const FOMC_DAYS=['2025-01-29','2025-03-19','2025-05-07','2025-06-18','2025-07-30','2025-09-17','2025-10-29','2025-12-10','2026-01-28','2026-03-18','2026-04-29','2026-06-17','2026-07-29','2026-09-16','2026-10-28','2026-12-09'];
+function nyOff(ms){const y=new Date(ms).getUTCFullYear(),sun=(m,k)=>{const f=new Date(Date.UTC(y,m,1)).getUTCDay();return 1+(7-f)%7+7*(k-1);};return ms>=Date.UTC(y,2,sun(2,2),7)&&ms<Date.UTC(y,10,sun(10,1),6)?-4:-5;}
+function nyAt(day,h,mi){const [y,m,d]=String(day).split('-').map(Number),g=Date.UTC(y,m-1,d,h,mi||0);return g-nyOff(g+5*36e5)*36e5;}
+// BLS rule: the jobs report comes out on the third Friday after the week (Sunday to Saturday) that holds the 12th of the previous month.
+function nfpRule(y,m){const r=new Date(Date.UTC(y,m-1,12)),w=r.getUTCDay();return new Date(Date.UTC(r.getUTCFullYear(),r.getUTCMonth(),12+6-w+20)).toISOString().slice(0,10);}
+const NEWS_FAM=[[/non-?farm|\bnfp\b/i,'jobs report (NFP)'],[/fomc|federal funds/i,'Fed rate decision'],[/cpi|consumer price/i,'CPI'],[/pce/i,'PCE inflation'],[/ppi|producer price/i,'PPI'],[/cash rate|bank rate|refinancing rate|deposit facility|policy rate|overnight rate|rate statement|monetary policy statement|interest rate decision|boj policy|rate decision/i,'rate decision'],[/claims/i,'jobless claims'],[/employment change|unemployment|claimant|jobs/i,'jobs data'],[/gdp/i,'GDP'],[/retail sales/i,'retail sales'],[/pmi|\bism\b/i,'PMI'],[/press conference|speaks|testifies/i,'central bank speech']];
+function famOf(title){for(const [re,f] of NEWS_FAM)if(re.test(title||''))return f;return String(title||'').replace(/\s+[mqy]\/[mqy]$/i,'').trim();}
+const famRank=f=>{const i=NEWS_FAM.findIndex(x=>x[1]===f);return i<0?99:i;};
+function ruleEvents(now){const v=[],from=now-400*864e5;
+  for(const d of FOMC_DAYS){const t=nyAt(d,14,0);if(t<now&&t>from)v.push({t,ccy:'USD',fam:'Fed rate decision'});}
+  const st=new Date(from);for(let i=0;i<15;i++){const dt=new Date(Date.UTC(st.getUTCFullYear(),st.getUTCMonth()+i,1));let d=nfpRule(dt.getUTCFullYear(),dt.getUTCMonth());
+    if(/^2025-1[01]/.test(d))continue;if(/-07-04$/.test(d))d=d.slice(0,8)+'03';const t=nyAt(d,8,30);if(t<now&&t>from)v.push({t,ccy:'USD',fam:'jobs report (NFP)',est:true});}
+  return v;}
+// One event per currency per 2 hours (CPI m/m and core CPI are one release); a schedule-rule date gives way to a real one within 12 days.
+function mergeEvents(list){const a=(list||[]).filter(x=>x&&isFinite(x.t)&&x.ccy).sort((x,y)=>x.t-y.t),out=[];
+  for(const x of a){const g=out.find(o=>o.ccy===x.ccy&&Math.abs(o.t-x.t)<=2*36e5);if(!g){out.push({...x});continue;}
+    if(famRank(x.fam)<famRank(g.fam))g.fam=x.fam;if(!x.est){g.est=false;}}
+  return out.filter(x=>!x.est||!out.some(o=>!o.est&&o.ccy===x.ccy&&o.fam===x.fam&&Math.abs(o.t-x.t)<12*864e5));}
+// bars: hourly, oldest first {t,o,h,l,c}. First-hour range after each release vs the same window on the 20 trading days before it.
+function newsReact(bars,events,ccys,now){const H=36e5,idx=new Map();for(const b of bars||[])idx.set(b.t,b);
+  const win=(h0,k)=>{const a=[];for(let i=0;i<k;i++){const b=idx.get(h0+i*H);if(!b)return null;a.push(b);}return a;},rng=a=>Math.max(...a.map(b=>b.h))-Math.min(...a.map(b=>b.l)),out={};
+  for(const ev of events||[]){if(!ccys.includes(ev.ccy)||ev.t>now-5*H)continue;const h0=Math.floor(ev.t/H)*H,k=ev.t%H?2:1,w=win(h0,k);if(!w)continue;
+    const base=[];for(let d=1;d<=35&&base.length<20;d++){const b=win(h0-d*864e5,k);if(b)base.push(rng(b));}if(base.length<8)continue;
+    base.sort((x,y)=>x-y);const med=base[base.length>>1];if(!(med>0))continue;
+    const r=rng(w),dir=Math.sign(w[k-1].c-w[0].o),b4=idx.get(h0+(k+3)*H),key=ev.ccy+' '+ev.fam,o=out[key]||(out[key]={key,ccy:ev.ccy,fam:ev.fam,ev:[]});
+    o.ev.push({t:ev.t,r,x:r/med,cont:b4&&dir?Math.sign(b4.c-w[k-1].c)===dir:null,est:!!ev.est});}
+  const md=a=>{const s=a.slice().sort((x,y)=>x-y);return s.length%2?s[s.length>>1]:(s[s.length/2-1]+s[s.length/2])/2;};
+  return Object.values(out).filter(o=>o.ev.length>=3).map(o=>{const c=o.ev.filter(e=>e.cont!=null);
+    return {key:o.key,ccy:o.ccy,fam:o.fam,n:o.ev.length,medR:md(o.ev.map(e=>e.r)),maxR:Math.max(...o.ev.map(e=>e.r)),medX:md(o.ev.map(e=>e.x)),big:o.ev.filter(e=>e.x>=2).length,cont:c.filter(e=>e.cont).length,contN:c.length,est:o.ev.filter(e=>e.est).length,last:Math.max(...o.ev.map(e=>e.t))};});}
+function newsText(st,sym,upc,days,ref){if(!st||!st.length)return '';const up=new Set((upc||[]).map(x=>x.ccy+' '+x.fam)),F=x=>fq(x,ref);
+  const L=st.slice().sort((a,b)=>(up.has(b.key)-up.has(a.key))||b.medX-a.medX).slice(0,6);
+  return `NEWS REACTION on ${sym} (computed in code from ${days} days of hourly candles: the range of the first hour after each release, compared with the same hour on the 20 trading days before it; "continued" means price kept going the first hour's way over the next 4 hours):\n`+
+    L.map(s=>`${s.key}${up.has(s.key)?' [due in the next 7 days]':''}, ${s.n} releases${s.est?` (${s.est} dated by the usual schedule, may be off)`:''}: first-hour range median ${F(s.medR)} = ${s.medX.toFixed(1)}x a normal hour, largest ${F(s.maxR)}; ${s.big} of ${s.n} over 2x normal${s.contN?`; first move continued ${s.cont} of ${s.contN} times`:''}`).join('\n');}
+// OECD monthly 10-year government bond yields on FRED; policy rates where FRED has them daily.
+const RD_10Y={USD:'IRLTLT01USM156N',EUR:'IRLTLT01DEM156N',GBP:'IRLTLT01GBM156N',JPY:'IRLTLT01JPM156N',AUD:'IRLTLT01AUM156N',CAD:'IRLTLT01CAM156N',CHF:'IRLTLT01CHM156N',NZD:'IRLTLT01NZM156N',ZAR:'IRLTLT01ZAM156N',MXN:'IRLTLT01MXM156N',PLN:'IRLTLT01PLM156N'};
+const RD_POL={USD:['DFF','Fed funds'],EUR:['ECBDFR','ECB deposit rate']};
+function rateDiffText(b,q,S){const ab=S[RD_10Y[b]]||[],aq=S[RD_10Y[q]]||[],parts=[],sg=x=>(x>=0?'+':'')+x.toFixed(2);
+  if(ab.length&&aq.length){const mq=new Map(aq),mb=new Map(ab),both=ab.filter(x=>mq.has(x[0])).map(x=>[x[0],x[1]-mq.get(x[0])]);
+    if(both.length>=4){const l=both[both.length-1],p3=both[both.length-4],p12=both.length>=13?both[both.length-13]:null,d=l[1]-p3[1];
+      parts.push(`10-year yield gap ${b} minus ${q}: ${sg(l[1])} points (${b} ${mb.get(l[0]).toFixed(2)}%, ${q} ${mq.get(l[0]).toFixed(2)}%, monthly average for ${l[0].slice(0,7)}); 3 months earlier ${sg(p3[1])}${p12?`, a year earlier ${sg(p12[1])}`:''}.`+
+        (Math.abs(d)>=0.1?` The gap moved ${Math.abs(d).toFixed(2)} in ${d>0?b:q}'s favour over 3 months, a slow tailwind for ${b}/${q} ${d>0?'higher':'lower'}.`:' Little change over 3 months.'));}}
+  const pb=RD_POL[b],pq=RD_POL[q];if(pb&&pq){const xb=(S[pb[0]]||[]).slice(-1)[0],xq=(S[pq[0]]||[]).slice(-1)[0];if(xb&&xq)parts.push(`Policy rates: ${pb[1]} ${xb[1].toFixed(2)}%, ${pq[1]} ${xq[1].toFixed(2)}% (gap ${sg(xb[1]-xq[1])}, ${xb[0]}).`);}
+  return parts.length?`RATE DIFFERENTIAL ${b}/${q} (FRED): `+parts.join(' '):'';}
+function gvzNote(a){if(!a||a.length<120)return '';const y=a.slice(-252),last=y[y.length-1],pct=Math.round(y.filter(v=>v<=last).length/y.length*100);
+  return `GVZ is at the ${pct}th percentile of the last year${pct>=80?' (gold is expected to swing more than usual: widen stops or cut size)':pct<=20?' (gold options expect calm: breakouts are less likely to run)':''}`;}
+// ==== NEWS PURE END
+// stored ForexFactory high-impact events (the feed only covers this week, so the history builds up as the app is used)
+function ffStore(ev){try{const now=Date.now(),k='ev_newshist';let h=[];try{h=JSON.parse(localStorage.getItem(k)||'[]');}catch(e){h=[];}
+  const seen=new Set(h.map(x=>x.c+'|'+x.t+'|'+x.ti));
+  for(const x of ev||[]){const t=Date.parse(x.date),c=String(x.country||'').toUpperCase(),ti=String(x.title||'').slice(0,60);if(isNaN(t)||t>now||!/high/i.test(x.impact||'')||!/^[A-Z]{3}$/.test(c))continue;const key=c+'|'+t+'|'+ti;if(seen.has(key))continue;seen.add(key);h.push({t,c,ti});}
+  h=h.filter(x=>x.t>now-730*864e5).sort((a,b)=>a.t-b.t).slice(-3000);localStorage.setItem(k,JSON.stringify(h));}catch(e){}}
+async function fredRelDates(key){if(!key)return [];const ck='ev_freddates';try{const c=JSON.parse(localStorage.getItem(ck)||'null');if(c&&Date.now()-c.at<7*864e5)return c.v;}catch(e){}
+  const v=[],st=new Date(Date.now()-400*864e5).toISOString().slice(0,10);
+  for(const [id,fam] of [[10,'CPI'],[50,'jobs report (NFP)']]){try{const j=await getJSON(`https://api.stlouisfed.org/fred/release/dates?release_id=${id}&api_key=${key}&file_type=json&realtime_start=${st}&include_release_dates_with_no_data=true&sort_order=asc&limit=100`);
+    for(const d of (j&&j.release_dates)||[]){const t=nyAt(d.date,8,30);if(t<Date.now()&&d.date>=st)v.push({t,ccy:'USD',fam});}}catch(e){}}
+  try{if(v.length)localStorage.setItem(ck,JSON.stringify({at:Date.now(),v}));}catch(e){}return v;}
+async function newsEvents(now){let ff=[];try{ff=JSON.parse(localStorage.getItem('ev_newshist')||'[]').map(x=>({t:x.t,ccy:x.c,fam:famOf(x.ti)}));}catch(e){}
+  let fr=[];try{fr=await fredRelDates($('kFred').value.trim());}catch(e){}
+  return mergeEvents([...ff,...fr,...ruleEvents(now)]);}
+const NRX={};
+async function newsFor(sym,cal){if(isSynth(sym))return '';const S=String(sym).toUpperCase(),ck='ev_nrx_'+normSym(sym),now=Date.now();let c=NRX[S];
+  if(!c||now-c.at>12*36e5){try{c=JSON.parse(localStorage.getItem(ck)||'null');}catch(e){c=null;}}
+  if(!c||now-c.at>12*36e5){const code=derivCode(sym);let bars=null;
+    try{if(code)bars=await derivCandles(code,3600,6000);}catch(e){bars=null;}
+    if(!bars||bars.length<500){try{const b2=await hourlyBars(sym,now-330*864e5);if(b2&&(!bars||b2.length>bars.length))bars=b2;}catch(e){}}
+    if(!bars||bars.length<200)return '';
+    c={at:now,st:newsReact(bars,await newsEvents(now),calCcys(sym),now),days:Math.round((now-bars[0].t)/864e5),ref:bars[bars.length-1].c};try{localStorage.setItem(ck,JSON.stringify(c));}catch(e){}}
+  NRX[S]=c;const upc=(cal||[]).filter(x=>/high/i.test(x.impact||'')&&x.t>now).map(x=>({ccy:String(x.country).toUpperCase(),fam:famOf(x.title)}));
+  return newsText(c.st,S,upc,c.days,c.ref);}
+async function fredSeries(ids,key){const out={};
+  try{const r=await fetch('https://fred.stlouisfed.org/graph/fredgraph.csv?id='+ids.join(','));if(!r.ok)throw new Error(r.status);const L=(await r.text()).trim().split('\n'),hd=L[0].split(',').map(x=>x.trim());
+    for(let c=1;c<hd.length;c++)out[hd[c]]=[];for(const ln of L.slice(1)){const f=ln.split(',');for(let c=1;c<hd.length;c++){const v=parseFloat(f[c]);if(!isNaN(v))out[hd[c]].push([f[0].trim(),v]);}}}
+  catch(e){if(key)await Promise.all(ids.map(async id=>{try{const j=await getJSON(`https://api.stlouisfed.org/fred/series/observations?series_id=${id}&api_key=${key}&file_type=json&sort_order=desc&limit=40`);out[id]=(j.observations||[]).map(o=>[o.date,parseFloat(o.value)]).filter(x=>!isNaN(x[1])).reverse();}catch(_){}}));}
+  return out;}
+const RDC={};
+async function rateDiff(sym,key){const L=legsOf(sym);if(!L||!RD_10Y[L[0]]||!RD_10Y[L[1]])return '';const k=L.join('');
+  if(RDC[k]&&Date.now()-RDC[k].at<12*36e5)return RDC[k].v;
+  const ids=[RD_10Y[L[0]],RD_10Y[L[1]],...(RD_POL[L[0]]&&RD_POL[L[1]]?[RD_POL[L[0]][0],RD_POL[L[1]][0]]:[])],S=await fredSeries([...new Set(ids)],key);
+  for(const id in S)if(id.startsWith('IRLTLT'))S[id]=S[id].slice(-40);
+  const v=rateDiffText(L[0],L[1],S);if(!v)srcFail('FRED interest-rate data');RDC[k]={at:Date.now(),v};return v;}
+
 // ---- FRED macro (real yields, breakevens, fed funds, curve, VIX)
 let srcLog=[];
 function srcFail(n){srcLog.push(n+' unavailable (blocked by the browser, or the service is down)');}
 let fredCache={t:0,v:''};
 async function fredMacro(fredKey){
   if(Date.now()-fredCache.t<6*3600000&&fredCache.v)return fredCache.v;
-  const ids={DFII10:['10Y real yield (TIPS)','%'],T10YIE:['10Y breakeven inflation','%'],DFF:['Fed funds rate','%'],T10Y2Y:['10Y-2Y curve','pts'],VIXCLS:['VIX','']};
+  const ids={DFII10:['10Y real yield (TIPS)','%'],T10YIE:['10Y breakeven inflation','%'],DFF:['Fed funds rate','%'],DGS2:['US 2Y yield','%'],T10Y2Y:['10Y-2Y curve','pts'],VIXCLS:['VIX',''],GVZCLS:['Gold volatility index GVZ','']};
   const ser={};
   try{
     const r=await fetch('https://fred.stlouisfed.org/graph/fredgraph.csv?id='+Object.keys(ids).join(','));
@@ -3301,12 +3436,13 @@ async function fredMacro(fredKey){
     for(let c=1;c<head.length;c++)ser[head[c].trim()]=[];
     for(const ln of lines.slice(1)){const f=ln.split(',');for(let c=1;c<head.length;c++){const v=parseFloat(f[c]);if(!isNaN(v))ser[head[c].trim()].push(v);}}
   }catch(e){
-    if(fredKey){try{await Promise.all(Object.keys(ids).map(async id=>{const j=await getJSON(`https://api.stlouisfed.org/fred/series/observations?series_id=${id}&api_key=${fredKey}&file_type=json&sort_order=desc&limit=30`);ser[id]=(j.observations||[]).map(o=>parseFloat(o.value)).filter(x=>!isNaN(x)).reverse();}));}catch(e2){}}
+    if(fredKey){try{await Promise.all(Object.keys(ids).map(async id=>{const j=await getJSON(`https://api.stlouisfed.org/fred/series/observations?series_id=${id}&api_key=${fredKey}&file_type=json&sort_order=desc&limit=${id==='GVZCLS'?260:30}`);ser[id]=(j.observations||[]).map(o=>parseFloat(o.value)).filter(x=>!isNaN(x)).reverse();}));}catch(e2){}}
   }
   const parts=[];
   for(const id of Object.keys(ids)){const a=(ser[id]||[]).slice(-30);if(a.length<2)continue;const last=a[a.length-1],w=a.length>5?last-a[a.length-6]:null,m=a.length>21?last-a[a.length-22]:null,[name,u]=ids[id];
     parts.push(`${name} ${last.toFixed(2)}${u==='%'?'%':''}${w!=null?` (week ${w>=0?'+':''}${w.toFixed(2)}`:''}${m!=null?`, month ${m>=0?'+':''}${m.toFixed(2)})`:w!=null?')':''}`);}
   if(!parts.length){srcFail('FRED macro data'+(fredKey?'':' (adding a free FRED key in API keys may help)'));return '';}
+  try{const g=gvzNote(ser.GVZCLS);if(g)parts.push(g);}catch(e){}
   fredCache={t:Date.now(),v:'Macro (FRED, daily; rising real yields are usually bearish for gold, falling are bullish): '+parts.join('; ')};
   return fredCache.v;
 }

@@ -187,6 +187,7 @@ export async function run() {
     const mine = x => x.magic === MAGIC || /^EV/.test(x.clientId || '');
     S.pos = (pos || []).map(p => ({ id: p.id, sym: p.symbol, type: p.type, vol: p.volume, open: p.openPrice, sl: p.stopLoss, tp: p.takeProfit, cur: p.currentPrice, pl: (p.profit || 0) + (p.swap || 0) + (p.commission || 0), mine: mine(p), cid: p.clientId || '' }));
     S.ord = (ord || []).map(o => ({ id: o.id, sym: o.symbol, type: o.type, vol: o.volume, open: o.openPrice, sl: o.stopLoss, tp: o.takeProfit, mine: mine(o), cid: o.clientId || '' }));
+    try { syncFills(S); } catch (e) { }
     // the challenge starts when you press Start in the app
     if (M.startAt && (!S.ch || S.ch.startAt !== M.startAt)) { S.ch = { startAt: M.startAt, startBal: acct.balance, peak: acct.equity, status: 'running' }; S.trades = []; await note(`New mandate started on ${acct.broker || 'the account'}: balance ${acct.balance} ${acct.currency}, target +${M.target}%, max drawdown ${M.maxDD}%, daily loss ${M.dayLoss}%, risk ${M.risk}% per trade.`, true); }
     if (!S.ch) { await note('No mandate started yet: press Start in the app (Robot > Live account).'); return await save(); }
@@ -239,7 +240,7 @@ export async function run() {
           `MANDATE: minimum reward to risk ${M.minRR}. ${M.notes ? 'TRADER\'S INSTRUCTIONS FOR THIS ACCOUNT: ' + M.notes : ''}\nTRADER'S STYLE:\n${style || '(not described)'}\nGOALS: today ${goals.day || 'none'}; week ${goals.week || 'none'}`;
         S.calls.n++;
         const p = await claude(M.model, LIVE_SYS, `${ctx}\n\nINSTRUMENT ${sym}\n${data}`);
-        let adj = '';
+        let adj = ''; const entryAsked = p && p.entry != null ? +p.entry : null;
         if (p && p.decision === 'TRADE' && p.order !== 'MARKET' && atrN > 0) {        // pending orders: put the plan on the broker's own prices, then make limits fill-friendly
           const sd = p.side === 'BUY' ? 1 : -1, mid = (+price.bid + +price.ask) / 2, spr = Math.max(0, +price.ask - +price.bid), off = mid - px0;
           const sh = Math.abs(off) <= 0.5 * atrN ? off : 0;                                   // the analysis read feed candles; the broker quotes a little differently
@@ -270,7 +271,9 @@ export async function run() {
           ids.push({ cid: id + i, orderId: r.orderId || null, positionId: r.positionId || null, vol: lv, tp });
         }
         S.day.trades++;
-        S.trades.unshift({ id, at: now, sym, bsym, side: v.side > 0 ? 'BUY' : 'SELL', order: p.order, entry: v.entry, sl: v.sl, tps: v.tps, vol, riskMoney: +riskMoney.toFixed(2), rr: +v.rr.toFixed(2), conf: p.confidence, why: p.why, manage: p.manage, legs: ids, st: 'open', ...(BVV ? { bv: BVV.v } : {}) });
+        const sprNow = Math.max(0, +price.ask - +price.bid), quote = v.side > 0 ? +price.ask : +price.bid;
+        S.trades.unshift({ id, at: now, sym, bsym, side: v.side > 0 ? 'BUY' : 'SELL', order: p.order, entry: v.entry, sl: v.sl, tps: v.tps, vol, riskMoney: +riskMoney.toFixed(2), rr: +v.rr.toFixed(2), conf: p.confidence, why: p.why, manage: p.manage, legs: ids, st: 'open', ...(BVV ? { bv: BVV.v } : {}),
+          ...(isFinite(sprNow) ? { spr: +sprNow.toPrecision(4) } : {}), ...(isFinite(quote) && quote > 0 ? { q: quote } : {}), ...(entryAsked != null && isFinite(entryAsked) && Math.abs(entryAsked - v.entry) > 1e-9 ? { entry0: entryAsked } : {}), ...(adj ? { adj: adj.trim() } : {}) });
         S.trades = S.trades.slice(0, 300);
         await note(`${sym}: placed ${p.order} ${v.side > 0 ? 'BUY' : 'SELL'} ${vol} lots at ${f2(v.entry)}, stop ${f2(v.sl)}, targets ${v.tps.map(f2).join(' / ')}, risking ${riskMoney.toFixed(2)} ${acct.currency}.`,
           `🤖 <b>Edgeview live: ${esc(sym)} ${v.side > 0 ? 'BUY' : 'SELL'} ${esc(p.order)}</b>\nEntry ${f2(v.entry)} | SL ${f2(v.sl)} | TP ${v.tps.map(f2).join(' / ')}\n${vol} lots, risk ${riskMoney.toFixed(2)} ${esc(acct.currency)} (R:R ${v.rr.toFixed(2)})\n${esc(p.why || '')}${BVV ? '\n' + esc(verdictLine(BVV)) + (BVV.v === 'agree' ? '' : ', half size') : ''}`);
@@ -301,6 +304,19 @@ async function manage(S, M, note) {
     }
   }
 }
+// execution quality (v43.9): average fill price and time of the IN deals (or open positions) of a trade
+function markFill(t, ins) {
+  const v = ins.reduce((a, d) => a + (+d.volume || 1), 0); if (!ins.length || !(v > 0)) return;
+  t.fill = +(ins.reduce((a, d) => a + (+d.price || 0) * (+d.volume || 1), 0) / v).toPrecision(8);
+  const ts = ins.map(d => Date.parse(d.time)).filter(x => isFinite(x)); if (ts.length) t.fillAt = Math.min(...ts); else if (!t.fillAt) t.fillAt = now;
+  const ref = t.order === 'MARKET' && t.q != null ? t.q : t.entry, risk = Math.abs(t.entry - t.sl), sd = t.side === 'BUY' ? 1 : -1;
+  t.slip = +(sd * (t.fill - ref)).toPrecision(6); t.slipR = risk > 0 ? +(t.slip / risk).toFixed(3) : null;   // positive = worse than planned
+}
+function syncFills(S) {
+  for (const t of S.trades.filter(x => x.st === 'open' && x.fill == null)) {
+    const ps = S.pos.filter(p => (t.legs || []).some(l => l.cid === p.cid)); if (ps.length) markFill(t, ps.map(p => ({ price: p.open, volume: p.vol })));
+  }
+}
 async function settle(S, note) {
   const open = S.trades.filter(t => t.st === 'open'); if (!open.length) return;
   const live = new Set([...S.pos.map(p => p.cid), ...S.ord.map(o => o.cid)]);
@@ -309,8 +325,8 @@ async function settle(S, note) {
   const deals = await mt('GET', `/history-deals/time/${from}/${to}`).catch(() => []) || [];
   for (const t of done) {
     const ds = deals.filter(d => t.legs.some(l => l.cid === d.clientId) || (d.clientId || '').startsWith(t.id));
-    const filled = ds.some(d => /IN/.test(d.entryType || '')); const pl = ds.reduce((s, d) => s + (d.profit || 0) + (d.commission || 0) + (d.swap || 0), 0);
-    if (!filled) { t.st = 'expired'; await note(`${t.sym}: order expired or was cancelled without filling`); continue; }
+    const ins = ds.filter(d => /IN/.test(d.entryType || '')), filled = ins.length > 0; if (filled) markFill(t, ins); const pl = ds.reduce((s, d) => s + (d.profit || 0) + (d.commission || 0) + (d.swap || 0), 0);
+    if (!filled) { t.st = 'expired'; t.closedAt = now; await note(`${t.sym}: order expired or was cancelled without filling`); continue; }
     t.pl = +pl.toFixed(2); t.st = pl > 0 ? 'win' : pl < 0 ? 'loss' : 'be'; t.closedAt = now; t.r = t.riskMoney ? +(pl / t.riskMoney).toFixed(2) : null;
     await note(`${t.sym}: ${t.side} closed, ${t.pl >= 0 ? '+' : ''}${t.pl}${t.r != null ? ` (${t.r >= 0 ? '+' : ''}${t.r}R)` : ''}`, `${t.pl >= 0 ? '✅' : '❌'} <b>Edgeview live: ${esc(t.sym)} ${t.side} closed</b> ${t.pl >= 0 ? '+' : ''}${t.pl}${t.r != null ? ` (${t.r}R)` : ''}`);
   }
@@ -398,6 +414,7 @@ async function runDeriv({ M, S, note, save, style, goals }) {
         S.day.trades++;
         const id = 'EV' + now.toString(36).slice(-5) + Math.random().toString(36).slice(2, 4);
         S.trades.unshift({ id, at: now, sym, bsym: code, side: v.side > 0 ? 'BUY' : 'SELL', order: 'MARKET', entry: v.entry, sl: v.sl, tps: v.tps, vol: legs.map(l => `${l.stake}x${l.mult}`).join(' + '), riskMoney: +riskMoney.toFixed(2), rr: +v.rr.toFixed(2), conf: p.confidence, why: p.why, manage: p.manage, legs, st: 'open', ...(BVV ? { bv: BVV.v } : {}) });
+        try { const fl = legs.filter(l => isFinite(+l.entry) && +l.entry > 0); if (fl.length) markFill(S.trades[0], fl.map(l => ({ price: +l.entry, volume: l.stake }))); } catch (e) { }
         S.trades = S.trades.slice(0, 300);
         await note(`${sym}: bought ${v.side > 0 ? 'MULTUP' : 'MULTDOWN'} at ${f2(v.entry)}, stop ${f2(v.sl)}, targets ${v.tps.map(f2).join(' / ')}, stake ${legs.map(l => l.stake + ' x' + l.mult).join(' + ')}, risking ${riskMoney.toFixed(2)} ${acct.currency}.`,
           `🤖 <b>Edgeview live (Deriv): ${esc(sym)} ${v.side > 0 ? 'BUY' : 'SELL'}</b>\nEntry ${f2(v.entry)} | SL ${f2(v.sl)} | TP ${v.tps.map(f2).join(' / ')}\nStake ${legs.map(l => l.stake + ' x' + l.mult).join(' + ')}, risk ${riskMoney.toFixed(2)} ${esc(acct.currency)} (R:R ${v.rr.toFixed(2)})\n${esc(p.why || '')}${BVV ? '\n' + esc(verdictLine(BVV)) + (BVV.v === 'agree' ? '' : ', half size') : ''}`);
