@@ -261,6 +261,34 @@
   </section>
 
   <section class="view" id="v-robot" hidden>
+  <div class="card" id="liveCard">
+    <div class="ttl">Live account <span id="liveBadge" class="hint" style="font-weight:600"></span></div>
+    <div id="liveStatus" class="hint" style="margin-top:0">Connect a MetaTrader account through MetaApi and give the robot a mandate. It runs from your GitHub repository every 15 minutes, even when this phone is off.</div>
+    <div class="row" style="margin-top:8px;flex-wrap:wrap"><button class="sec" id="liveRefresh">Refresh</button><button class="sec" id="liveRunNow">Run the robot now</button><button class="sec" id="livePause">Pause</button><button class="sec" id="liveFlat" style="color:var(--bear);border-color:var(--bear)">Close everything now</button></div>
+    <div id="liveConfirm" hidden class="hint" style="margin-top:8px;padding:10px;border:1px solid var(--bear);border-radius:10px"></div>
+    <details style="margin-top:12px"><summary style="cursor:pointer;font-weight:700">Mandate: how the robot runs the account</summary>
+      <label class="switch"><span>Trading on<small>Off = the robot only watches and protects open trades</small></span><input type="checkbox" class="tgl" id="lvOn"></label>
+      <div class="row"><div><label>Profit target (%)</label><input id="lvTarget" inputmode="decimal"></div><div><label>Max drawdown from start (%)</label><input id="lvDD" inputmode="decimal"></div><div><label>Daily loss limit (%)</label><input id="lvDay" inputmode="decimal"></div></div>
+      <div class="row"><div><label>Risk per trade (%)</label><input id="lvRisk" inputmode="decimal"></div><div><label>Max open trades</label><input id="lvOpen" inputmode="numeric"></div><div><label>Max trades a day</label><input id="lvMaxDay" inputmode="numeric"></div></div>
+      <div class="row"><div><label>Minimum reward:risk</label><input id="lvRR" inputmode="decimal"></div><div><label>Max lot size</label><input id="lvLot" inputmode="decimal"></div><div><label>Analyses a day (cost cap)</label><input id="lvCalls" inputmode="numeric"></div></div>
+      <label>Pairs (Twelve Data names, comma separated)</label><input id="lvPairs" placeholder="XAU/USD, GBP/JPY">
+      <label>Sessions</label><div class="row" style="gap:14px;flex-wrap:wrap"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="lvAsia"> Asia</label><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="lvLon"> London</label><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="lvNY"> New York</label></div>
+      <div class="row"><div><label>Take profit</label><select id="lvTp"><option value="split">Half at TP1, half at TP2</option><option value="tp1">All at TP1</option><option value="tp2">All at TP2</option></select></div><div><label>End date (optional)</label><input id="lvEnd" type="date"></div></div>
+      <label class="switch"><span>Break-even at +1R<small>Moves the stop to entry once the trade is 1R in profit</small></span><input type="checkbox" class="tgl" id="lvBe"></label>
+      <label>Your instructions for this account</label><textarea id="lvNotes" rows="4" placeholder="e.g. Treat it like a funded account. Only A+ setups that match my style, no trades 30 minutes either side of red-folder news, no trades on Friday after 14:00 UTC, gold only in the New York session."></textarea>
+      <div class="row"><div><label>Broker symbols (optional)</label><input id="lvMap" placeholder="XAU/USD=GOLD, GBP/JPY=GBPJPY#"></div><div><label>MetaApi region</label><select id="lvRegion"><option value="london">London</option><option value="new-york">New York</option><option value="singapore">Singapore</option></select></div></div>
+      <label style="display:flex;gap:8px;align-items:flex-start;margin-top:10px"><input type="checkbox" id="lvReal"> <span>Allow a <b>real-money</b> account. Leave this off while you test on a demo account. The robot refuses to trade a real account unless this is on.</span></label>
+      <div class="row" style="margin-top:10px"><button id="lvSave">Save mandate</button><button class="sec" id="lvStart">Start a new challenge</button></div>
+      <div class="hint" id="lvStat">Saving sends the mandate to your cloud memory; the robot reads it on its next run. Start a new challenge to reset the starting balance, target and drawdown.</div>
+    </details>
+    <details style="margin-top:8px"><summary style="cursor:pointer;font-weight:700">Connect the account (one-time setup)</summary>
+      <div class="hint">1. Create a MetaApi account at metaapi.cloud, add your XM MT5 login there (server, login, password) and copy its <b>account ID</b> and your <b>API token</b>. MetaApi costs about $30 a month after a 7-day trial (one MetaTrader account included).<br>2. Your GitHub token needs <b>Secrets</b> and <b>Actions</b> read and write on this repository, besides Contents. Turn on cloud sync in Settings.<br>3. Paste the two values below and tap <b>Send to the robot</b>. They are encrypted for GitHub in this browser and stored as repository secrets, with your Anthropic, Twelve Data and Telegram keys and the backup passphrase.</div>
+      <label>MetaApi token</label><input id="kMetaApi" type="password" autocomplete="off">
+      <label>MetaApi account ID</label><input id="kMetaAcc" autocomplete="off">
+      <button class="sec" id="liveSecrets" style="margin-top:10px;width:100%">Send to the robot</button>
+      <div class="hint" id="liveSecStat"></div>
+    </details>
+  </div>
   <div class="card">
     <div class="ttl">Auto-trader</div>
     <div class="hint" style="margin-top:0">Every analysis that ends in a BUY or SELL becomes a paper trade. The robot follows it on 5-minute candles: it waits for the entry, then records the stop, each target, or expiry. Results go into your journal automatically, after your broker's spread and commission (Settings). No real orders are sent.</div>
@@ -511,7 +539,7 @@ const IDB=(()=>{let dbp;const db=()=>dbp||(dbp=new Promise((res,rej)=>{const r=i
 const TXseen=new Set();
 function keepTexts(a){for(const e of a||[])if(e&&e.text&&e.id!=null&&!TXseen.has(e.id)){TXseen.add(e.id);IDB.texts.put(+e.id,e.text);}}
 // ---- keys
-['kAnthropic','kTwelve','kFinnhub','kFred','kOpenAI','model','mHaiku','kGh','ghRepo','kSync','symbol','market'].forEach(id=>{ const v=store.get('ca_'+id); if(v) $(id).value=v; });
+['kAnthropic','kTwelve','kFinnhub','kFred','kOpenAI','kMetaApi','kMetaAcc','model','mHaiku','kGh','ghRepo','kSync','symbol','market'].forEach(id=>{ const v=store.get('ca_'+id); if(v) $(id).value=v; });
 
 const BRK={get:()=>{try{return {broker:'xm',acc:'standard',ov:'',...JSON.parse(store.get('ev_brk')||'{}')};}catch(e){return {broker:'xm',acc:'standard',ov:''};}},set:o=>store.set('ev_brk',JSON.stringify(o))};
 const costFor=sym=>brokerCost(sym,BRK.get());
@@ -536,7 +564,7 @@ function brkInfo(){const b=BRK.get();if(b.broker!=='xm'&&!b.ov.trim()){$('brkInf
 (()=>{const b=BRK.get();$('brk').value=b.broker;$('brkAcc').value=b.acc;$('brkOv').value=b.ov;$('acct').value=b.ccy||'ZAR';$('usdzar').value=b.usdzar||'';const sv=()=>{BRK.set({broker:$('brk').value,acc:$('brkAcc').value,ov:$('brkOv').value.trim(),ccy:$('acct').value,usdzar:$('usdzar').value.trim()});brkInfo();ccyLabels();try{renderBot();}catch(e){}};['brk','brkAcc','brkOv','acct','usdzar'].forEach(id=>$(id).onchange=sv);setTimeout(brkInfo,0);setTimeout(()=>refreshUsdZar(false).then(()=>{try{renderBot();}catch(e){}}),3000);})();
 $('tdplan').value=store.get('ca_tdplan')||'free';$('tdplan').onchange=()=>store.set('ca_tdplan',$('tdplan').value);
 $('depth').value=store.get('ca_depth')||'std';$('depth').onchange=()=>store.set('ca_depth',$('depth').value);
-const KEY_IDS=['kAnthropic','kTwelve','kFinnhub','kFred','kOpenAI','model','mHaiku','kGh','ghRepo','kSync'];
+const KEY_IDS=['kAnthropic','kTwelve','kFinnhub','kFred','kOpenAI','kMetaApi','kMetaAcc','model','mHaiku','kGh','ghRepo','kSync'];
 function saveAll(msg){
   KEY_IDS.forEach(id=>store.set('ca_'+id,$(id).value.trim()));
   const el=$('saveStatus'); el.textContent=msg||'Saved on this device ✓';
@@ -1019,7 +1047,7 @@ function parseFinal(raw){const i=raw.search(/^### *Final trade plan/mi);if(i<0)r
 const num=x=>{const m=String(x||'').replace(/,/g,'').match(/-?\d+(\.\d+)?/);return m?+m[0]:null;};
 // ---- history + journal
 const HS={get:()=>{try{return JSON.parse(localStorage.getItem('ca_hist')||'[]')}catch(e){return[]}},set:a=>{keepTexts(a);const now=Date.now(),pack=(n,k)=>JSON.stringify(a.slice(0,n).map((e,i)=>(i<k||(e.ord==='WEEKLY OUTLOOK'&&now-e.id<20*86400000))?e:{...e,text:''}));try{localStorage.setItem('ca_hist',pack(400,40));}catch(e){try{localStorage.setItem('ca_hist',pack(150,12));}catch(e2){}}}};
-const APP_VER='edgeview-v38';
+const APP_VER='edgeview-v39';
 function META(){return {model:$('model').value.trim()||'claude-sonnet-5-5',deep:$('depth').value,ver:APP_VER};}
 
 function addOdds(card,text,sym){
@@ -1637,7 +1665,7 @@ setInterval(()=>{if(syncOk()&&!document.hidden&&syncSig()!==store.get('ev_syncSi
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&syncOk()&&syncSig()!==store.get('ev_syncSig'))syncRun('push');else if(!document.hidden&&syncOk()&&Date.now()-(+store.get('ev_syncAt')||0)>5*6e4)syncRun('push');});
 setTimeout(()=>{keepTexts(HS.get());if(syncOk())syncRun('push');},3000);
 // link code: moves the keys, token and repository to a new phone, encrypted with the backup passphrase
-const LINK_IDS=['kAnthropic','kTwelve','kFinnhub','kFred','kGh','ghRepo','model','mHaiku','kOpenAI','kMetaApi'];
+const LINK_IDS=['kAnthropic','kTwelve','kFinnhub','kFred','kGh','ghRepo','model','mHaiku','kOpenAI','kMetaApi','kMetaAcc'];
 $('linkMake').onclick=async()=>{const out=$('linkOut');try{const pass=$('kSync').value;if(pass.length<10)throw new Error('set your backup passphrase first');
     const keys={};for(const id of LINK_IDS)if($(id)&&$(id).value.trim())keys[id]=$(id).value.trim();keys.ghRepo=keys.ghRepo||ghRepo();
     const code='EVLINK1.'+btoa(JSON.stringify(await sealData({keys,at:Date.now()},pass)));out.hidden=false;out.value=code;out.select();
@@ -1682,8 +1710,10 @@ $('chatIn').addEventListener('paste',async e=>{const fs=[...(e.clipboardData||{}
 $('chatIn').addEventListener('input',()=>{const t=$('chatIn');t.style.height='auto';t.style.height=Math.min(140,t.scrollHeight)+'px';});
 $('chatIn').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&matchMedia('(pointer:fine)').matches){e.preventDefault();chatSend();}});
 function chatRender(){const cur=chatCur(),a=CH.get().filter(m=>m.c===cur),log=$('chatLog');
-  log.innerHTML=a.length?a.map(m=>`<div class="msg ${m.r}">${m.r==='a'?md1(m.x||''):esc(m.x||'')}${(m.imgs||[]).map(k=>`<img data-k="${esc(k)}" alt="shared screenshot">`).join('')}${(m.chips||[]).map(c=>`<div class="chip">${esc(c)}</div>`).join(' ')}<div class="mt">${m.voice?'🎤 ':''}${new Date(m.t).toLocaleString([],{weekday:'short',hour:'2-digit',minute:'2-digit'})}${m.ctx?' · about '+esc(m.ctx):''}</div></div>`).join(''):
+  log.innerHTML=a.length?a.map(m=>`<div class="msg ${m.r}">${m.r==='a'?md1(m.x||''):esc(m.x||'')}${(m.imgs||[]).map(k=>`<img data-k="${esc(k)}" alt="shared screenshot">`).join('')}${(m.chips||[]).map(c=>`<div class="chip">${esc(c)}</div>`).join(' ')}${m.prop?`<div style="margin-top:8px;padding:8px;border:1px solid var(--line2);border-radius:10px"><b>Change to the live mandate:</b> ${esc(Object.entries(m.prop).map(([k,v])=>k+' = '+(Array.isArray(v)?v.join(', '):v)).join('; '))}<br>${m.applied?'<span class="chip">Applied</span>':`<button class="sec" style="margin-top:6px" data-ap="${esc(m.id)}">Apply</button>`}</div>`:''}<div class="mt">${m.voice?'🎤 ':''}${new Date(m.t).toLocaleString([],{weekday:'short',hour:'2-digit',minute:'2-digit'})}${m.ctx?' · about '+esc(m.ctx):''}</div></div>`).join(''):
     '<div class="hint">Ask anything: "Why a sell on gold today?", "My goal this week is +4R, help me plan it", "Here is a setup from a channel I follow, what do you think?", or describe how you enter trades so every analysis follows your style.</div>';
+  log.querySelectorAll('[data-ap]').forEach(b=>b.onclick=()=>{const all=CH.get(),m=all.find(x=>x.id===b.dataset.ap);if(!m||!m.prop)return;
+    MANDATE.set({...MANDATE.get(),...m.prop,allowReal:MANDATE.get().allowReal});liveForm();MANDATE.set({...liveRead(),startAt:MANDATE.get().startAt,flatAt:MANDATE.get().flatAt});liveForm();m.applied=Date.now();CH.set(all);chatRender();});
   log.querySelectorAll('img[data-k]').forEach(async im=>{const b=await IDB.kv.get(im.dataset.k);if(b)im.src='data:image/jpeg;base64,'+b;else im.replaceWith(Object.assign(document.createElement('span'),{className:'chip',textContent:'screenshot on another device'}));});
   log.scrollTop=log.scrollHeight;}
 const COACH_SYS=`You are Edgeview Coach, the trading coach inside the user's own Edgeview app (forex, gold and crypto). You talk with one trader, usually on a phone.
@@ -1695,7 +1725,8 @@ What you do:
 - Keep replies short and easy to read on a phone: plain language, short paragraphs or bullets, numbers with units. No disclaimers in every reply.
 Memory updates (the app reads these tags and hides them from the user; never mention them):
 - When you learn something new or changed about how the trader trades, end your reply with <style_update>THE COMPLETE UPDATED STYLE PROFILE: concise first-person rules, at most 25 lines, keeping everything still true from the current profile</style_update>.
-- When the trader sets or changes a goal, end your reply with <goals_update>{"day":"...","week":"..."}</goals_update> with only the fields that changed.`;
+- When the trader sets or changes a goal, end your reply with <goals_update>{"day":"...","week":"..."}</goals_update> with only the fields that changed.
+- The live robot trades the trader's MetaTrader account under a mandate (see LIVE ACCOUNT). When the trader asks to change how it runs the account, end your reply with <mandate_update>{only the changed fields among: on, risk, target, maxDD, dayLoss, maxOpen, maxDay, minRR, maxLot, pairs, sessions, tpMode, be, notes}</mandate_update>. The app shows it to the trader to confirm. Never switch on real-money trading; that is only done by the trader in the Robot tab. Push back on changes that raise the risk of breaching the limits.`;
 function coachContext(){const a=HS.get(),g=goalsNow(),L=[],now=Date.now();
   L.push(`Now: ${new Date(now).toISOString().slice(0,16).replace('T',' ')} UTC; the user's local time is ${new Date(now).toLocaleString()}.`);
   try{L.push(`Account: XM ${(BRK.get().acc||'standard')} account in ${$('acct').value||'ZAR'}; balance in the position-size tool ${$('cBal').value||'not set'}, risk per trade ${$('cRisk').value||'?'}%. Robot paper account balance ${BOTC.get().bal}, risk ${BOTC.get().risk}% per trade.`);}catch(e){}
@@ -1706,6 +1737,8 @@ function coachContext(){const a=HS.get(),g=goalsNow(),L=[],now=Date.now();
   L.push('RECENT ANALYSES AND TRADES (newest first):\n'+(tr.slice(0,14).map(e=>`- ${new Date(e.id).toISOString().slice(0,16).replace('T',' ')}Z ${e.sym} ${e.dec} ${e.ord} entry ${e.entry} SL ${e.sl} TP1 ${e.tp1}${e.prob!=null?' p='+e.prob+'%':''} -> ${e.st}${e.st==='win'||e.st==='loss'?' '+fR(rOf(e)):''}${e.bot?' (robot)':''}`).join('\n')||'none yet'));
   const ls=LS.get().slice(0,8);if(ls.length)L.push('LESSONS FROM CLOSED TRADES:\n'+ls.map(l=>`- ${l.sym} ${l.res}: ${l.text}`).join('\n'));
   const last=a.find(e=>e.text&&e.ord!=='WEEKLY OUTLOOK');if(last&&!(CTX&&CTX.id===last.id)){const i=last.text.search(/^### *Final trade plan/mi);L.push(`LATEST ANALYSIS (${last.sym}, ${new Date(last.id).toISOString().slice(0,16).replace('T',' ')}Z), final plan:\n`+(i>=0?last.text.slice(i,i+2500):last.text.slice(0,2500)));}
+  try{const M=MANDATE.get(),S=LST;L.push(`LIVE ACCOUNT MANDATE: ${M.on?'trading on':'paused'}; pairs ${M.pairs.join(', ')}; risk ${M.risk}% a trade; target +${M.target}%; max drawdown ${M.maxDD}%; daily loss ${M.dayLoss}%; max ${M.maxOpen} open, ${M.maxDay} a day; min R:R ${M.minRR}; sessions ${M.sessions.join(', ')}; take profit ${M.tpMode}; break-even ${M.be?'on':'off'}; real money ${M.allowReal?'allowed':'not allowed'}; instructions: ${M.notes||'none'}`);
+    if(S&&S.acct)L.push(`LIVE ACCOUNT STATE (robot run ${Math.round((Date.now()-S.at)/60000)} min ago): ${S.acct.real?'REAL':'DEMO'} ${S.acct.broker||''}, balance ${S.acct.balance} ${S.acct.currency}, equity ${S.acct.equity}; challenge ${S.ch?S.ch.status:'not started'}${S.lim?`, gain ${S.lim.gain.toFixed(2)}%, drawdown used ${S.lim.ddUsed.toFixed(2)}%, today's loss used ${S.lim.dayUsed.toFixed(2)}%`:''}${S.idle?'; not trading: '+S.idle:''}\nOpen: ${(S.pos||[]).map(p=>`${p.sym} ${/SELL/.test(p.type)?'SELL':'BUY'} ${p.vol} @ ${p.open} SL ${p.sl} TP ${p.tp} P/L ${p.pl}`).join('; ')||'none'}\nRobot log: ${(S.log||[]).slice(0,8).map(x=>new Date(x.t).toISOString().slice(5,16)+' '+x.msg).join(' | ')}`);}catch(e){}
   if(CTX)L.push(`ANALYSIS THE USER WANTS TO DISCUSS (${CTX.sym}${CTX.id?', '+new Date(CTX.id).toISOString().slice(0,16).replace('T',' ')+'Z':''}), full text:\n${CTX.text}`);
   return L.join('\n\n');}
 async function chatStream(ak,system,messages,onText){const mdl=$('model').value.trim()||'claude-sonnet-5-5';
@@ -1716,7 +1749,7 @@ async function chatStream(ak,system,messages,onText){const mdl=$('model').value.
   const handle=ln=>{if(!ln.startsWith('data:'))return;let ev;try{ev=JSON.parse(ln.slice(5));}catch(_){return;}if(ev.type==='content_block_delta'&&ev.delta?.type==='text_delta')text+=ev.delta.text;else if(ev.type==='error')throw new Error(ev.error?.message||'Stream error');};
   while(true){const {done,value}=await rd.read();if(done)break;buf+=dec.decode(value,{stream:true});const ls=buf.split('\n');buf=ls.pop();for(const l of ls)handle(l.replace(/\r$/,''));onText(text);}
   if(buf)handle(buf);onText(text);return text;}
-const stripTags=t=>t.replace(/<style_update>[\s\S]*?(<\/style_update>|$)/g,'').replace(/<goals_update>[\s\S]*?(<\/goals_update>|$)/g,'').trim();
+const stripTags=t=>t.replace(/<mandate_update>[\s\S]*?(<\/mandate_update>|$)/g,'').replace(/<style_update>[\s\S]*?(<\/style_update>|$)/g,'').replace(/<goals_update>[\s\S]*?(<\/goals_update>|$)/g,'').trim();
 async function buildMsgs(list){const out=[],withImg=list.filter(m=>m.r==='u'&&(m.imgs||[]).length).slice(-2).map(m=>m.id);
   for(const m of list){const role=m.r==='u'?'user':'assistant',content=[];
     if(m.r==='u'&&(m.imgs||[]).length){if(withImg.includes(m.id)){for(const k of m.imgs){const b=await IDB.kv.get(k);if(b)content.push({type:'image',source:{type:'base64',media_type:'image/jpeg',data:b}});}}
@@ -1736,7 +1769,8 @@ async function chatSend(o={}){if(chatBusy)return;const txt=$('chatIn').value.tri
     const chips=[],su=raw.match(/<style_update>([\s\S]*?)<\/style_update>/),gu=raw.match(/<goals_update>([\s\S]*?)<\/goals_update>/);
     if(su&&su[1].trim().length>20){STYLE.set(su[1].trim().slice(0,4000));$('styleTx').value=STYLE.get();chips.push('Updated how you trade');}
     if(gu){try{const g=JSON.parse(gu[1].trim());setGoals({...(g.day!=null?{day:g.day}:{}),...(g.week!=null?{week:g.week}:{})});chips.push('Goals updated');}catch(e){}}
-    CH.set([...CH.get(),{id:Date.now()+'-a',c:cur,t:Date.now(),r:'a',x:stripTags(raw)||'(no answer)',chips}]);$('chatStat').textContent='';}
+    let prop=null;const mu=raw.match(/<mandate_update>([\s\S]*?)<\/mandate_update>/);if(mu){try{const o=JSON.parse(mu[1].trim()),ok=['on','risk','target','maxDD','dayLoss','maxOpen','maxDay','minRR','maxLot','pairs','sessions','tpMode','be','notes'];prop=Object.fromEntries(Object.entries(o).filter(([k])=>ok.includes(k)));if(!Object.keys(prop).length)prop=null;}catch(e){}}
+    CH.set([...CH.get(),{id:Date.now()+'-a',c:cur,t:Date.now(),r:'a',x:stripTags(raw)||'(no answer)',chips,...(prop?{prop}:{})}]);$('chatStat').textContent='';}
   catch(e){$('chatStat').textContent='Coach error: '+(e.message||e);}
   finally{chatBusy=false;$('chatSend').disabled=false;chatRender();}}
 $('chatSend').onclick=()=>chatSend();
@@ -1767,6 +1801,79 @@ async function micToggle(){const btn=$('chatMic'),st=$('chatStat'),ok=$('kOpenAI
   try{sr.start();btn.classList.add('rec');st.textContent='Listening… tap 🎤 again to send';}catch(e){VO.sr=null;st.textContent='Voice: '+(e.message||e);}}
 $('chatMic').onclick=micToggle;
 renderGoals();chatRender();setInterval(()=>{if(!$('v-coach').hidden)renderGoals();},60000);
+// ---- live account (v39): mandate for the robot that trades a MetaTrader account through MetaApi from GitHub Actions
+const LIVE_DEF={on:false,allowReal:false,region:'london',pairs:['XAU/USD'],risk:0.5,target:8,maxDD:8,dayLoss:4,maxOpen:2,maxDay:3,minRR:1.5,sessions:['london','newyork'],tpMode:'split',be:true,maxLot:1,maxCalls:10,notes:'',symMap:'',endDate:''};
+const MANDATE={get:()=>{try{return {...LIVE_DEF,...JSON.parse(store.get('ev_live')||'{}')};}catch(e){return {...LIVE_DEF};}},set:o=>{store.set('ev_live',JSON.stringify(o));if(syncOk())setTimeout(()=>syncRun('push'),300);}};
+const LVF=[['lvTarget','target'],['lvDD','maxDD'],['lvDay','dayLoss'],['lvRisk','risk'],['lvOpen','maxOpen'],['lvMaxDay','maxDay'],['lvRR','minRR'],['lvLot','maxLot'],['lvCalls','maxCalls']];
+function liveForm(){const M=MANDATE.get();$('lvOn').checked=!!M.on;for(const [id,k] of LVF)$(id).value=M[k];$('lvPairs').value=(M.pairs||[]).join(', ');
+  $('lvAsia').checked=M.sessions.includes('asia');$('lvLon').checked=M.sessions.includes('london');$('lvNY').checked=M.sessions.includes('newyork');
+  $('lvTp').value=M.tpMode;$('lvEnd').value=M.endDate||'';$('lvBe').checked=!!M.be;$('lvNotes').value=M.notes||'';$('lvMap').value=M.symMap||'';$('lvRegion').value=M.region||'london';$('lvReal').checked=!!M.allowReal;}
+// hard caps the robot also enforces: risk at most 2% a trade, limits that make sense together
+function liveRead(){const M=MANDATE.get(),num=(id,lo,hi,d)=>{const v=parseFloat($(id).value);return isFinite(v)?Math.min(hi,Math.max(lo,v)):d;};
+  const o={...M,on:$('lvOn').checked,target:num('lvTarget',0,100,8),maxDD:num('lvDD',1,50,8),dayLoss:num('lvDay',0.5,20,4),risk:num('lvRisk',0.05,2,0.5),maxOpen:Math.round(num('lvOpen',1,10,2)),maxDay:Math.round(num('lvMaxDay',1,20,3)),
+    minRR:num('lvRR',0.5,10,1.5),maxLot:num('lvLot',0.01,100,1),maxCalls:Math.round(num('lvCalls',1,60,10)),pairs:$('lvPairs').value.split(',').map(x=>x.trim().toUpperCase()).filter(Boolean).slice(0,6),
+    sessions:[['lvAsia','asia'],['lvLon','london'],['lvNY','newyork']].filter(([i])=>$(i).checked).map(([,k])=>k),tpMode:$('lvTp').value,endDate:$('lvEnd').value,be:$('lvBe').checked,notes:$('lvNotes').value.trim().slice(0,2000),symMap:$('lvMap').value.trim(),region:$('lvRegion').value,allowReal:$('lvReal').checked};
+  if(!o.sessions.length)o.sessions=['london','newyork'];if(o.dayLoss>o.maxDD)o.dayLoss=o.maxDD;if(o.risk>o.dayLoss/2)o.risk=+(o.dayLoss/2).toFixed(2);return o;}
+function liveAsk(html,yes,label){const c=$('liveConfirm');c.hidden=false;c.innerHTML=html+`<div class="row" style="margin-top:8px"><button id="lvYes">${label||'Confirm'}</button><button class="sec" id="lvNo">Cancel</button></div>`;$('lvNo').onclick=()=>{c.hidden=true;};$('lvYes').onclick=()=>{c.hidden=true;yes();};}
+$('lvSave').onclick=()=>{const o=liveRead(),M=MANDATE.get();
+  const go2=()=>{MANDATE.set(o);liveForm();$('lvStat').textContent='Saved. The robot uses it from its next run'+(syncOk()?'.':'. Turn on cloud sync in Settings so the robot can read it.');};
+  if(o.allowReal&&!M.allowReal)liveAsk('<b>Allow real money?</b> The robot will place real trades on a real account within these limits. Losses are real and can exceed what you expect on gaps and slippage. Test on a demo first.',go2,'Allow real money');else go2();};
+$('lvStart').onclick=()=>liveAsk(`<b>Start a new challenge?</b> The robot takes the account balance at its next run as the starting balance. Target +${liveRead().target}%, maximum drawdown ${liveRead().maxDD}%, daily loss ${liveRead().dayLoss}%, risk ${liveRead().risk}% a trade.`,()=>{MANDATE.set({...liveRead(),on:true,startAt:Date.now()});liveForm();$('lvStat').textContent='Challenge started. It begins at the robot\'s next run (within 15 minutes, or tap Run the robot now).';},'Start');
+$('livePause').onclick=()=>{const M=MANDATE.get();MANDATE.set({...M,on:!M.on});liveForm();liveRender();$('livePause').textContent=MANDATE.get().on?'Pause':'Resume';};
+$('liveFlat').onclick=()=>liveAsk('<b>Close every position and cancel every pending order on the account now?</b> Trading is also paused.',async()=>{MANDATE.set({...MANDATE.get(),on:false,flatAt:Date.now()});liveForm();
+  let direct='';try{direct=await liveCloseDirect();}catch(e){direct='';}
+  $('liveStatus').textContent=direct||'Paused. The robot closes everything on its next run; tap Run the robot now to do it within a minute or two.';dispatchLive().catch(()=>{});},'Close everything');
+// try to close straight away from this phone too (works if MetaApi accepts requests from browsers)
+async function liveCloseDirect(){const tok=$('kMetaApi').value.trim(),acc=$('kMetaAcc').value.trim();if(!tok||!acc)return '';
+  const base=`https://mt-client-api-v1.${MANDATE.get().region||'london'}.agiliumtrade.ai/users/current/accounts/${acc}`,H={'auth-token':tok,'content-type':'application/json'};
+  const [pos,ord]=await Promise.all([fetch(base+'/positions',{headers:H}).then(r=>r.json()),fetch(base+'/orders',{headers:H}).then(r=>r.json())]);let n=0;
+  for(const o of ord||[]){await fetch(base+'/trade',{method:'POST',headers:H,body:JSON.stringify({actionType:'ORDER_CANCEL',orderId:o.id})});n++;}
+  for(const p of pos||[]){await fetch(base+'/trade',{method:'POST',headers:H,body:JSON.stringify({actionType:'POSITION_CLOSE_ID',positionId:p.id})});n++;}
+  return `Done from this phone: ${(pos||[]).length} position(s) closed and ${(ord||[]).length} order(s) cancelled. Trading is paused.`;}
+async function dispatchLive(){const c=syncCfg(),r=await fetch(`https://api.github.com/repos/${c.repo}/actions/workflows/live.yml/dispatches`,{method:'POST',headers:c.H,body:JSON.stringify({ref:'main'})});
+  if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.message||('HTTP '+r.status));}}
+$('liveRunNow').onclick=async()=>{try{if(syncOk()&&syncSig()!==store.get('ev_syncSig'))await syncRun('push');await dispatchLive();$('liveStatus').textContent='The robot is starting on GitHub. Tap Refresh in a minute or two.';}
+  catch(e){$('liveStatus').textContent='Could not start the robot: '+(e.message||e)+'. The GitHub token needs Actions: read and write.';}};
+let LST=null;
+async function liveLoad(){try{const c=syncCfg(),f=await ghFile(c,'edgeview-live-state.json');if(!f||!f.box||!f.box.ct)return null;LST=await openData(f.box,c.pass);try{await IDB.kv.put('liveState',LST);}catch(e){}return LST;}catch(e){return null;}}
+const lvMoney=(v,c)=>v==null?'n/a':Number(v).toLocaleString(undefined,{maximumFractionDigits:2})+' '+(c||'');
+function lvBar(used,lim,good){const p=Math.max(0,Math.min(100,lim?used/lim*100:0));return `<div style="height:6px;background:var(--line);border-radius:3px;margin:3px 0 8px"><div style="height:6px;width:${p}%;background:${good?'var(--bull)':p>75?'var(--bear)':'var(--brass)'};border-radius:3px"></div></div>`;}
+function liveRender(){const M=MANDATE.get(),S=LST;$('livePause').textContent=M.on?'Pause':'Resume';
+  if(!S){$('liveBadge').textContent=M.on?'· waiting for the robot':'· not connected';return;}
+  const A=S.acct||{},L=S.lim||{},ch=S.ch||{},ago=Math.round((Date.now()-S.at)/60000);
+  $('liveBadge').innerHTML=`· <span style="color:${A.real?'var(--bear)':'var(--info)'}">${A.real?'REAL':'DEMO'}</span> · ${esc(ch.status||'no challenge')}${M.on?'':' · paused'}`;
+  const pos=(S.pos||[]),ord=(S.ord||[]);
+  $('liveStatus').innerHTML=`<div style="color:var(--text)"><b>${esc(A.broker||'')}</b> ${lvMoney(A.balance,A.currency)} balance · ${lvMoney(A.equity,A.currency)} equity</div>`+
+    (ch.startBal?`<div style="margin-top:6px">Target: ${L.gain!=null?L.gain.toFixed(2):'?'}% of +${M.target}%</div>${lvBar(Math.max(0,L.gain||0),M.target,true)}<div>Drawdown used: ${L.ddUsed!=null?L.ddUsed.toFixed(2):'?'}% of ${M.maxDD}%</div>${lvBar(L.ddUsed||0,M.maxDD)}<div>Today's loss used: ${L.dayUsed!=null?L.dayUsed.toFixed(2):'?'}% of ${M.dayLoss}%</div>${lvBar(L.dayUsed||0,M.dayLoss)}`:'')+
+    (ch.reason?`<div><b>${esc(ch.reason)}</b></div>`:'')+(S.idle?`<div>Not opening trades: ${esc(S.idle)}.</div>`:'')+(S.err?`<div class="err">Last error: ${esc(S.err)}</div>`:'')+
+    `<div style="margin-top:6px"><b>Open</b> (${pos.length}) ${pos.map(p=>`<div>${esc(p.sym)} ${p.type&&/SELL/.test(p.type)?'SELL':'BUY'} ${p.vol} @ ${p.open} · SL ${p.sl||'none'} · TP ${p.tp||'none'} · <span style="color:${p.pl>=0?'var(--bull)':'var(--bear)'}">${lvMoney(p.pl,A.currency)}</span>${p.mine?'':' (manual)'}</div>`).join('')}</div>`+
+    (ord.length?`<div style="margin-top:4px"><b>Pending</b> ${ord.map(o=>`<div>${esc(o.sym)} ${esc(String(o.type||'').replace('ORDER_TYPE_',''))} ${o.vol} @ ${o.open}</div>`).join('')}</div>`:'')+
+    `<details style="margin-top:6px"><summary style="cursor:pointer">Robot log</summary>${(S.log||[]).slice(0,25).map(x=>`<div>${new Date(x.t).toLocaleString([],{weekday:'short',hour:'2-digit',minute:'2-digit'})}: ${esc(x.msg)}</div>`).join('')}</details>`+
+    `<div style="margin-top:4px">Last robot run ${ago<1?'just now':ago+' min ago'}.</div>`;}
+$('liveRefresh').onclick=async()=>{$('liveStatus').textContent='Reading the robot\'s state…';await liveLoad();liveRender();if(!LST)$('liveStatus').textContent='No robot state yet. Finish the setup below, turn on cloud sync, and start a challenge.';};
+// ---- repository secrets for the robot: libsodium sealed box (X25519 + XSalsa20-Poly1305, nonce = BLAKE2b-192(epk||pk))
+function blake2b(input,outlen){const M64=(1n<<64n)-1n,IV=[0x6a09e667f3bcc908n,0xbb67ae8584caa73bn,0x3c6ef372fe94f82bn,0xa54ff53a5f1d36f1n,0x510e527fade682d1n,0x9b05688c2b3e6c1fn,0x1f83d9abfb41bd6bn,0x5be0cd19137e2179n];
+  const SG=[[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],[14,10,4,8,9,15,13,6,1,12,0,2,11,7,5,3],[11,8,12,0,5,2,15,13,10,14,3,6,7,1,9,4],[7,9,3,1,13,12,11,14,2,6,5,10,4,0,15,8],[9,0,5,7,2,4,10,15,14,1,11,12,6,8,3,13],[2,12,6,10,0,11,8,3,4,13,7,5,15,14,1,9],[12,5,1,15,14,13,4,10,0,7,6,3,9,2,8,11],[13,11,7,14,12,1,3,9,5,0,15,4,8,6,2,10],[6,15,14,9,11,3,0,8,12,2,13,7,1,4,10,5],[10,2,8,4,7,6,1,5,15,11,9,14,3,12,13,0]];
+  const rot=(x,n)=>((x>>BigInt(n))|(x<<BigInt(64-n)))&M64,h=IV.slice();h[0]^=0x01010000n^BigInt(outlen);let t=0n;
+  const comp=(blk,last)=>{const m=[];for(let i=0;i<16;i++){let w=0n;for(let j=7;j>=0;j--)w=(w<<8n)|BigInt(blk[i*8+j]);m.push(w);}const v=[...h,...IV];v[12]^=t&M64;v[13]^=t>>64n;if(last)v[14]^=M64;
+    const G=(a,b,c,d,x,y)=>{v[a]=(v[a]+v[b]+x)&M64;v[d]=rot(v[d]^v[a],32);v[c]=(v[c]+v[d])&M64;v[b]=rot(v[b]^v[c],24);v[a]=(v[a]+v[b]+y)&M64;v[d]=rot(v[d]^v[a],16);v[c]=(v[c]+v[d])&M64;v[b]=rot(v[b]^v[c],63);};
+    for(let r=0;r<12;r++){const s=SG[r%10];G(0,4,8,12,m[s[0]],m[s[1]]);G(1,5,9,13,m[s[2]],m[s[3]]);G(2,6,10,14,m[s[4]],m[s[5]]);G(3,7,11,15,m[s[6]],m[s[7]]);G(0,5,10,15,m[s[8]],m[s[9]]);G(1,6,11,12,m[s[10]],m[s[11]]);G(2,7,8,13,m[s[12]],m[s[13]]);G(3,4,9,14,m[s[14]],m[s[15]]);}
+    for(let i=0;i<8;i++)h[i]^=v[i]^v[i+8];};
+  let off=0;while(input.length-off>128){t+=128n;comp(input.subarray(off,off+128),false);off+=128;}const last=new Uint8Array(128);last.set(input.subarray(off));t+=BigInt(input.length-off);comp(last,true);
+  const out=new Uint8Array(outlen);for(let i=0;i<outlen;i++)out[i]=Number((h[i>>3]>>BigInt(8*(i&7)))&0xffn);return out;}
+function sealedBox(msg,pk){const nacl=window.nacl,ek=nacl.box.keyPair(),nn=new Uint8Array(64);nn.set(ek.publicKey);nn.set(pk,32);const nonce=blake2b(nn,24),c=nacl.box(msg,nonce,pk,ek.secretKey),out=new Uint8Array(32+c.length);out.set(ek.publicKey);out.set(c,32);return out;}
+const loadNacl=()=>window.nacl?Promise.resolve():new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/tweetnacl/1.0.3/nacl-fast.min.js';s.onload=res;s.onerror=()=>rej(new Error('could not load the encryption library'));document.head.appendChild(s);});
+async function putSecrets(vals){const c=syncCfg();await loadNacl();const r=await fetch(`https://api.github.com/repos/${c.repo}/actions/secrets/public-key`,{headers:c.H}),k=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error((k.message||('HTTP '+r.status))+': the token needs Secrets read and write');const pk=unb64(k.key);let n=0;
+  for(const [name,v] of Object.entries(vals)){if(!v)continue;const enc=b64(sealedBox(new TextEncoder().encode(v),pk));
+    const p=await fetch(`https://api.github.com/repos/${c.repo}/actions/secrets/${name}`,{method:'PUT',headers:c.H,body:JSON.stringify({encrypted_value:enc,key_id:k.key_id})});if(!p.ok){const j=await p.json().catch(()=>({}));throw new Error(name+': '+(j.message||p.status));}n++;}
+  return n;}
+$('liveSecrets').onclick=async()=>{const st=$('liveSecStat');try{if(!$('kMetaApi').value.trim()||!$('kMetaAcc').value.trim())throw new Error('paste the MetaApi token and account ID first');st.textContent='Encrypting and sending…';
+    const n=await putSecrets({METAAPI_TOKEN:$('kMetaApi').value.trim(),METAAPI_ACCOUNT_ID:$('kMetaAcc').value.trim(),EDGEVIEW_PASSPHRASE:$('kSync').value,ANTHROPIC_API_KEY:$('kAnthropic').value.trim(),TWELVE_DATA_KEY:$('kTwelve').value.trim()});
+    st.textContent=`Done: ${n} secrets saved in ${syncCfg().repo}. Now set the mandate and start a challenge (demo account first).`;}
+  catch(e){st.textContent='Could not send: '+(e.message||e);}};
+liveForm();IDB.kv.get('liveState').then(v=>{if(v&&!LST){LST=v;liveRender();}});setTimeout(async()=>{if(syncOk()){await liveLoad();liveRender();}},6000);
+setInterval(async()=>{if(!document.hidden&&!$('v-robot').hidden&&syncOk()){await liveLoad();liveRender();}},5*6e4);
 // ---- position size
 const VPP=sy=>/XAU/i.test(sy)?100:/XAG/i.test(sy)?5000:/BTC|ETH|SOL|XRP|BNB/i.test(sy)?1:/ZAR/i.test(sy)?5500:/JPY/i.test(sy)?650:/CAD/i.test(sy)?72000:/CHF/i.test(sy)?110000:100000;
 ['cBal','cRisk'].forEach(i=>{const v=store.get('ca_'+i);if(v)$(i).value=v;});
@@ -1808,7 +1915,7 @@ function go(v){
   $('viewTitle').textContent=TITLES[v]||'';window.scrollTo(0,0);store.set('ca_view',v);
   if(v==='journal')autoResolve(false);
   if(v==='chart'){if(!LC.bars.length||Date.now()-LC.at>90000)lcLoad(false);else lcDraw();}
-  if(v==='robot'){renderWL();renderBot();renderAlerts();markAlertsRead();}
+  if(v==='robot'){renderWL();renderBot();renderAlerts();markAlertsRead();if(typeof liveRender==='function'){liveRender();if(syncOk())liveLoad().then(liveRender);}}
 }
 document.querySelectorAll('#tabs button,#moreSheet [data-v]').forEach(b=>b.onclick=()=>go(b.dataset.v));
 $('sheetBg').onclick=closeSheets;

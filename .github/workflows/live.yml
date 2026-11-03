@@ -1,0 +1,35 @@
+# Edgeview live trader: trades your MetaTrader account through MetaApi under the mandate set in the app (Robot > Live account).
+# Needs repository secrets: METAAPI_TOKEN, METAAPI_ACCOUNT_ID, EDGEVIEW_PASSPHRASE (= your backup passphrase), ANTHROPIC_API_KEY,
+# TWELVE_DATA_KEY, and optionally TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID. Without them each run exits immediately.
+# Runs every 15 minutes on weekdays (GitHub may start scheduled runs a few minutes late). Stops, targets and expiries sit at the broker,
+# so a late run never leaves a trade unprotected.
+name: Live trader
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * 0-5'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: live-trader
+  cancel-in-progress: false
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run the live trader
+        run: node scanner/live.mjs
+        env:
+          METAAPI_TOKEN: ${{ secrets.METAAPI_TOKEN }}
+          METAAPI_ACCOUNT_ID: ${{ secrets.METAAPI_ACCOUNT_ID }}
+          EDGEVIEW_PASSPHRASE: ${{ secrets.EDGEVIEW_PASSPHRASE }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TWELVE_DATA_KEY: ${{ secrets.TWELVE_DATA_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
