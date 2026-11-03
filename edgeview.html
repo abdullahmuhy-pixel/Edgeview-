@@ -1215,7 +1215,7 @@ function parseFinal(raw){const i=raw.search(/^### *Final trade plan/mi);if(i<0)r
 const num=x=>{const m=String(x||'').replace(/,/g,'').match(/-?\d+(\.\d+)?/);return m?+m[0]:null;};
 // ---- history + journal
 const HS={get:()=>{try{return JSON.parse(localStorage.getItem('ca_hist')||'[]')}catch(e){return[]}},set:a=>{keepTexts(a);const now=Date.now(),pack=(n,k)=>JSON.stringify(a.slice(0,n).map((e,i)=>(i<k||(e.ord==='WEEKLY OUTLOOK'&&now-e.id<20*86400000))?e:{...e,text:''}));try{localStorage.setItem('ca_hist',pack(400,40));}catch(e){try{localStorage.setItem('ca_hist',pack(150,12));}catch(e2){}}}};
-const APP_VER='edgeview-v43.1';
+const APP_VER='edgeview-v43.2';
 function META(){return {model:$('model').value.trim()||'claude-sonnet-5-5',deep:$('depth').value,ver:APP_VER};}
 
 function addOdds(card,text,sym){
@@ -1798,8 +1798,12 @@ function applyRemote(d){if(!d||!Array.isArray(d.hist))return {added:0,kv:0};cons
       if(t>(m[k]||0)&&v!==cur){localStorage.setItem(k,v);m[k]=t;kv++;}}}
   finally{syncApplying=false;localStorage.setItem('ev_kmt',JSON.stringify(m));}
   return {added:HS.get().length-before,kv};}
-async function ghFile(c,path){const u=`https://api.github.com/repos/${c.repo}/contents/${path}?ref=${SYNC_BR}`,r=await fetch(u,{headers:c.H});if(r.status===404)return null;if(!r.ok)throw new Error('HTTP '+r.status);
-  const j=await r.json(),raw=await fetch(u,{headers:{...c.H,Accept:'application/vnd.github.raw+json'}});if(!raw.ok)throw new Error('HTTP '+raw.status);return {sha:j.sha,box:await raw.json()};}
+// reads a cloud file; never from the browser cache (a cached reply here once made a phone overwrite the backup instead of merging)
+async function ghFile(c,path){const u=`https://api.github.com/repos/${c.repo}/contents/${path}?ref=${SYNC_BR}`,r=await fetch(u+'&t='+Date.now(),{headers:c.H,cache:'no-store'});if(r.status===404)return null;if(!r.ok)throw new Error('HTTP '+r.status);
+  const j=await r.json();let txt;
+  if(j.content&&j.encoding==='base64')txt=new TextDecoder().decode(unb64(j.content.replace(/\s/g,'')));
+  else{const raw=await fetch(u+'&raw='+Date.now(),{headers:{...c.H,Accept:'application/vnd.github.raw+json'},cache:'no-store'});if(!raw.ok)throw new Error('HTTP '+raw.status);txt=await raw.text();}
+  let box;try{box=JSON.parse(txt);}catch(e){throw new Error('the cloud file '+path+' could not be read');}if(!box||!box.ct)throw new Error('the cloud file '+path+' is not an Edgeview backup');return {sha:j.sha,box};}
 async function ghPut(c,path,box,sha,msg){const r=await fetch(`https://api.github.com/repos/${c.repo}/contents/${path}`,{method:'PUT',headers:c.H,body:JSON.stringify({message:msg,branch:SYNC_BR,content:btoa(JSON.stringify(box)),...(sha?{sha}:{})})});
   const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.message||('HTTP '+r.status));}
 const txMonth=id=>new Date(+id).toISOString().slice(0,7),txPath=m=>`edgeview-texts-${m}.json`;
@@ -1825,7 +1829,7 @@ async function fullText(id){let t=await IDB.texts.get(+id);if(t)return t;
 let syncBusy=false,syncFirst=true;
 async function syncRun(mode){if(syncBusy)return;syncBusy=true;const st=$('syncStat');
   try{const c=syncCfg();st.textContent=mode==='pull'?'Reading your cloud memory…':'Syncing…';
-    await ghBranch(c);let res={added:0,kv:0};const cur=await ghFile(c,SYNC_PATH).catch(()=>null);
+    await ghBranch(c);let res={added:0,kv:0};const cur=await ghFile(c,SYNC_PATH);   // an unreadable backup stops the sync: never overwrite what we could not merge
     if(cur&&cur.box&&cur.box.ct){let d;try{d=await openData(cur.box,c.pass);}catch(e){throw new Error('the backup could not be decrypted: wrong passphrase?');}res=applyRemote(d);}
     let tx=0;if(mode!=='pull'){await ghPut(c,SYNC_PATH,await sealData(syncPayload(),c.pass),cur&&cur.sha,'Edgeview encrypted backup');tx=await syncTexts(c).catch(()=>0);await syncImgs(c).catch(()=>0);}
     store.set('ev_syncAt',String(Date.now()));store.set('ev_syncSig',syncSig());
