@@ -207,8 +207,13 @@
     <input id="ghRepo" placeholder="worked out from the page address">
     <label>Backup passphrase (encrypts your journal before it leaves this device)</label>
     <input id="kSync" type="password" autocomplete="off" placeholder="at least 10 characters; you need it on every device">
-    <label style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="syncOn"> Back up the journal, lessons and signal record automatically</label>
-    <div class="row" style="margin-top:8px"><button class="sec" id="syncNow">Back up now</button><button class="sec" id="syncPull">Restore from backup</button></div>
+    <label style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="syncOn"> Keep everything in sync across my devices (analyses, journal, robot, chats, goals and settings)</label>
+    <div class="row" style="margin-top:8px"><button class="sec" id="syncNow">Sync now</button><button class="sec" id="syncPull">Restore from cloud</button></div>
+    <label style="margin-top:12px">Use Edgeview on another phone</label>
+    <div class="row"><button class="sec" id="linkMake">Create a link code</button></div>
+    <textarea id="linkOut" rows="3" readonly hidden style="width:100%;font-size:11px"></textarea>
+    <div class="row"><input id="linkIn" placeholder="On the new phone: paste the link code here" autocomplete="off"><button class="sec" id="linkUse">Link this phone</button></div>
+    <div class="hint" id="linkStat">The link code carries your API keys, GitHub token and repository, encrypted with your backup passphrase. On the new phone type the passphrase above, paste the code and tap Link this phone: your full history follows.</div>
     <div class="hint" id="syncStat">The backup is encrypted in this browser (AES-256) and saved to the edgeview-data branch of your repository, so GitHub Pages is not rebuilt and nobody can read it without the passphrase. Open the app on another device with the same token and passphrase to share one memory.</div>
     <div class="row" style="margin-top:12px">
       <button class="sec" id="saveKeys">Save now</button>
@@ -462,6 +467,19 @@ RULES
 
 const $ = id => document.getElementById(id);
 const store = { get:k=>localStorage.getItem(k)||'', set:(k,v)=>localStorage.setItem(k,v), del:k=>localStorage.removeItem(k) };
+// ---- cloud memory (v37): settings that follow you to every device, with the time each was last changed
+const SYNC_KEYS=['ca_wl','ca_wlset','ca_bot','ev_brk','ev_bt','ca_alerts','ca_cBal','ca_cRisk','ca_symbol','ca_market','ca_spread','ca_depth','ca_model','ca_mHaiku','ca_tdplan','ca_ghRepo','ev_fxOn','ev_pmOff','ev_chat','ev_goals','ev_style','ev_live'];
+let syncApplying=false;
+const KMT=()=>{try{return JSON.parse(localStorage.getItem('ev_kmt')||'{}');}catch(e){return {};}};
+{const _set=store.set;store.set=(k,v)=>{_set(k,v);if(!syncApplying&&SYNC_KEYS.includes(k)){const m=KMT();m[k]=Date.now();localStorage.setItem('ev_kmt',JSON.stringify(m));}};}
+// full analysis texts live in IndexedDB (no 5 MB limit) and in a monthly encrypted archive in the cloud
+const IDB=(()=>{let dbp;const db=()=>dbp||(dbp=new Promise((res,rej)=>{const r=indexedDB.open('edgeview',2);r.onupgradeneeded=()=>{const d=r.result;for(const n of ['texts','kv'])if(!d.objectStoreNames.contains(n))d.createObjectStore(n);};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);}));
+  const run=async(st,mode,f)=>{const d=await db();return new Promise((res,rej)=>{const t=d.transaction(st,mode),q=f(t.objectStore(st));t.oncomplete=()=>res(q&&q.result);t.onerror=()=>rej(t.error);});};
+  const api=st=>({put:(k,v)=>run(st,'readwrite',s=>s.put(v,k)).catch(()=>{}),get:k=>run(st,'readonly',s=>s.get(k)).catch(()=>undefined),del:k=>run(st,'readwrite',s=>s.delete(k)).catch(()=>{}),
+    entries:async()=>{try{const d=await db();return await new Promise((res,rej)=>{const out=[],t=d.transaction(st,'readonly'),c=t.objectStore(st).openCursor();c.onsuccess=()=>{const x=c.result;if(x){out.push([x.key,x.value]);x.continue();}};t.oncomplete=()=>res(out);t.onerror=()=>rej(t.error);});}catch(e){return [];}}});
+  return {texts:api('texts'),kv:api('kv')};})();
+const TXseen=new Set();
+function keepTexts(a){for(const e of a||[])if(e&&e.text&&e.id!=null&&!TXseen.has(e.id)){TXseen.add(e.id);IDB.texts.put(+e.id,e.text);}}
 // ---- keys
 ['kAnthropic','kTwelve','kFinnhub','kFred','model','mHaiku','kGh','ghRepo','kSync','symbol','market'].forEach(id=>{ const v=store.get('ca_'+id); if(v) $(id).value=v; });
 
@@ -969,8 +987,8 @@ function tickSess(){$('sess').textContent=new Date().toISOString().slice(11,16)+
 function parseFinal(raw){const i=raw.search(/^### *Final trade plan/mi);if(i<0)return{};const g={};for(const ln of raw.slice(i).split('\n').slice(1)){const m=ln.replace(/\*\*/g,'').match(/^\s*[-*•]?\s*([A-Za-z0-9 \/]+?)\s*:\s*(.+)$/);if(m){const k=m[1].trim().toLowerCase();if(!g[k])g[k]=m[2].trim();}}return g;}
 const num=x=>{const m=String(x||'').replace(/,/g,'').match(/-?\d+(\.\d+)?/);return m?+m[0]:null;};
 // ---- history + journal
-const HS={get:()=>{try{return JSON.parse(localStorage.getItem('ca_hist')||'[]')}catch(e){return[]}},set:a=>{const now=Date.now(),pack=(n,k)=>JSON.stringify(a.slice(0,n).map((e,i)=>(i<k||(e.ord==='WEEKLY OUTLOOK'&&now-e.id<20*86400000))?e:{...e,text:''}));try{localStorage.setItem('ca_hist',pack(400,40));}catch(e){try{localStorage.setItem('ca_hist',pack(150,12));}catch(e2){}}}};
-const APP_VER='edgeview-v36.1';
+const HS={get:()=>{try{return JSON.parse(localStorage.getItem('ca_hist')||'[]')}catch(e){return[]}},set:a=>{keepTexts(a);const now=Date.now(),pack=(n,k)=>JSON.stringify(a.slice(0,n).map((e,i)=>(i<k||(e.ord==='WEEKLY OUTLOOK'&&now-e.id<20*86400000))?e:{...e,text:''}));try{localStorage.setItem('ca_hist',pack(400,40));}catch(e){try{localStorage.setItem('ca_hist',pack(150,12));}catch(e2){}}}};
+const APP_VER='edgeview-v37';
 function META(){return {model:$('model').value.trim()||'claude-sonnet-5-5',deep:$('depth').value,ver:APP_VER};}
 
 function addOdds(card,text,sym){
@@ -996,7 +1014,7 @@ async function copyRecap(btn,days){const ok=await copyText(recapText(HS.get(),Da
 function setHit(id,k){HS.set(HS.get().map(e=>e.id==id?{...e,hit:k,st:k>0?'win':'loss',auto:'manual'}:e));renderHist();}
 function setSt(id,st){HS.set(HS.get().map(e=>e.id==id?{...e,st,auto:'manual'}:e));renderHist();}
 function delH(id){HS.set(HS.get().filter(e=>e.id!=id));renderHist();}
-function viewH(id){const e=HS.get().find(x=>x.id==id);if(!e)return;if(!e.text){alert('The full text of older entries is no longer stored. Only the numbers are kept.');return;}if(/### *Final weekly plan/i.test(e.text)){go('weekend');$('wResults').innerHTML='';const c=newWResult(e.sym);c.dataset.raw=e.text;c.querySelector('.rc-out').innerHTML=mdW(e.text);c.querySelector('.rc-live').hidden=true;c.scrollIntoView({behavior:'smooth'});return;}go('analyze');$('results').innerHTML='';const c=newResult(e.sym);c.dataset.raw=e.text;c.querySelector('.rc-out').innerHTML=md(e.text);c.querySelector('.rc-live').hidden=true;c.scrollIntoView({behavior:'smooth'});}
+async function viewH(id){const e0=HS.get().find(x=>x.id==id);if(!e0)return;const e={...e0};if(!e.text)e.text=await fullText(e.id);if(!e.text){alert('The full text of this entry is not on this device or in your cloud backup. Only the numbers are kept.');return;}if(/### *Final weekly plan/i.test(e.text)){go('weekend');$('wResults').innerHTML='';const c=newWResult(e.sym);c.dataset.raw=e.text;c.querySelector('.rc-out').innerHTML=mdW(e.text);c.querySelector('.rc-live').hidden=true;c.scrollIntoView({behavior:'smooth'});return;}go('analyze');$('results').innerHTML='';const c=newResult(e.sym);c.dataset.raw=e.text;c.querySelector('.rc-out').innerHTML=md(e.text);c.querySelector('.rc-live').hidden=true;c.scrollIntoView({behavior:'smooth'});}
 const expOf=v=>{const m=String(v||'').match(/(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/);return m?Date.parse(m[1]+'T'+m[2]+':00Z'):null;};
 function tagOf(e){const x=expOf(e.valid);if(!x)return'';return e.st=='open'&&x<Date.now()?' | <b style="color:var(--red)">EXPIRED: cancel if unfilled</b>':' | valid till '+new Date(x).toLocaleString([],{weekday:'short',hour:'2-digit',minute:'2-digit'});}
 
@@ -1534,29 +1552,71 @@ async function ghBranch(c){const api=`https://api.github.com/repos/${c.repo}`;le
 async function syncGet(c){const r=await fetch(`https://api.github.com/repos/${c.repo}/contents/${SYNC_PATH}?ref=${SYNC_BR}`,{headers:{...c.H,Accept:'application/vnd.github.raw+json'}});
   if(r.status===404)return null;if(!r.ok)throw new Error('HTTP '+r.status);return {box:await r.json()};}
 async function syncSha(c){const r=await fetch(`https://api.github.com/repos/${c.repo}/contents/${SYNC_PATH}?ref=${SYNC_BR}`,{headers:c.H});if(r.status===404)return null;const j=await r.json().catch(()=>({}));return j.sha||null;}
-function syncPayload(){const h=HS.get().map((e,i)=>i<25||!e.text?e:{...e,text:''});return {hist:h,lessons:LS.get(),shadow:SH.get(),sig:SG.get(),at:Date.now(),ver:APP_VER};}
-function applyRemote(d){if(!d||!Array.isArray(d.hist))return 0;const before=HS.get().length;
+function syncPayload(){const h=HS.get().map((e,i)=>i<10||!e.text?e:{...e,text:''}),m=KMT(),kv={};
+  for(const k of SYNC_KEYS){const v=localStorage.getItem(k);if(v!=null)kv[k]=[v,m[k]||0];}
+  return {v:2,hist:h,lessons:LS.get(),shadow:SH.get(),sig:SG.get(),kv,at:Date.now(),ver:APP_VER};}
+// lists that grow on several devices are merged; single settings take the most recently changed value
+const KV_MERGE={ev_chat:(a,b)=>{const m=new Map();for(const x of [...a,...b])if(x&&x.id)m.set(x.id,{...(m.get(x.id)||{}),...x});return [...m.values()].sort((x,y)=>x.t-y.t).slice(-400);}};
+function applyRemote(d){if(!d||!Array.isArray(d.hist))return {added:0,kv:0};const before=HS.get().length;
   const hist=mergeById(HS.get(),d.hist);HS.set(hist);SH.set(mergeById(SH.get(),d.shadow));SG.set(mergeSigs(SG.get(),d.sig));
   const lm=new Map(LS.get().map(l=>[l.id,l]));for(const l of d.lessons||[])if(!lm.has(l.id))lm.set(l.id,l);LS.set([...lm.values()].sort((a,b)=>b.t-a.t));
-  return HS.get().length-before;}
-let syncBusy=false;
+  let kv=0;const m=KMT();syncApplying=true;
+  try{for(const [k,[v,t]] of Object.entries(d.kv||{})){if(!SYNC_KEYS.includes(k))continue;const cur=localStorage.getItem(k);
+      if(KV_MERGE[k]){let A=[],B=[];try{A=JSON.parse(cur||'[]');B=JSON.parse(v||'[]');}catch(e){}const out=JSON.stringify(KV_MERGE[k](A,B));if(out!==cur){localStorage.setItem(k,out);kv++;}m[k]=Math.max(m[k]||0,t);continue;}
+      if(t>(m[k]||0)&&v!==cur){localStorage.setItem(k,v);m[k]=t;kv++;}}}
+  finally{syncApplying=false;localStorage.setItem('ev_kmt',JSON.stringify(m));}
+  return {added:HS.get().length-before,kv};}
+async function ghFile(c,path){const u=`https://api.github.com/repos/${c.repo}/contents/${path}?ref=${SYNC_BR}`,r=await fetch(u,{headers:c.H});if(r.status===404)return null;if(!r.ok)throw new Error('HTTP '+r.status);
+  const j=await r.json(),raw=await fetch(u,{headers:{...c.H,Accept:'application/vnd.github.raw+json'}});if(!raw.ok)throw new Error('HTTP '+raw.status);return {sha:j.sha,box:await raw.json()};}
+async function ghPut(c,path,box,sha,msg){const r=await fetch(`https://api.github.com/repos/${c.repo}/contents/${path}`,{method:'PUT',headers:c.H,body:JSON.stringify({message:msg,branch:SYNC_BR,content:btoa(JSON.stringify(box)),...(sha?{sha}:{})})});
+  const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.message||('HTTP '+r.status));}
+const txMonth=id=>new Date(+id).toISOString().slice(0,7),txPath=m=>`edgeview-texts-${m}.json`;
+// upload each month of full analysis texts that changed since the last upload, merging with what other devices sent
+async function syncTexts(c){keepTexts(HS.get());const all=await IDB.texts.entries(),by={};for(const [id,t] of all)if(t)(by[txMonth(id)]=by[txMonth(id)]||{})[id]=t;
+  let sig={};try{sig=JSON.parse(store.get('ev_txSig')||'{}');}catch(e){}const sg=o=>{const k=Object.keys(o).sort();return k.length+':'+k[k.length-1];};let n=0;
+  for(const m of Object.keys(by).sort().reverse()){if(sig[m]===sg(by[m]))continue;
+    const cur=await ghFile(c,txPath(m)).catch(()=>null);let merged={...by[m]};
+    if(cur&&cur.box&&cur.box.ct){try{const d=await openData(cur.box,c.pass);for(const [id,t] of Object.entries(d))if(!merged[id]){merged[id]=t;IDB.texts.put(+id,t);}}catch(e){}}
+    await ghPut(c,txPath(m),await sealData(merged,c.pass),cur&&cur.sha,'Edgeview encrypted analysis archive '+m);n++;
+    sig[m]=sg(merged);}
+  store.set('ev_txSig',JSON.stringify(sig));return n;}
+// the text of an older analysis: this device first, then the cloud archive for its month
+async function fullText(id){let t=await IDB.texts.get(+id);if(t)return t;
+  try{const c=syncCfg(),cur=await ghFile(c,txPath(txMonth(id)));if(!cur||!cur.box||!cur.box.ct)return '';const d=await openData(cur.box,c.pass);
+    for(const [k,v] of Object.entries(d))IDB.texts.put(+k,v);return d[id]||'';}catch(e){return '';}}
+let syncBusy=false,syncFirst=true;
 async function syncRun(mode){if(syncBusy)return;syncBusy=true;const st=$('syncStat');
-  try{const c=syncCfg();st.textContent=mode==='pull'?'Reading the backup…':'Backing up…';
-    await ghBranch(c);let added=0;const cur=await syncGet(c).catch(()=>null);
-    if(cur&&cur.box&&cur.box.ct){let d;try{d=await openData(cur.box,c.pass);}catch(e){throw new Error('the backup could not be decrypted: wrong passphrase?');}added=applyRemote(d);}
-    if(mode!=='pull'){const box=await sealData(syncPayload(),c.pass),sha=await syncSha(c);
-      const r=await fetch(`https://api.github.com/repos/${c.repo}/contents/${SYNC_PATH}`,{method:'PUT',headers:c.H,body:JSON.stringify({message:'Edgeview encrypted backup',branch:SYNC_BR,content:btoa(JSON.stringify(box)),...(sha?{sha}:{})})});
-      const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.message||('HTTP '+r.status));}
+  try{const c=syncCfg();st.textContent=mode==='pull'?'Reading your cloud memory…':'Syncing…';
+    await ghBranch(c);let res={added:0,kv:0};const cur=await ghFile(c,SYNC_PATH).catch(()=>null);
+    if(cur&&cur.box&&cur.box.ct){let d;try{d=await openData(cur.box,c.pass);}catch(e){throw new Error('the backup could not be decrypted: wrong passphrase?');}res=applyRemote(d);}
+    let tx=0;if(mode!=='pull'){await ghPut(c,SYNC_PATH,await sealData(syncPayload(),c.pass),cur&&cur.sha,'Edgeview encrypted backup');tx=await syncTexts(c).catch(()=>0);}
     store.set('ev_syncAt',String(Date.now()));store.set('ev_syncSig',syncSig());
-    st.textContent=`${mode==='pull'?'Restored':'Backed up'} ${new Date().toISOString().slice(11,16)} UTC to ${c.repo} (${SYNC_BR} branch)${added?`, ${added} new journal entr${added===1?'y':'ies'} merged in from another device`:''}.`;
-    if(added){renderHist();renderBot();}renderLearn();renderSigStats();}
-  catch(e){const m=String(e.message||e);st.textContent='Backup failed: '+m+(/decrypt|passphrase|token first/.test(m)?'.':'. The token needs Contents: read and write on this repository.');}
-  finally{syncBusy=false;}}
-const syncSig=()=>{const a=HS.get();return [a.length,a.filter(e=>e.st!=='open').length,LS.get().length,SH.get().filter(e=>e.st!=='open').length,SG.get().filter(x=>x.res).length].join('|');};
+    st.textContent=`Synced ${new Date().toISOString().slice(11,16)} UTC with ${c.repo} (${SYNC_BR} branch)`+(res.added?`, ${res.added} new journal entr${res.added===1?'y':'ies'} from another device`:'')+(res.kv?`, ${res.kv} setting${res.kv===1?'':'s'} updated`:'')+(tx?`, ${tx} month${tx===1?'':'s'} of analyses archived`:'')+'.';
+    if(res.added){renderHist();renderBot();}renderLearn();renderSigStats();
+    if(res.kv){if(syncFirst&&performance.now()<30000){location.reload();return;}if(typeof chatRender==='function')chatRender();
+      st.innerHTML+=' <button class="sec" id="syncReload" style="padding:2px 8px">Reload to apply</button>';$('syncReload').onclick=()=>location.reload();}}
+  catch(e){const m=String(e.message||e);st.textContent='Sync failed: '+m+(/decrypt|passphrase|token first/.test(m)?'.':'. The token needs Contents: read and write on this repository.');}
+  finally{syncBusy=false;syncFirst=false;}}
+const syncSig=()=>{const a=HS.get(),m=KMT();return [a.length,a.filter(e=>e.st!=='open').length,a.filter(e=>e.text).length,LS.get().length,SH.get().filter(e=>e.st!=='open').length,SG.get().filter(x=>x.res).length,Math.max(0,...Object.values(m))].join('|');};
+const syncOk=()=>store.get('ev_syncOn')==='1'&&$('kGh').value.trim()&&$('kSync').value.length>=10;
 $('syncOn').checked=store.get('ev_syncOn')==='1';$('syncOn').onchange=()=>{store.set('ev_syncOn',$('syncOn').checked?'1':'0');if($('syncOn').checked)syncRun('push');};
 $('syncNow').onclick=()=>syncRun('push');$('syncPull').onclick=()=>syncRun('pull');
-setInterval(()=>{if(store.get('ev_syncOn')==='1'&&!document.hidden&&syncSig()!==store.get('ev_syncSig')&&Date.now()-(+store.get('ev_syncAt')||0)>10*6e4)syncRun('push');},60000);
-setTimeout(()=>{if(store.get('ev_syncOn')==='1')syncRun('push');},8000);
+// sync about a minute after anything changes, when the app goes to the background, and when it opens
+setInterval(()=>{if(syncOk()&&!document.hidden&&syncSig()!==store.get('ev_syncSig')&&Date.now()-(+store.get('ev_syncAt')||0)>45000)syncRun('push');},30000);
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&syncOk()&&syncSig()!==store.get('ev_syncSig'))syncRun('push');else if(!document.hidden&&syncOk()&&Date.now()-(+store.get('ev_syncAt')||0)>5*6e4)syncRun('push');});
+setTimeout(()=>{keepTexts(HS.get());if(syncOk())syncRun('push');},3000);
+// link code: moves the keys, token and repository to a new phone, encrypted with the backup passphrase
+const LINK_IDS=['kAnthropic','kTwelve','kFinnhub','kFred','kGh','ghRepo','model','mHaiku','kOpenAI','kMetaApi'];
+$('linkMake').onclick=async()=>{const out=$('linkOut');try{const pass=$('kSync').value;if(pass.length<10)throw new Error('set your backup passphrase first');
+    const keys={};for(const id of LINK_IDS)if($(id)&&$(id).value.trim())keys[id]=$(id).value.trim();keys.ghRepo=keys.ghRepo||ghRepo();
+    const code='EVLINK1.'+btoa(JSON.stringify(await sealData({keys,at:Date.now()},pass)));out.hidden=false;out.value=code;out.select();
+    const ok=await copyText(code);$('linkStat').textContent=(ok?'Copied. ':'')+'On the new phone open Edgeview, go to Settings, paste this code, type the same passphrase and tap Link this phone. The code is useless without the passphrase, but still only send it to yourself.';}
+  catch(e){$('linkStat').textContent='Could not make a code: '+(e.message||e);}};
+$('linkUse').onclick=async()=>{const st=$('linkStat');try{const code=$('linkIn').value.trim(),pass=$('kSync').value;if(!/^EVLINK1\./.test(code))throw new Error('paste the whole code, starting with EVLINK1.');if(pass.length<10)throw new Error('type your backup passphrase in the passphrase box above');
+    let d;try{d=await openData(JSON.parse(atob(code.slice(8))),pass);}catch(e){throw new Error('wrong passphrase or damaged code');}
+    for(const [id,v] of Object.entries(d.keys||{}))if($(id)){$(id).value=v;store.set('ca_'+id,v);}store.set('ca_kSync',pass);
+    store.set('ev_syncOn','1');$('syncOn').checked=true;st.textContent='Linked. Bringing in your history…';$('linkIn').value='';await syncRun('pull');if(!syncBusy)location.reload();}
+  catch(e){st.textContent='Could not link: '+(e.message||e);}};
 // ---- position size
 const VPP=sy=>/XAU/i.test(sy)?100:/XAG/i.test(sy)?5000:/BTC|ETH|SOL|XRP|BNB/i.test(sy)?1:/ZAR/i.test(sy)?5500:/JPY/i.test(sy)?650:/CAD/i.test(sy)?72000:/CHF/i.test(sy)?110000:100000;
 ['cBal','cRisk'].forEach(i=>{const v=store.get('ca_'+i);if(v)$(i).value=v;});

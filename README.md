@@ -162,3 +162,10 @@ Settings now has a **Broker** choice (XM by default) with the account type: Stan
 - **Backtests.** Each simulated 2R trade has the round-trip spread and commission taken off.
 Spreads widen around news, at the 21:00-23:00 UTC rollover and on Monday opens, so real costs can be higher than these typical values.
 - **Account currency (v36.1).** Settings has an account currency (rand by default, or USD, EUR, GBP). Paper balance, robot equity, the position-size tool and Claude's Risk line all use it. The value of a 1.0 move per lot is worked out from live exchange rates: USD/ZAR from Twelve Data (or the free open.er-api.com rates when there is no key), refreshed every 6 hours, plus the majors from the currency-strength data for crosses. You can type your own USD/ZAR rate instead. For example, at 17.65 one lot of gold is about ZAR 1,765 per $1 move and one lot of EUR/USD about ZAR 176.50 per pip. On an XM Micro account lots are 100 times smaller.
+
+## Cloud memory across phones (v37)
+Everything now follows you to any phone, not only this browser's storage:
+- **What is synced:** every analysis in full (older texts move from localStorage to IndexedDB on the device and to a monthly encrypted archive, `edgeview-texts-YYYY-MM.json`, in the cloud), the journal, lessons, shadow trades, signal record, watchlist and robot settings, paper account, broker and risk settings, chats, goals and your trading style.
+- **How:** turn on "Keep everything in sync across my devices" in Settings (GitHub token with Contents read and write, plus a backup passphrase). It syncs when the app opens, about a minute after anything changes, and when you switch away from the app. Lists are merged; single settings take the most recently changed value.
+- **New phone:** on the old phone tap **Create a link code**. On the new phone type the same passphrase, paste the code and tap **Link this phone**. The code carries your keys, token and repository, encrypted with the passphrase.
+- Opening an old analysis whose text is not on the device fetches it from the cloud archive.
