@@ -252,3 +252,69 @@ The stop and targets stay where Claude put them; the plan check shows the old an
 - **Execution quality (live robot).** The robot now records the actual fill price and time (from the deal history, or the open position), the spread when the order was placed, the quoted price for market orders and whether the entry was moved. Live account shows the fill rate of limit and stop orders, average and worst slippage in R, average time to fill, and the spread as a share of the stop.
 - **Gold volatility (GVZ) and US 2-year yield** are added to the FRED macro line, with where GVZ sits within the last year.
 - **Rate differentials.** For pairs of USD, EUR, GBP, JPY, AUD, CAD, CHF, NZD, ZAR, MXN and PLN the analysis gets the 10-year government bond yield gap (OECD monthly data on FRED) now, 3 months and a year ago, and for EUR/USD the Fed funds and ECB deposit rates. Only the US and euro policy rates are daily; the others are monthly and run a month or two behind.
+
+## Trade plans, the daily money goal and Scalping Mode (v44)
+Three new modules, each pure (no screen, no network) and tested in Node: `tradePlan.js` (EVPlan), `goal.js` (EVGoal) and `scalp.js` (EVScalp). Run the tests with `node scanner/test/tradePlan.test.js`, `node scanner/test/goal.test.js` and `node scanner/test/scalp.test.js`.
+
+### Every plan is a TRADE or a NO TRADE, decided in code
+- **Schema.** Every plan has an entry zone, entry type, invalidation, stop distance, 1-3 targets in R, a time stop (16 x 15M, 12 x 1H, 8 x 4H bars), kill conditions, the fingerprint, and either risk and lots or the reasons it is NO TRADE. `validatePlan` checks the contract.
+- **From a signal** (`buildPlanFromDetect`): sweeps and changes of character get a limit zone at the origin; squeezes and ignitions get a stop entry just beyond the price. The stop comes from the detector, kept beyond the zone. Targets are 1.5R and 2.5R, plus one useful Fibonacci extension.
+- **The gates, in order.** A plan is NO TRADE when:
+  - the score is under the minimum;
+  - price is more than 2.5 ATR from the origin;
+  - the signal type has a weak track record;
+  - no target reaches 1.3R.
+
+  Being 1.8-2.5 ATR from the origin, counter-trend, a ranging market, the unfavourable side of the dealing range, or a marginal track record lowers confidence and adds an abort condition. So do an opposing order block within 1.2 ATR, and a session or liquidity level within 0.8 ATR.
+- **From an analysis** (`planFromModel`): the Final trade plan goes through the same gates. The plan check shows "Code gate: TRADE" or "Code gate: NO TRADE" with the reasons. A plan the code refuses is saved as skipped, the robot does not take it, and the full plan is stored in the journal.
+- **Risk engine** (`sizePlan`):
+  - 0.5% base risk, capped at 1%;
+  - scaled by regime: trending 1.0x, transition 0.7x, ranging 0.4x;
+  - cut for late entries and a marginal track record;
+  - refused when total open risk would pass 2.5%;
+  - cut when a correlation group (metals, euro, yen and so on) would pass 1%;
+  - refused under 0.15%.
+- **Where it runs.**
+  - The app's watchlist scan and the hourly scanner alert only on a TRADE plan; the alert is the plan itself. The scanner stores every plan, TRADE and NO TRADE, with its outcome once known.
+  - The live robot also passes the model's plan through the gate before an order is placed; the gate can only refuse.
+  - The scanner's session-open screen no longer sends a trade-style alert, because a model view is not a code plan. Add `"sessionHeadsUp": true` to watchlist.json to get those as "watch only" messages.
+
+### Daily money goal (Coach chat)
+Tell the coach your balance and target. The app answers these messages in code, not with the model.
+- **The goal state:** balance, target in money or %, risk per trade (capped at 1%), a soft limit of 3 trades a day and a 2% daily loss limit.
+- **The honesty check:** how many R the goal needs, how many average winners that is, and the exact chance of getting there with your win rate. Your journal's numbers are used once it has enough trades. If the goal is unrealistic, it says so, gives an even-odds alternative, and keeps the standards the same.
+- **"Find me trades"** scans your watchlist (or the pairs you name) and your recent analyses. It offers only TRADE plans with confidence 35 or more that would add at least 10% of what is left. Each one is sized one after another, so the limits hold for the set, and shows:
+  - the lot size and the money at risk;
+  - the profit at each target and its share of the remaining goal;
+  - roughly how many more good trades will still be needed.
+- **Results:** "won $40", "lost 24", "+1.6R", "stopped out" or "hit TP1" update the goal. "Track paper progress" also counts the paper outcome of each recommendation. Reaching the goal suggests stopping; the loss limit or the trade limit pauses new suggestions.
+- **Example:**
+  > You: I have $4,800 in the account. I want to make $180 today.
+  > Edgeview: Goal: $180 today on $4,800 (3.75%) ... 7.5R at this risk, so at least 5 winning trades at a typical average win of 1.8R ... Honest view: unrealistic ... A goal of about $42 has roughly even odds at this risk.
+  > You: Account is $10,000, I want $60 today. Find me trades on gold.
+  > Edgeview: One setup passes the usual standards, sized for the goal ($60 still needed). XAU/USD BUY: TRADE ... Suggested lot size: 0.1. Risk: $19.33 (0.19% of the account). If it reaches TP1 at 1.5R about $28.99 (48% of what is left) ...
+  > You: hit TP1
+  > Edgeview: $28.99 logged. $31.01 still needed ...
+
+### Scalping Mode (More > Scalping Mode): paper only
+A separate system with its own settings, state and statistics. It never sends an order: there is no live executor in this version, and the live switch stays locked behind a readiness checklist (20 paper days, 500 trades, profit factor 1.2 after costs, positive net, few loss-limit days).
+- **Engine:** 1-minute Deriv candles for the enabled majors and gold, while the app is open. On return it replays the candles you missed, up to about 11 hours.
+  - Many trades at once, each with its own stop and target, closed when the target is hit.
+  - Optional break-even, trailing stop and time exit.
+  - Inside a candle the stop is checked before the target.
+  - Fills: buys on the ask, sells on the bid, plus simulated slippage.
+- **Entries:**
+  - Mean reversion: 2 SD from EMA20 in a choppy market, on the right side of the session VWAP, turning back.
+  - Breakout: a full-bodied close beyond the 30-minute range in a directional market, with EMA50.
+  - Filters: allowed sessions (London and New York by default), maximum spread, a target of at least 3x the spread, volatility between the 15th and 95th percentile, and a cooldown after a loss.
+- **Risk:**
+  - risk per trade 0.01-0.3%, or a fixed lot that must stay under the same cap;
+  - limits on open trades in total and per pair, total open risk, and trades per day and per hour;
+  - a slippage tolerance;
+  - the daily loss limit closes every trade and locks the day;
+  - the daily profit target stops new entries while open trades run to their exits. The loss limit always wins.
+- **Reports:**
+  - Today: realized, open P&L, progress to target, loss limit used, and why signals were skipped.
+  - Statistics: open trades, win rate, average win and loss, profit factor, drawdown, duration, trades per day, spread and slippage cost, by pair, session, strategy and exit.
+  - Daily and weekly reports, how often the target was reached, and a reset.
+- **Spreads:** the engine uses your broker settings. On an XM Standard account (about 1.7 pips on EUR/USD) most scalps are blocked by the spread filter, and the Today card says so. Scalping small targets needs a raw-spread account.

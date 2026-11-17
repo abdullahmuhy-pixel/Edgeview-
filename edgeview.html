@@ -175,6 +175,16 @@
   #out,.rc-out{white-space:pre-wrap;word-wrap:break-word;line-height:1.6}
   .rc-out h3,#out h3{margin:18px 0 6px;color:var(--brass2);font-size:16px}
   .bar{height:8px;background:var(--bg);border-radius:4px;position:relative;margin:4px 0 8px}.bar i{display:block;height:100%;background:var(--brass);border-radius:4px}.bar u{position:absolute;top:-3px;width:2px;height:14px;background:#fff}
+  #v-scalp .scg{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:8px}
+  #v-scalp .scg label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mute);min-width:0}
+  #v-scalp .scg input,#v-scalp .scg select{margin:0}
+  #v-scalp .scchk{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:6px;font-size:13px}
+  #v-scalp .scchk label{display:flex;gap:6px;align-items:center;color:var(--text)}#v-scalp .scchk input{width:auto;margin:0}
+  #v-scalp .scbar{height:10px;border-radius:6px;background:var(--panel2);border:1px solid var(--line);overflow:hidden;margin:8px 0}
+  #v-scalp .scbar i{display:block;height:100%;background:var(--bull)}
+  #v-scalp .scnums{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px 14px;margin-top:6px}
+  #v-scalp .scnums div{font-size:12px;color:var(--mute)}#v-scalp .scnums b{display:block;font-size:16px;color:var(--text);font-variant-numeric:tabular-nums}
+  #v-scalp .tw{overflow-x:auto}#v-scalp .ct td,#v-scalp .ct th{white-space:nowrap;font-variant-numeric:tabular-nums}
   .ct{width:100%;border-collapse:collapse;font-size:13px}.ct td,.ct th{padding:6px;text-align:left;border-bottom:1px solid var(--line)}
   .hi{border-top:1px solid var(--line);padding:10px 0;font-size:14px}
   .finalbox{border:1px solid var(--brass);background:linear-gradient(180deg,var(--brassbg),transparent);border-radius:12px;padding:14px;margin-top:16px}
@@ -202,6 +212,7 @@
 <div class="sheet-bg" id="sheetBg" hidden></div>
 <div class="sheet" id="moreSheet" hidden><div class="grab"></div><h3>More</h3><div class="menu-list">
   <button data-v="weekend">🗓<span>Weekend engine<small>Review the week and plan the next one</small></span></button>
+  <button data-v="scalp">⚡<span>Scalping Mode<small>Many small paper trades, separate from the robot</small></span></button>
   <button data-v="size">🧮<span>Position size<small>Lots from your balance, risk and stop</small></span></button>
   <button data-v="settings">🔑<span>Settings &amp; API keys<small>Keys, model, background alerts</small></span></button>
 </div></div>
@@ -448,6 +459,23 @@
   </div>
   <div id="wResults"></div>
   </section>
+  <section class="view" id="v-scalp" hidden>
+  <div class="card">
+    <div class="ttl">Scalping Mode <span id="scBadge" class="hint" style="font-weight:600"></span></div>
+    <div class="hint" style="margin-top:0">Many small trades at once, each with its own stop and target, closed automatically when the target is hit. This is separate from the directional robot and runs on paper only: no order is ever sent to a broker. It works on 1-minute candles from Deriv while Edgeview is open, and when you come back it replays the candles you missed (up to about 11 hours).</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button id="scOn" style="width:auto">Start paper scalping</button><button class="sec" id="scPause">Pause new entries</button><button class="sec" id="scUnlock">Reset today's lock</button></div>
+    <div id="scStat" class="hint" style="margin-top:8px"></div>
+  </div>
+  <div class="card"><b>Today</b><div id="scToday" class="hint" style="color:var(--text)"></div></div>
+  <div class="card"><b>Open paper trades</b> <span id="scOpenN" class="hint"></span><div id="scOpen" class="tw"></div></div>
+  <div class="card"><b>Statistics</b> <select id="scRange" style="width:auto;margin-left:8px"><option value="all">All time</option><option value="7">Last 7 days</option><option value="1">Today</option></select>
+    <div id="scStats"></div>
+    <div style="margin-top:12px"><button class="sec" id="scReset">Reset paper statistics</button><span id="scResetQ" hidden> Delete every closed paper trade and the daily reports? Open trades are kept. <button class="sec" id="scResetY">Yes, reset</button> <button class="sec" id="scResetN">Cancel</button></span></div></div>
+  <div class="card"><b>Settings</b><div class="hint" style="margin-top:2px">Hard caps: risk per trade 0.3%, 25 open trades, 3% total open risk, 3% daily loss.</div>
+    <div id="scForm"></div><button id="scSave" style="width:auto;margin-top:12px">Save settings</button><div id="scCfgNote" class="hint"></div></div>
+  <div class="card"><b>Real-money trading</b><div id="scLive" class="hint" style="color:var(--text)"></div></div>
+  <div class="card"><b>Activity</b><div id="scLog" class="hint"></div></div>
+  </section>
   <section class="view" id="v-size" hidden>
   <div class="card">
     <b>Position size</b>
@@ -507,6 +535,7 @@
 <script src="ta.js"></script>
 <script src="tradePlan.js"></script>
 <script src="goal.js"></script>
+<script src="scalp.js"></script>
 <script>
 // ---- Local time: every time the user reads is shown in the time zone of the country chosen in Settings (default South Africa).
 // The maths, data feeds and stored values stay in UTC; only what is shown or written for the user is converted.
@@ -738,7 +767,7 @@ function synthBrief(sym){const c=synthCode(sym),k=synthKind(sym);if(!c)return ''
     jump:`Jump ${n} Index: volatility ${n}% a year with sudden large jumps, on average about three an hour, equally likely up or down.`}[k];
   return `INSTRUMENT BACKGROUND (Deriv synthetic index, Deriv code ${c}): ${kind} Synthetic indices are generated by Deriv's audited random number generator. They trade 24/7 including weekends, and they are NOT moved by economic news, central banks, sessions, positioning, correlations or any other market: ignore the economic calendar, headlines, COT, currency strength and session opens for this instrument, and do not mention them as reasons. Volatility is statistically constant, so ATR-based stops and targets are reliable; chart structure (swings, ranges, liquidity sweeps, trend legs) is the only edge, and it is weaker than on real markets, so be strict about reward to risk, size small and say so when there is no clear setup. Trade on Deriv (MT5 or Deriv options/multipliers); costs are the spread only.`;}
 // ---- cloud memory (v37): settings that follow you to every device, with the time each was last changed
-const SYNC_KEYS=['ev_tz','ev_dgoal','ev_blind','ev_nudge','ev_brkfeed','ev_oenv','ca_wl','ca_wlset','ca_bot','ev_brk','ev_bt','ca_alerts','ca_cBal','ca_cRisk','ca_symbol','ca_market','ca_spread','ca_depth','ca_model','ca_mHaiku','ca_tdplan','ca_ghRepo','ev_fxOn','ev_pmOff','ev_chat','ev_chats','ev_goals','ev_style','ev_live','ev_src'];
+const SYNC_KEYS=['ev_tz','ev_dgoal','ev_scalp_cfg','ev_blind','ev_nudge','ev_brkfeed','ev_oenv','ca_wl','ca_wlset','ca_bot','ev_brk','ev_bt','ca_alerts','ca_cBal','ca_cRisk','ca_symbol','ca_market','ca_spread','ca_depth','ca_model','ca_mHaiku','ca_tdplan','ca_ghRepo','ev_fxOn','ev_pmOff','ev_chat','ev_chats','ev_goals','ev_style','ev_live','ev_src'];
 let syncApplying=false;
 const KMT=()=>{try{return JSON.parse(localStorage.getItem('ev_kmt')||'{}');}catch(e){return {};}};
 {const _set=store.set;store.set=(k,v)=>{_set(k,v);if(!syncApplying&&SYNC_KEYS.includes(k)){const m=KMT();m[k]=Date.now();localStorage.setItem('ev_kmt',JSON.stringify(m));}};}
@@ -1328,7 +1357,7 @@ function parseFinal(raw){const i=raw.search(/^### *Final trade plan/mi);if(i<0)r
 const num=x=>{const m=String(x||'').replace(/,/g,'').match(/-?\d+(\.\d+)?/);return m?+m[0]:null;};
 // ---- history + journal
 const HS={get:()=>{try{return JSON.parse(localStorage.getItem('ca_hist')||'[]')}catch(e){return[]}},set:a=>{keepTexts(a);const now=Date.now(),pack=(n,k)=>JSON.stringify(a.slice(0,n).map((e,i)=>(i<k||(e.ord==='WEEKLY OUTLOOK'&&now-e.id<20*86400000))?e:{...e,text:''}));try{localStorage.setItem('ca_hist',pack(400,40));}catch(e){try{localStorage.setItem('ca_hist',pack(150,12));}catch(e2){}}}};
-const APP_VER='edgeview-v43.9';
+const APP_VER='edgeview-v44';
 function META(){return {model:$('model').value.trim()||'claude-sonnet-5-5',deep:$('depth').value,ver:APP_VER};}
 
 function addOdds(card,text,sym){
@@ -2078,6 +2107,71 @@ $('linkUse').onclick=async()=>{const st=$('linkStat'),btn=$('linkUse');
   catch(e){st.textContent='Could not link: '+(e.message||e);}finally{btn.disabled=false;}};
 // show the repository the app is using even when the box is left empty
 if(!$('ghRepo').value.trim())$('ghRepo').placeholder=ghRepo()+' (worked out from the page address)';
+// ---- Scalping Mode (v44): paper only, separate from the directional robot (scalp.js holds the engine)
+const SCC={get:()=>{try{return {...EVScalp.DEFAULTS,...JSON.parse(store.get('ev_scalp_cfg')||'{}')};}catch(e){return {...EVScalp.DEFAULTS};}},set:o=>store.set('ev_scalp_cfg',JSON.stringify(o))};
+const SCS={get:()=>{try{const v=store.get('ev_scalp_st');return v?JSON.parse(v):EVScalp.newState(Date.now());}catch(e){return EVScalp.newState(Date.now());}},set:o=>{try{store.set('ev_scalp_st',JSON.stringify(o));}catch(e){o.closed=o.closed.slice(-2000);store.set('ev_scalp_st',JSON.stringify(o));}}};
+const SCB={};let scBusy=false,scErr='';
+const scM=x=>x==null?'n/a':(x<0?'-':'')+'$'+Math.abs(x).toFixed(2);
+const scPct=x=>x==null?'n/a':(x*100).toFixed(1)+'%';
+// the form is built from this list: [key, label, type, options]
+const SC_FIELDS=[['balance','Paper balance ($)','num'],['riskPct','Risk per trade (%)','num'],['sizing','Lot size','sel',[['risk','From risk %'],['fixed','Fixed lot']]],['fixedLot','Fixed lot','num'],
+  ['tpStyle','Take profit','sel',[['pips','Fixed pips'],['money','Fixed $ per trade']]],['tpPips','Target (pips)','num'],['tpMoney','Target ($ per trade)','num'],
+  ['slStyle','Stop loss','sel',[['pips','Fixed pips'],['atr','x 1-minute ATR']]],['slPips','Stop (pips)','num'],['slAtr','Stop (x ATR)','num'],
+  ['beAfterPips','Break-even after (pips, 0 = off)','num'],['trailPips','Trailing stop (pips, 0 = off)','num'],['maxHoldMin','Close after (minutes)','num'],
+  ['maxOpen','Max open trades','num'],['maxPerPair','Max open per pair','num'],['maxOpenRiskPct','Max total open risk (%)','num'],
+  ['dailyLossPct','Daily loss limit (% of balance)','num'],['dailyTarget','Daily profit target ($, empty = none)','num'],['maxTradesDay','Max trades per day','num'],['maxTradesHour','Max trades per hour','num'],
+  ['maxSpreadFx','Max spread, forex (pips)','num'],['maxSpreadGold','Max spread, gold (pips of 0.1)','num'],['slipPips','Simulated slippage (pips)','num'],['maxSlipPips','Max slippage (pips)','num']];
+function scForm(){const c=SCC.get(),v=k=>k==='maxSpreadFx'?c.maxSpreadPips.default:k==='maxSpreadGold'?c.maxSpreadPips['XAU/USD']:c[k];
+  const chk=(name,list,on)=>`<div class="scchk" data-g="${name}">${list.map(([k,l])=>`<label><input type="checkbox" value="${esc(k)}"${on.includes(k)?' checked':''}>${esc(l)}</label>`).join('')}</div>`;
+  $('scForm').innerHTML=`<div class="scg">${SC_FIELDS.map(([k,l,t,o])=>`<label>${esc(l)}${t==='sel'?`<select data-k="${k}">${o.map(([a,b])=>`<option value="${a}"${v(k)===a?' selected':''}>${esc(b)}</option>`).join('')}</select>`:`<input data-k="${k}" type="number" step="any" inputmode="decimal" value="${v(k)==null?'':esc(String(v(k)))}">`}</label>`).join('')}</div>
+    <div style="margin-top:12px;font-size:13px"><b>Pairs</b>${chk('pairs',EVScalp.MAJORS.map(x=>[x,x]),c.pairs)}</div>
+    <div style="margin-top:10px;font-size:13px"><b>Sessions</b>${chk('sessions',[['london','London 08:00-17:00 London time'],['newyork','New York 08:00-17:00 New York time'],['asia','Tokyo 09:00-17:00 Tokyo time']],c.sessions)}</div>
+    <div style="margin-top:10px;font-size:13px"><b>Entry strategies</b>${chk('strategies',[['meanrev','Mean reversion: stretched 2 SD from EMA20 in a choppy market, turning back'],['breakout','Breakout: full-bodied close beyond the 30-minute range in a directional market']],c.strategies)}</div>`;}
+function scRead(){const c=SCC.get(),o={...c,maxSpreadPips:{...c.maxSpreadPips}};
+  $('scForm').querySelectorAll('[data-k]').forEach(el=>{const k=el.dataset.k,raw=el.value.trim();if(el.tagName==='SELECT'){o[k]=raw;return;}const x=raw===''?null:+raw;
+    if(k==='maxSpreadFx'){if(x>0){for(const p of EVScalp.MAJORS)if(p!=='XAU/USD')delete o.maxSpreadPips[p];o.maxSpreadPips.default=x;}}else if(k==='maxSpreadGold'){if(x>0)o.maxSpreadPips['XAU/USD']=x;}else o[k]=x;});
+  $('scForm').querySelectorAll('[data-g]').forEach(g=>{o[g.dataset.g]=[...g.querySelectorAll('input:checked')].map(i=>i.value);});
+  return o;}
+$('scSave')&&($('scSave').onclick=()=>{const n=EVScalp.normConfig(scRead());SCC.set({...n.cfg,on:SCC.get().on,paused:SCC.get().paused});scForm();$('scCfgNote').textContent=n.notes.length?'Saved with changes: '+n.notes.join('; ')+'.':'Saved. New trades use these settings; open trades keep theirs.';scRender();});
+// spread per pair in price units: the live broker spread if the app has one, then your broker cost settings, else the engine's assumption
+function scSpread(sym){const L=LIVE[sym]||{};if(L.bspr>0)return L.bspr;try{const c=costFor(sym);if(c&&c.spr>0)return c.spr;}catch(e){}return null;}
+async function scTick(force){const c=SCC.get();if(scBusy||(!c.on&&!force))return;scBusy=true;scErr='';
+  try{let st=SCS.get();const now=Date.now(),bars={},spreads={};
+    for(const sym of c.pairs){const code=derivCode(sym);if(!code){scErr+=sym+': no Deriv feed; ';continue;}
+      const gap=st.last[sym]?Math.ceil((now-st.last[sym])/60000):0;
+      try{const b=await derivCandles(code,60,Math.min(1000,300+gap));bars[sym]=b.filter(x=>x.t+60000<=now);SCB[sym]=b.length?b[b.length-1].c:null;const sp=scSpread(sym);if(sp)spreads[sym]=sp;}catch(e){scErr+=sym+': '+(e.message||e)+'; ';}}
+    const r=EVScalp.step(st,c,{now,bars,spreads,tz:TZname()});SCS.set(r.state);
+    for(const t of r.closed)if(t.reason==='breaker'){pushAlert({kind:'info',sym:t.sym,title:'Scalping Mode: daily loss limit hit',body:'Every paper trade was closed and new entries are locked for today.'});break;}
+    if(r.state.lock&&(!st.lock||st.lock.at!==r.state.lock.at)&&r.state.lock.kind==='target')pushAlert({kind:'info',sym:'',title:'Scalping Mode: daily target reached',body:r.state.lock.reason+'. No new paper trades today; open ones run to their exits.'});}
+  catch(e){scErr=e.message||String(e);}finally{scBusy=false;scRender();}}
+setInterval(()=>{if(SCC.get().on)scTick();},60000);setTimeout(()=>{if(SCC.get().on)scTick();},6000);
+$('scOn')&&($('scOn').onclick=()=>{const c=SCC.get();c.on=!c.on;if(c.on)c.paused=false;SCC.set(c);if(c.on){const st=SCS.get();scTick(true);}scRender();});
+$('scPause')&&($('scPause').onclick=()=>{const c=SCC.get();c.paused=!c.paused;SCC.set(c);scRender();});
+$('scUnlock')&&($('scUnlock').onclick=()=>{SCS.set(EVScalp.resetLock(SCS.get(),Date.now()));scRender();});
+$('scReset')&&($('scReset').onclick=()=>{$('scResetQ').hidden=false;});$('scResetN')&&($('scResetN').onclick=()=>{$('scResetQ').hidden=true;});
+$('scResetY')&&($('scResetY').onclick=()=>{SCS.set(EVScalp.resetStats(SCS.get(),Date.now()));$('scResetQ').hidden=true;scRender();});
+$('scRange')&&($('scRange').onchange=()=>scRender());
+function scRender(){if(!$('v-scalp'))return;const c=SCC.get(),st=SCS.get(),now=Date.now(),tz=TZname(),T=EVScalp.today(st,c,SCB,now,tz);
+  $('scOn').textContent=c.on?'Stop scalping':'Start paper scalping';$('scPause').textContent=c.paused?'Resume new entries':'Pause new entries';$('scPause').disabled=!c.on;$('scUnlock').disabled=!T.lock;
+  $('scBadge').textContent=!c.on?'off':T.lock?'locked for today':c.paused?'paused':'running on paper';
+  $('scStat').textContent=(c.on?`Watching ${c.pairs.join(', ')} on 1-minute candles${c.paused?' (paused: managing open trades only)':''}. Last check ${st.last&&Object.keys(st.last).length?zt(Math.max(...Object.values(st.last))+60000)+' '+zlab():'not yet'}.`:'Off. Nothing is watched or traded.')+(scErr?' Problems: '+scErr:'');
+  const bar=T.target?`<div class="scbar" role="progressbar" aria-valuenow="${T.progressPct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${Math.max(0,T.progressPct)}%"></i></div>`:'';
+  $('scToday').innerHTML=`<div class="scnums"><div>Realized<b style="color:${T.realized>=0?'var(--bull)':'var(--bear)'}">${scM(T.realized)}</b></div><div>Open P&amp;L<b>${scM(T.floating)}</b></div><div>Daily target<b>${T.target?scM(T.target):'none'}</b></div><div>Remaining<b>${T.target?scM(T.remaining):'n/a'}</b></div><div>Trades closed<b>${T.closedN}</b></div><div>Open now<b>${T.open} (${T.openRiskPct}% risk)</b></div><div>Loss limit used<b>${T.lossUsedPct}% of ${scM(T.lossLimit)}</b></div></div>${bar}`+
+    (()=>{const sk=Object.entries(T.skips||{}).sort((a,b)=>b[1]-a[1]).slice(0,4);return sk.length?`<div style="margin-top:6px">Signals skipped today: ${sk.map(([k,n])=>esc(k)+' ('+n+')').join('; ')}.${sk.some(([k])=>/^spread/.test(k))?' Your broker spread is wider than the scalping limit: a raw-spread account fits scalping better; raising the limit in Settings lets more trades through, but the spread then eats most of each small target.':''}</div>`:'';})()+
+    (T.lock?`<div style="margin-top:6px"><b>${T.lock.kind==='target'?'🎯 Target reached':'⛔ Circuit breaker'}:</b> ${esc(T.lock.reason)}. No new trades today${T.lock.kind==='target'?'; open trades run to their exits':''}.</div>`:'');
+  const mids=SCB;$('scOpenN').textContent=`${st.open.length} of max ${c.maxOpen}`;
+  $('scOpen').innerHTML=st.open.length?`<table class="ct"><tr><th>Pair</th><th>Side</th><th>Lots</th><th>Entry</th><th>Stop</th><th>Target</th><th>P&amp;L</th><th>Age</th><th>Why</th></tr>${st.open.slice().sort((a,b)=>b.openT-a.openT).map(t=>{const pl=EVScalp.floatPnl(t,mids[t.sym]!=null?mids[t.sym]:t.mid);return `<tr><td>${esc(t.sym)}</td><td>${t.side>0?'BUY':'SELL'}</td><td>${t.lots}</td><td>${f2(t.entry)}</td><td>${f2(t.sl)}${t.be?' (BE)':''}</td><td>${f2(t.tp)}</td><td style="color:${pl>=0?'var(--bull)':'var(--bear)'}">${scM(pl)}</td><td>${Math.round((now-t.openT)/60000)} min</td><td style="white-space:normal;min-width:180px">${t.strat==='breakout'?'Breakout':'Mean reversion'}: ${esc(t.why)}</td></tr>`;}).join('')}</table>`:'<div class="hint">No open paper trades.</div>';
+  const rg=$('scRange').value,from=rg==='all'?null:rg==='1'?Date.parse(T.day+'T00:00:00')-0:now-7*864e5,S=EVScalp.stats(st,from,null,tz);
+  const tbl=(title,g,L)=>{const rows=Object.entries(g).sort((a,b)=>b[1].n-a[1].n);return rows.length?`<div class="tw" style="margin-top:10px"><table class="ct"><tr><th>${title}</th><th>Trades</th><th>Win rate</th><th>Net</th></tr>${rows.map(([k,v])=>`<tr><td>${esc((L&&L[k])||k)}</td><td>${v.n}</td><td>${scPct(v.w/v.n)}</td><td style="color:${v.net>=0?'var(--bull)':'var(--bear)'}">${scM(v.net)}</td></tr>`).join('')}</table></div>`:'';};
+  $('scStats').innerHTML=S.n?`<div class="scnums"><div>Trades<b>${S.n}</b></div><div>Win rate<b>${scPct(S.winRate)}</b></div><div>Average win<b>${scM(S.avgWin)}</b></div><div>Average loss<b>${scM(S.avgLoss)}</b></div><div>Average per trade<b>${scM(S.avgPerTrade)}</b></div><div>Profit factor<b>${S.pf==null?'n/a':S.pf.toFixed(2)}</b></div><div>Max drawdown<b>${scM(S.maxDD)}</b></div><div>Average duration<b>${S.avgDurMin} min</b></div><div>Trades per day<b>${S.tradesPerDay}</b></div><div>Spread cost<b>${scM(S.spreadCost)}</b></div><div>Slippage cost<b>${scM(S.slipCost)}</b></div><div>Net before costs<b>${scM(S.netBeforeCosts)}</b></div><div>Net after costs<b style="color:${S.net>=0?'var(--bull)':'var(--bear)'}">${scM(S.net)}</b></div><div>Daily target reached<b>${S.targetDays?S.targetHit+' of '+S.targetDays+' days':'no target set'}</b></div><div>Loss-limit days<b>${S.lossDays}</b></div></div>`+
+    tbl('Pair',S.byPair)+tbl('Session',S.bySession,{london:'London','newyork':'New York','london+newyork':'London and New York overlap',asia:'Tokyo','off-hours':'Off hours'})+tbl('Strategy',S.byStrategy,{meanrev:'Mean reversion',breakout:'Breakout'})+tbl('Exit',S.byExit,{tp:'Target',sl:'Stop',be:'Break-even stop',trail:'Trailing stop',time:'Time exit',breaker:'Circuit breaker'})+
+    `<div class="tw" style="margin-top:12px"><b style="font-size:13px">Daily report</b><table class="ct"><tr><th>Day</th><th>Trades</th><th>Win rate</th><th>Net</th><th>Drawdown</th><th>Target</th></tr>${S.days.slice(-14).reverse().map(d=>`<tr><td>${d.day}</td><td>${d.n}</td><td>${scPct(d.wins/d.n)}</td><td style="color:${d.net>=0?'var(--bull)':'var(--bear)'}">${scM(d.net)}</td><td>${d.dd!=null?scM(d.dd):'n/a'}</td><td>${d.hitLoss?'loss limit':d.hitTarget?'reached':d.target?'not reached':'none'}</td></tr>`).join('')}</table></div>`+
+    `<div class="tw" style="margin-top:12px"><b style="font-size:13px">Weekly report</b><table class="ct"><tr><th>Week of</th><th>Days</th><th>Trades</th><th>Win rate</th><th>Net</th><th>Target days</th><th>Loss days</th></tr>${S.weeks.slice(-8).reverse().map(w=>`<tr><td>${w.week}</td><td>${w.days}</td><td>${w.n}</td><td>${scPct(w.wins/w.n)}</td><td style="color:${w.net>=0?'var(--bull)':'var(--bear)'}">${scM(w.net)}</td><td>${w.targetDays}</td><td>${w.lossDays}</td></tr>`).join('')}</table></div>`
+    :'<div class="hint">No closed paper trades yet. Start paper scalping during the London or New York session.</div>';
+  const LR=EVScalp.liveReadiness(EVScalp.stats(st,null,null,tz));
+  $('scLive').innerHTML=`<div>Locked. Mode: <b>paper</b>. ${esc(LR.note)}</div><ul style="margin:8px 0 0;padding-left:18px">${LR.checks.map(x=>`<li>${x.ok?'✅':'⬜'} ${esc(x.name)}: ${esc(String(x.have==null?'n/a':x.have))} (needs ${esc(String(x.need))})</li>`).join('')}</ul>`;
+  $('scLog').innerHTML=(st.events||[]).slice(0,25).map(e=>`<div>${zt(e.t).slice(5)} ${esc(e.msg)}</div>`).join('')||'Nothing yet.';}
+try{scForm();scRender();}catch(e){}
 // ---- trade plans and the daily money goal (v44): the code makes the TRADE / NO TRADE call (tradePlan.js) and sizes it for the goal (goal.js)
 const DG={get:()=>{try{const v=store.get('ev_dgoal');return v?JSON.parse(v):null;}catch(e){return null;}},set:o=>store.set('ev_dgoal',o?JSON.stringify(o):'')};
 function goalNow(){const g=DG.get();return g&&window.EVGoal&&EVGoal.isToday(g,Date.now(),TZname())&&EVGoal.ready(g)?g:null;}
@@ -2442,8 +2536,8 @@ if(navigator.canShare&&navigator.canShare({files:[f]})){try{await navigator.shar
 const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='edgeview-plan.png';a.click();},'image/png');}
 
 // ---- navigation (v33): bottom tabs on phones, a side rail on wide screens, a sheet for the rest
-const TITLES={chart:'Chart',analyze:'Analyze',robot:'Robot',coach:'Coach',journal:'Journal',weekend:'Weekend engine',size:'Position size',settings:'Settings'};
-const TAB_OF={weekend:'more',size:'more',settings:'more'};
+const TITLES={scalp:'Scalping Mode',chart:'Chart',analyze:'Analyze',robot:'Robot',coach:'Coach',journal:'Journal',weekend:'Weekend engine',size:'Position size',settings:'Settings'};
+const TAB_OF={scalp:'more',weekend:'more',size:'more',settings:'more'};
 function closeSheets(){['moreSheet','searchSheet'].forEach(id=>$(id).hidden=true);$('sheetBg').hidden=true;}
 function openSheet(id){closeSheets();$(id).hidden=false;$('sheetBg').hidden=false;}
 function closeMenu(){closeSheets();}
@@ -2453,6 +2547,7 @@ function go(v){
   const t=TAB_OF[v]||v;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.v===t));
   $('viewTitle').textContent=TITLES[v]||'';window.scrollTo(0,0);store.set('ca_view',v);
   if(v==='journal')autoResolve(false);
+  if(v==='scalp'){scForm();scRender();}
   if(v==='chart'){if(!LC.bars.length||Date.now()-LC.at>90000)lcLoad(false);else lcDraw();}
   setTimeout(tickSync,1200);
   if(v==='coach'&&typeof coachEnter==='function')coachEnter();
