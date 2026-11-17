@@ -17,7 +17,7 @@
   const P = typeof module !== 'undefined' && module.exports ? require('./tradePlan.js') : root.EVPlan;
   const num = x => { const v = typeof x === 'number' ? x : parseFloat(String(x == null ? '' : x).replace(/,/g, '')); return isFinite(v) ? v : null; };
   const r2 = x => Math.round(x * 100) / 100;
-  const DEF = { risk_per_trade_pct: 0.5, max_risk_pct: 1.0, max_trades_today: 3, max_daily_loss_pct: 2.0, avg_win_r: 1.8, win_rate: 0.45, min_contribution_pct: 10 };
+  const DEF = { risk_per_trade_pct: 0.5, max_risk_pct: 1.0, max_trades_today: 3, max_daily_loss_pct: 2.0, avg_win_r: 1.8, win_rate: 0.45, min_contribution_pct: 10, min_confidence: 35 };
 
   // ---- day key in the trader's time zone (Intl only; falls back to UTC)
   function dayKey(t, tz) {
@@ -29,7 +29,7 @@
   const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 
   // ---- 1. parsing: numbers with $, R, €, £, "k", commas
-  const AMT = String.raw`(\$|usd\s?|us\$|€|eur\s?|£|gbp\s?|r(?=\s?\d)|zar\s?)?\s?(\d{1,3}(?:[, ]\d{3})+(?![\d.,])|\d+)(?:\.(\d+))?\s?(k\b)?`;
+  const AMT = String.raw`(\$|usd\s?|us\$|€|eur\s?|£|gbp\s?|r(?=\s?\d)|zar\s?)?\s?(\d{1,3}(?:[, ]\d{3})+(?!\d|,\d)|\d+)(?:\.(\d+))?\s?(k\b)?`;
   const amtOf = m => { if (!m) return null; let v = +(m[2].replace(/[, ]/g, '') + (m[3] ? '.' + m[3] : '')); if (m[4]) v *= 1000; return isFinite(v) ? v : null; };
   const curOf = s => { s = String(s || '').trim().toLowerCase(); return !s ? null : /\$|usd/.test(s) ? '$' : /€|eur/.test(s) ? '€' : /£|gbp/.test(s) ? '£' : /^r$|zar/.test(s) ? 'R' : null; };
   const SYM_WORDS = [[/\bgold\b|\bxau/i, 'XAU/USD'], [/\bsilver\b|\bxag/i, 'XAG/USD'], [/\bbitcoin\b|\bbtc/i, 'BTC/USD'], [/\bether(eum)?\b|\beth\b/i, 'ETH/USD']];
@@ -179,6 +179,7 @@
     for (const p of plans || []) {
       if (!p) continue; if (p.decision !== 'TRADE') { out.skipped.push({ plan: p, why: (p.no_trade_reasons || []).join('; ') || 'NO TRADE' }); continue; }
       if (p.expires_at != null && opts.now != null && p.expires_at <= opts.now) { out.skipped.push({ plan: p, why: 'the plan has expired' }); continue; }
+      if (p.confidence < (opts.minConfidence != null ? opts.minConfidence : DEF.min_confidence)) { out.skipped.push({ plan: p, why: `confidence ${p.confidence} is under ${DEF.min_confidence} after the penalties (counter-trend, ranging, late, weak record)` }); continue; }
       pool.push(p);
     }
     pool.sort((a, b) => b.confidence - a.confidence || (b.targets[0].rr - a.targets[0].rr));

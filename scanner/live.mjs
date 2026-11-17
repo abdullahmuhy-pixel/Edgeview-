@@ -12,7 +12,7 @@ import { webcrypto as wc } from 'node:crypto';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-const D = require('../detect.js'), TA = require('../ta.js');
+const D = require('../detect.js'), TA = require('../ta.js'), EP = require('../tradePlan.js');
 import { derivCode, isSynth, synthCode, synthBrief, derivCandles, SYNTH_LIST } from './deriv.mjs';
 import { derivBroker, sizeMult, tpMoney } from './deriv-trade.mjs';
 import { blindCheck, verdict, verdictLine } from './blind.mjs';
@@ -249,6 +249,8 @@ export async function run() {
         }
         const v = validPlan(p, price, M.minRR, atrN);
         if (typeof v === 'string') { await note(`${sym}: no trade (${v}${p && p.why ? ': ' + p.why : ''})`); continue; }
+        const CG = codeGate(sym, p, v, a.closed, b.closed, h4, (+price.bid + +price.ask) / 2, atrN);
+        if (CG.decision !== 'TRADE') { await note(`${sym}: code gate NO TRADE (${CG.no_trade_reasons.join('; ')})`); continue; }
         if (adj) log(sym, adj.trim());
         const BVV = M.blind === false ? null : verdict(await blindCheck({ ak: AK, base: ANTH, m15: a.closed, h1: b.closed, h4, px: px0 }).catch(e => { log(sym, 'blind check failed', e.message); return null; }), v.side);
         if (BVV) log(sym, verdictLine(BVV));
@@ -316,6 +318,14 @@ function syncFills(S) {
   for (const t of S.trades.filter(x => x.st === 'open' && x.fill == null)) {
     const ps = S.pos.filter(p => (t.legs || []).some(l => l.cid === p.cid)); if (ps.length) markFill(t, ps.map(p => ({ price: p.open, volume: p.vol })));
   }
+}
+// the code gate (tradePlan.js): the model's plan must also pass the same TRADE / NO TRADE rules as every other plan in Edgeview
+function codeGate(sym, p, v, m15, h1, h4, px, atr) {
+  try {
+    const ctx = { symbol: sym, tf: '1H', atr, price: px, now, source: 'live', fingerprint: TA.fingerprint(h1, h4, px, v.side) };
+    try { ctx.orderBlocks = TA.orderBlocks(h1, atr); ctx.session = TA.sessionLevels(m15, null, h1, now, px); } catch (e) { }
+    return EP.planFromModel({ decision: v.side > 0 ? 'BUY' : 'SELL', order: p.order, entry: v.entry, sl: v.sl, tp: v.tps, reason: p.why }, ctx);
+  } catch (e) { return { decision: 'NO TRADE', no_trade_reasons: ['code gate failed: ' + (e.message || e)] }; }
 }
 async function settle(S, note) {
   const open = S.trades.filter(t => t.st === 'open'); if (!open.length) return;
@@ -394,6 +404,8 @@ async function runDeriv({ M, S, note, save, style, goals }) {
         if (p && p.decision === 'TRADE' && p.order !== 'MARKET') { await note(`${sym}: no trade (the plan needs a ${p.order} order; Deriv multipliers fill at market only)`); continue; }
         const v = validPlan(p, { bid: spot, ask: spot }, M.minRR, atr);
         if (typeof v === 'string') { await note(`${sym}: no trade (${v}${p && p.why ? ': ' + p.why : ''})`); continue; }
+        const CG = codeGate(sym, p, v, a.closed, b.closed, h4, +spot, atr);
+        if (CG.decision !== 'TRADE') { await note(`${sym}: code gate NO TRADE (${CG.no_trade_reasons.join('; ')})`); continue; }
         const BVV = M.blind === false ? null : verdict(await blindCheck({ ak: AK, base: ANTH, m15: a.closed, h1: b.closed, h4, px: +spot }).catch(e => { log(sym, 'blind check failed', e.message); return null; }), v.side);
         if (BVV) log(sym, verdictLine(BVV));
         if (BVV && BVV.v === 'disagree') { await note(`${sym}: no trade (the blind second opinion disagreed: it sees ${BVV.side > 0 ? 'BUY' : 'SELL'} from the candles alone${BVV.reason ? ': ' + BVV.reason : ''})`); continue; }

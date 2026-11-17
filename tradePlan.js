@@ -126,7 +126,7 @@
       thesis: o.thesis, confidence: 0, created_at: o.now, expires_at: null, source: SOURCES.includes(o.source) ? o.source : 'detect',
     };
   }
-  const thesisOf = (why, fallback) => { const w = (why || []).filter(Boolean).slice(0, 3).map(x => String(x).replace(/\.$/, '')); return w.length ? w.map(x => x[0].toUpperCase() + x.slice(1)).join('. ') + '.' : fallback; };
+  const thesisOf = (why, fallback) => { const w = (why || []).filter(Boolean).slice(0, 3).map(x => String(x).replace(/\d+\.\d{6,}/g, m => fx(+m)).replace(/\.$/, '')); return w.length ? w.map(x => x[0].toUpperCase() + x.slice(1)).join('. ') + '.' : fallback; };
 
   // ---- 2. buildPlanFromDetect(signal, ctx): pure
   function buildPlanFromDetect(signal, ctx) {

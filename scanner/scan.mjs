@@ -8,7 +8,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-const D = require('../detect.js');
+const D = require('../detect.js'), EP = require('../tradePlan.js'), EG = require('../goal.js');
 import { derivCode, isSynth, synthCode, synthBrief, derivCandles } from './deriv.mjs';
 import { blindCheck, verdict, verdictLine } from './blind.mjs';
 
@@ -34,10 +34,20 @@ const f2 = x => x == null || isNaN(x) ? 'n/a' : Number(x).toFixed(pxDec(x));
 
 const W = existsSync('watchlist.json') ? JSON.parse(readFileSync('watchlist.json', 'utf8')) : { pairs: ['XAU/USD'] };
 const pairs = (W.pairs || []).slice(0, 12), minScore = +W.minScore || 60, model = W.model || 'claude-haiku-5-5';
-let S = { alerts: [], sessions: {}, sig: [] };
+let S = { alerts: [], sessions: {}, sig: [], plans: [] };
 try { if (existsSync(STATE)) S = { ...S, ...JSON.parse(readFileSync(STATE, 'utf8')) }; } catch (e) { }
 S.alerts = (S.alerts || []).filter(a => now - a.t < 2 * 864e5);
-S.sig = (S.sig || []).filter(x => now - x.seen < 120 * 864e5).slice(0, 600);   // every signal seen, scored for follow-through once its window has passed
+S.sig = (S.sig || []).filter(x => now - x.seen < 120 * 864e5).slice(0, 600);
+S.plans = (S.plans || []).filter(x => now - x.seen < 60 * 864e5).slice(0, 800);   // every plan (TRADE and NO TRADE) with its outcome once known
+// today's money goal from the app (watchlist.json), if it is still today's and still open
+const GOAL = (() => { const g = W.goal; if (!g || g.day !== EG.dayKey(now, TZN()) || !(g.balance > 0) || !(g.target > 0)) return null;
+  return { account_balance: +g.balance, starting_balance: +g.balance, daily_target_profit: +g.target, remaining_to_goal: +g.remaining, risk_per_trade_pct: Math.min(+g.risk || 0.5, 1), currency: g.currency || '$', status: g.status || 'active', max_trades_today: +g.maxTrades || 3, trades_taken: +g.taken || 0, recs: [], results: [] }; })();
+// the plan for one signal: the same gates as the app; sized for the goal, or for W.equity, or left unsized
+function planFor(sym, x, a, b, h4) {
+  const tr = D.sigVerdict(x, S.sig), ctx = EP.planContext(x, { m15: a.closed, h1: b.closed, h4 }, { symbol: sym, minScore, now, source: 'scanner', trackRecord: tr.n ? tr : null });
+  if (GOAL) return EP.planSignal(x, ctx, null).plan;   // unsized here: rankForGoal sizes it for the goal
+  return EP.planSignal(x, ctx, +W.equity > 0 ? { equity: +W.equity, open: [] } : null, +W.riskPct > 0 ? { baseRiskPct: Math.min(+W.riskPct, 1) } : {}).plan;
+}   // every signal seen, scored for follow-through once its window has passed
 const recent = (sym, side) => S.alerts.some(a => a.sym === sym && a.side === side && now - a.t < 4 * 36e5);
 
 // markets: forex and gold are shut from Friday 21:00 UTC to Sunday 21:00 UTC; crypto never closes
@@ -116,6 +126,14 @@ for (const sym of pairs) {
     for (const p of S.sig) { if (p.sym !== sym || p.res) continue; const r = D.scoreSignal(p, p.tf === '15M' ? a.closed : b.closed); if (r) { p.res = r.res; p.mfe = r.mfe; p.mae = r.mae; } else if (now - p.seen > 3 * 864e5) p.res = 'void'; }
     for (const x of sig) if (!S.sig.some(p => p.sym === sym && p.tf === x.tf && p.at === x.at && p.side === x.side)) S.sig.unshift({ sym, tf: x.tf, side: x.side, score: x.score, atr: x.atr, price: x.price, at: x.at, patterns: x.patterns, why: x.why.filter(w => /trend/.test(w)), seen: now });
     const track = [...new Set(sig.map(x => D.sigVerdict(x, S.sig).line).filter(Boolean))];
+    // outcomes of stored plans on this pair, then a plan for every signal that clears the minimum score
+    for (const q of S.plans) { if (q.sym !== sym || q.out || q.plan.decision !== 'TRADE') continue; const o = EP.planOutcome(q.plan, q.plan.tf === '15M' ? a.closed : b.closed); if (o) q.out = o; }
+    const plans = sig.filter(x => x.score >= minScore).map(x => planFor(sym, x, a, b, h4));
+    for (const pl of plans) if (!S.plans.some(q => q.plan.id === pl.id)) S.plans.unshift({ sym, plan: pl, seen: now });
+    // under a goal the same ranking as the app: only TRADE plans that add a meaningful share of what is left
+    const GR = GOAL ? EG.rankForGoal(plans, GOAL, { now }) : null;
+    if (GR && !GR.picks.length && plans.some(pl => pl.decision === 'TRADE')) log(sym, 'goal: no plan fits', GR.blocked || GR.skipped.map(k => k.why).join('; '));
+    const bestPlan = GR ? GR.picks[0] || null : plans.filter(pl => pl.decision === 'TRADE').sort((p, q) => q.confidence - p.confidence)[0] || null;
     const data = (isSynth(sym) ? synthBrief(sym) + '\n' : '') + D.brief(sym, a.closed, b.closed, h4) + `\nPRICE NOW ${f2(pxNow)}\nEARLY-MOVE SIGNALS (last hour):\n` + (sig.length ? sig.map(sigText).join('\n') : 'none') + (track.length ? '\nPAST FOLLOW-THROUGH OF THESE SIGNAL TYPES (1 ATR with the signal before 1 ATR against): ' + track.join(' ') : '');
     const blind = async dir => { if (W.blind === false || !AK || !/BUY|SELL/.test(dir || '')) return null; const V = verdict(await blindCheck({ ak: AK, model, m15: a.closed, h1: b.closed, h4, px: pxNow }).catch(e => { log(sym, 'blind check failed', e.message); return null; }), dir === 'BUY' ? 1 : -1); if (V) log(sym, verdictLine(V)); return V; };
     if (doSession) {
@@ -123,20 +141,22 @@ for (const sym of pairs) {
       log(sym, 'session', JSON.stringify(v));
       const BV = v && v.opportunity === 'yes' && (+v.quality || 0) >= 3 && !recent(sym, v.direction) ? await blind(v.direction) : null;
       if (BV && BV.v === 'disagree') log(sym, 'session alert dropped: the blind check disagreed');
+      else if (v && v.opportunity === 'yes' && (+v.quality || 0) >= 3 && !recent(sym, v.direction) && W.sessionHeadsUp !== true) log(sym, 'session idea kept as a note (no code TRADE plan; set sessionHeadsUp to get watch-only alerts):', v.setup);
       else if (v && v.opportunity === 'yes' && (+v.quality || 0) >= 3 && !recent(sym, v.direction)) {
         sent.push({ sym, side: v.direction, t: now });
-        await telegram(`🔔 <b>${esc(sym)}: possible ${esc(v.direction)}</b> (${esc(v.quality)}/5) at the ${esc(sess.name)} open\n🕒 ${sast(now)}\n${esc(v.setup)}. ${esc(v.why)}\nTrigger: ${esc(v.trigger)}\nInvalidation: ${v.invalidation != null ? esc(f2(+v.invalidation)) : 'n/a'}\nPrice ${esc(f2(pxNow))}.${BV ? '\n' + esc(verdictLine(BV)) : ''}\nOpen Edgeview for a full analysis.`);
+        await telegram(`🔔 <b>${esc(sym)}: watch only, not a trade plan</b> (${esc(v.direction)}, ${esc(v.quality)}/5) at the ${esc(sess.name)} open\n🕒 ${sast(now)}\n${esc(v.setup)}. ${esc(v.why)}\nTrigger: ${esc(v.trigger)}\nInvalidation: ${v.invalidation != null ? esc(f2(+v.invalidation)) : 'n/a'}\nPrice ${esc(f2(pxNow))}.${BV ? '\n' + esc(verdictLine(BV)) : ''}\nOpen Edgeview for a full analysis.`);
       }
-    } else if (W.earlyDetection !== false && sig.length && sig[0].score >= minScore && !recent(sym, sig[0].side) && D.sigVerdict(sig[0], S.sig).weak && sig[0].score < minScore + 15) {
-      log(sym, 'skipped weak signal type', D.sigVerdict(sig[0], S.sig).line);
-    } else if (W.earlyDetection !== false && sig.length && sig[0].score >= minScore && !recent(sym, sig[0].side)) {
-      const s = sig[0], v = await haiku(`An early-move signal fired in the last hour. Confirm or reject it. Current time ${sastNow(now)}.\n${data}`);
+    } else if (W.earlyDetection !== false && plans.length && !bestPlan && !GR) {
+      log(sym, 'NO TRADE:', plans.map(pl => `${pl.tf} ${pl.side > 0 ? 'BUY' : 'SELL'} ${pl.score}: ${pl.no_trade_reasons.join('; ')}`).join(' | '));
+    } else if (W.earlyDetection !== false && bestPlan && !recent(sym, bestPlan.side > 0 ? 'BUY' : 'SELL')) {
+      const s = sig.find(x => x.tf === bestPlan.tf && (x.dir === bestPlan.side)) || sig[0], v = await haiku(`An early-move signal fired in the last hour and passed the code's trade-plan gates. Confirm or reject it. Current time ${sastNow(now)}.\n${data}\nCODE TRADE PLAN:\n${EP.renderPlanAlert(bestPlan)}`);
       log(sym, 'early', s.side, s.score, JSON.stringify(v));
-      const ok = !AK || (v && v.opportunity !== 'no' && (v.direction === s.side || v.direction === 'NONE')), BV = ok ? await blind(s.side) : null;
+      const side = bestPlan.side > 0 ? 'BUY' : 'SELL', ok = !AK || (v && v.opportunity !== 'no' && (v.direction === side || v.direction === 'NONE')), BV = ok ? await blind(side) : null;
       if (BV && BV.v === 'disagree') log(sym, 'early alert dropped: the blind check disagreed');
       else if (ok) {
-        sent.push({ sym, side: s.side, t: now });
-        await telegram(`⚡ <b>${esc(sym)}: early ${esc(s.side)} move</b> (${esc(s.tf)}, score ${s.score})\n🕒 ${sast(now)}\n${esc(v ? `${v.setup}. ${v.why}` : s.why.join('; '))}\n${v ? 'Trigger: ' + esc(v.trigger) + '\n' : ''}${(() => { const t = D.sigVerdict(s, S.sig).line; return t ? esc(t) + '\n' : ''; })()}Origin ${esc(f2(s.origin))}, stop idea ${esc(f2(s.stopIdea))}, price ${esc(f2(pxNow))}.${BV ? '\n' + esc(verdictLine(BV)) : ''}\nOpen Edgeview for a full analysis.`);
+        sent.push({ sym, side, t: now, plan: bestPlan.id });
+        const body = bestPlan.goal_context && GOAL ? EG.renderGoalPlan(bestPlan, GOAL, { time: sast }) : EP.renderPlanAlert(bestPlan, { time: sast });
+        await telegram(`⚡ <b>${esc(sym)} ${bestPlan.side > 0 ? 'BUY' : 'SELL'} plan</b> (${esc(bestPlan.tf)}, score ${bestPlan.score})\n🕒 ${sast(now)}\n${esc(body.split('\n').slice(1).join('\n'))}\n${(() => { const t = D.sigVerdict(s, S.sig).line; return t ? esc(t) + '\n' : ''; })()}${v ? 'Haiku: ' + esc(`${v.setup}. ${v.why}`) + '\n' : ''}Price ${esc(f2(pxNow))}.${BV ? '\n' + esc(verdictLine(BV)) : ''}\nYou place the trade; Edgeview only analyses.`);
       }
     } else log(sym, 'no alert', sig.length ? `best ${sig[0].side} ${sig[0].score}` : 'no signal');
   } catch (e) { log(sym, 'error', e.message || e); }

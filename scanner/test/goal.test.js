@@ -6,6 +6,8 @@ const now = Date.UTC(2026, 10, 17, 8), tz = 'Africa/Johannesburg';
 let x = G.parseGoalText('I have $4,800 in the account. I want to make $180 today.');
 eq([x.set.balance, x.set.target, x.set.currency], [4800, 180, '$']); ok(x.intents[0] === 'set', 'set intent');
 x = G.parseGoalText('Account is $5200, I want $200 today'); eq([x.set.balance, x.set.target], [5200, 200]);
+x = G.parseGoalText('Account is $10,000, I want $60 today'); eq([x.set.balance, x.set.target], [10000, 60]);
+x = G.parseGoalText('balance 12,500.50. target $1,250.'); eq([x.set.balance, x.set.target], [12500.5, 1250]);
 x = G.parseGoalText('Make it 3% today'); eq([x.set.target_pct, x.set.balance], [3, undefined]);
 x = G.parseGoalText('Change risk to 0.75% per trade'); eq([x.set.risk, x.set.target, x.set.target_pct], [0.75, undefined, undefined]);
 x = G.parseGoalText('Find me trades to reach the goal'); ok(x.intents.includes('trades') && x.set.target == null, 'find trades');
@@ -63,6 +65,7 @@ ok(rk.picks.reduce((t, p) => t + p.risk_pct, 0) <= 1.0001, 'metals group total w
 rk = G.rankForGoal([weak], s, { now }); ok(!rk.picks.length && /No suitable trades right now/.test(G.noTradesText(rk, s)) && /below the minimum/.test(G.noTradesText(rk, s)), G.noTradesText(rk, s));
 // contribution floor: a tiny size is skipped, not shown
 rk = G.rankForGoal([plan], G.newGoal({ balance: 4800, target: 2000 }, now, tz), { now }); ok(!rk.picks.length && /would add only/.test(rk.skipped[0].why), 'under 10% contribution skipped');
+rk = G.rankForGoal([{ ...plan, confidence: 22 }], s, { now }); ok(!rk.picks.length && /confidence 22 is under 35/.test(rk.skipped[0].why), 'low-confidence TRADE not offered under a goal');
 // expired plan skipped
 rk = G.rankForGoal([plan], s, { now: plan.expires_at + 1 }); ok(!rk.picks.length && /expired/.test(rk.skipped[0].why), 'expired');
 // 5. results, limits, reached
